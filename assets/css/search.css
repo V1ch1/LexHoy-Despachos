@@ -1,0 +1,674 @@
+/* Notificaciones */
+.despacho-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px 20px;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 300px;
+  max-width: 400px;
+  transform: translateX(120%);
+  transition: transform 0.3s ease;
+  z-index: 9999;
+}
+
+.despacho-notification.show {
+  transform: translateX(0);
+}
+
+.despacho-notification.success {
+  border-left: 4px solid #2ecc71;
+}
+
+.despacho-notification.error {
+  border-left: 4px solid #e74c3c;
+}
+
+.notification-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notification-content i {
+  font-size: 1.2em;
+}
+
+.notification-content i.fa-check-circle {
+  color: #2ecc71;
+}
+
+.notification-content i.fa-exclamation-circle {
+  color: #e74c3c;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: #95a5a6;
+  cursor: pointer;
+  padding: 5px;
+  transition: color 0.3s ease;
+}
+
+.notification-close:hover {
+  color: #7f8c8d;
+}
+
+/* Animaciones */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.fa-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .despacho-notification {
+    left: 20px;
+    right: 20px;
+    min-width: auto;
+    max-width: none;
+  }
+}
+
+/* Estilos generales */
+.lexhoy-despachos-search {
+  width: 100% !important;
+  max-width: 100% !important;
+  background-color: #ffffff;
+  font-family: "Inter", Helvetica, Arial, sans-serif;
+  padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lexhoy-despachos-search > * {
+  max-width: none !important;
+  width: 80% !important;
+}
+
+/* Cabecera de búsqueda */
+.search-header {
+  width: 80% !important;
+  min-height: 320px;
+  position: relative;
+  padding: 20px 40px;
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Título */
+.search-title {
+  font-size: x-large;
+  color: #e10000;
+  text-align: center;
+  padding: 20px 0;
+  margin: 0;
+}
+
+/* Contenedor del alfabeto */
+.alphabet-container {
+  width: 100%;
+  min-height: 81px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border: 1px solid #000000;
+  border-bottom-width: 5px;
+  margin-top: 20px;
+  box-sizing: border-box;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+/* Letras del alfabeto */
+.alphabet-letter {
+  font-size: 40px;
+  color: #000000;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
+  flex: 1;
+  text-align: center;
+}
+
+.alphabet-letter:hover {
+  color: #e10000;
+  background-color: #f8f9fa;
+}
+
+.alphabet-letter.active {
+  color: #e10000;
+  font-weight: bold;
+  transform: scale(1.1);
+  background-color: #f8f9fa;
+}
+
+/* Contenedor de búsqueda */
+.ais-SearchBox {
+  width: 100%;
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
+.ais-SearchBox-form {
+  position: relative;
+  width: 100%;
+}
+
+.ais-SearchBox-input {
+  width: 100%;
+  height: 45px;
+  font-size: large;
+  padding: 8px 12px;
+  border: 2px solid #000000 !important;
+  border-bottom-width: 5px !important;
+  box-sizing: border-box;
+  outline: none !important;
+  box-shadow: none !important;
+  background-color: #ffffff !important;
+}
+
+.ais-SearchBox-input::placeholder {
+  color: #e10000 !important;
+  opacity: 1 !important;
+}
+
+.ais-SearchBox-input:focus {
+  box-shadow: none !important;
+  border-color: #000000 !important;
+}
+
+.ais-SearchBox-submit,
+.ais-SearchBox-reset {
+  display: none !important;
+}
+
+/* Contenido principal (filtros + resultados) */
+.search-content {
+  display: flex;
+  gap: 20px;
+  padding: 0 40px;
+  box-sizing: border-box;
+  width: 80% !important;
+  margin: 0 auto;
+}
+
+/* Sidebar de filtros */
+.filters-sidebar {
+  width: 33.333%;
+  flex: 0 0 33.333%;
+  position: sticky;
+  top: 20px;
+  align-self: flex-start;
+}
+
+/* Sidebar de resultados */
+.results-sidebar {
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Contenedor de filtros */
+.filters-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Filtros en pestañas */
+.filters-tabs {
+  background: #ffffff;
+  border: 1px solid #000000;
+  border-bottom-width: 5px;
+  overflow: hidden;
+}
+
+.filters-tab-header {
+  display: flex;
+  background: #f5f5f5;
+  border-bottom: 1px solid #000000;
+}
+
+.filter-tab-btn {
+  flex: 1;
+  padding: 15px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  transition: all 0.3s ease;
+  border-right: 1px solid #000000;
+}
+
+.filter-tab-btn:last-child {
+  border-right: none;
+}
+
+.filter-tab-btn:hover {
+  background: #e8e8e8;
+}
+
+.filter-tab-btn.active {
+  background: #e10000;
+  color: #ffffff;
+}
+
+.filters-tab-content {
+  padding: 20px;
+}
+
+.filter-tab-pane {
+  display: none;
+}
+
+.filter-tab-pane.active {
+  display: block;
+}
+
+/* Lista de filtros */
+.filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filter-item {
+  margin: 0;
+  padding: 0;
+}
+
+.filter-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 15px;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  color: #333;
+  border: 1px solid #000000;
+  border-bottom-width: 5px;
+}
+
+.filter-label:hover {
+  background-color: #e8e8e8;
+}
+
+.filter-item--selected .filter-label {
+  background-color: #e10000;
+  color: white;
+  border-color: #e10000;
+}
+
+.filter-count {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 0px !important;
+  font-size: 12px;
+}
+
+.filter-item--selected .filter-count {
+  background-color: rgba(255, 0, 0, 0.2);
+  border-radius: 0px !important;
+}
+
+/* Contenedor de resultados */
+.results-container {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Lista de resultados */
+.ais-Hits-list {
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.ais-Hits-item {
+  margin-bottom: 20px;
+}
+
+/* Tarjeta de despacho */
+.despacho-card {
+  border: 1px solid #000000;
+  border-bottom-width: 5px;
+  padding: 20px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+  width: 100%;
+  box-sizing: border-box;
+  background: #fff;
+  line-height: 1.4;
+}
+
+/* Badge de verificación */
+.verification-badge {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  padding: 8px 15px;
+  background: #fff;
+  border: 1px solid #000;
+  border-bottom-width: 3px;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e10000;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.verification-badge i {
+  font-size: 16px;
+}
+
+.verification-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.despacho-name {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 15px;
+  color: #000;
+  line-height: 1.3;
+}
+
+.despacho-name a {
+  color: #000;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.despacho-name a:hover {
+  color: #e10000;
+}
+
+.despacho-location {
+  font-size: 18px;
+  margin-bottom: 15px;
+  color: #000;
+  line-height: 1.4;
+}
+
+.despacho-areas {
+  font-size: 16px;
+  margin-bottom: 20px;
+  color: #000;
+  line-height: 1.5;
+}
+
+.despacho-link {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #fff;
+  color: #e10000;
+  text-decoration: none;
+  border: 1px solid #000;
+  border-bottom-width: 3px;
+  transition: all 0.3s ease;
+  margin-top: 15px;
+}
+
+.despacho-link:hover {
+  background: #f0f0f0;
+  transform: translateY(-2px);
+}
+
+/* Paginación */
+.ais-Pagination {
+  margin: 20px 0;
+  text-align: center;
+}
+
+.ais-Pagination-list {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  list-style: none;
+  padding: 0;
+}
+
+.ais-Pagination-item {
+  padding: 5px 10px;
+  border: 1px solid #000000;
+  cursor: pointer;
+}
+
+.ais-Pagination-item--selected {
+  background-color: #e10000;
+  color: #ffffff;
+}
+
+/* Mensaje de no resultados */
+.no-results {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: #666;
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin: 20px 0;
+}
+
+/* Refinamientos activos */
+.ais-CurrentRefinements {
+  margin-bottom: 5px;
+  padding: 6px;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.ais-CurrentRefinements-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ais-CurrentRefinements-item {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  padding: 2px 5px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.ais-CurrentRefinements-label {
+  margin-right: 3px;
+  font-weight: 500;
+}
+
+.ais-CurrentRefinements-delete {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 13px;
+}
+
+.ais-CurrentRefinements-delete:hover {
+  color: #e10000;
+}
+
+/* Estilos para los elementos de refinamiento */
+.ais-RefinementList-list {
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.ais-RefinementList-item {
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  margin-bottom: 8px !important;
+}
+
+.ais-RefinementList-checkbox {
+  margin-right: 10px !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.ais-RefinementList-label {
+  font-size: 14px !important;
+  color: #333 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+}
+
+.ais-RefinementList-labelText {
+  margin-right: 8px !important;
+}
+
+.ais-RefinementList-count {
+  color: #666 !important;
+  font-size: 12px !important;
+  background: none !important;
+  padding: 0 !important;
+  margin-left: 4px !important;
+}
+
+.ais-RefinementList-count::before {
+  content: "-" !important;
+  margin-right: 4px !important;
+}
+
+/* Estilos para el botón Ver más */
+.lexhoy-despachos-search .ais-RefinementList-showMore {
+  display: block !important;
+  margin-top: 15px !important;
+  text-align: center !important;
+  padding: 0 20px !important;
+  background: #ffffff !important;
+  color: #e10000 !important;
+  border: 1px solid #000000 !important;
+  border-bottom-width: 5px !important;
+  padding: 6px 40px !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+.lexhoy-despachos-search .ais-RefinementList-showMore button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Ocultar solo el searchBox */
+.ais-RefinementList-searchBox {
+  display: none !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .search-header {
+    width: 90%;
+    padding: 20px;
+  }
+
+  .search-content {
+    width: 90%;
+    flex-direction: column;
+    padding: 0 20px;
+  }
+
+  .filters-sidebar,
+  .results-sidebar {
+    width: 100%;
+    flex: 0 0 100%;
+  }
+
+  .filters-sidebar {
+    position: static;
+  }
+
+  .filter-select {
+    padding: 10px;
+  }
+
+  .filter-list {
+    gap: 8px;
+  }
+
+  .filter-label {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  .results-container {
+    grid-template-columns: 1fr;
+  }
+
+  .alphabet-container {
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding: 10px;
+  }
+
+  .alphabet-letter {
+    font-size: 30px;
+  }
+
+  .ais-Pagination {
+    margin: 20px 0;
+  }
+}
+
+/* Para pantallas muy anchas */
+@media (min-width: 1400px) {
+  .search-header {
+    width: 80%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .search-content {
+    width: 80%;
+    margin: 0 auto;
+    padding: 0 15px;
+  }
+}
