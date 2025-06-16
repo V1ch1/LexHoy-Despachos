@@ -24,6 +24,7 @@ define('LEXHOY_DESPACHOS_PLUGIN_URL', plugin_dir_url(__FILE__));
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-algolia-client.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-cpt.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-shortcode.php';
+require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-areas-cpt.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/algolia-page.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/shortcode-page.php';
 
@@ -35,6 +36,10 @@ function lexhoy_despachos_init() {
     
     if (class_exists('LexhoyDespachosShortcode')) {
         new LexhoyDespachosShortcode();
+    }
+
+    if (class_exists('LexhoyAreasCPT')) {
+        new LexhoyAreasCPT();
     }
 }
 add_action('plugins_loaded', 'lexhoy_despachos_init');

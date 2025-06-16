@@ -19,6 +19,9 @@ class LexhoyDespachosCPT {
         
         // Acción para sincronización programada
         add_action('lexhoy_despachos_sync_from_algolia', array($this, 'sync_all_from_algolia'));
+
+        // Registrar taxonomía de áreas de práctica
+        add_action('init', array($this, 'register_taxonomies'));
         
         // Inicializar cliente de Algolia
         $this->init_algolia_client();
@@ -102,7 +105,6 @@ class LexhoyDespachosCPT {
         $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
         $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
         $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
-        $areas_practica = get_post_meta($post->ID, '_despacho_areas_practica', true);
         $codigo_postal = get_post_meta($post->ID, '_despacho_codigo_postal', true);
         $direccion = get_post_meta($post->ID, '_despacho_direccion', true);
         $telefono = get_post_meta($post->ID, '_despacho_telefono', true);
@@ -144,12 +146,6 @@ class LexhoyDespachosCPT {
                 <label for="despacho_provincia">Provincia:</label><br>
                 <input type="text" id="despacho_provincia" name="despacho_provincia" 
                        value="<?php echo esc_attr($provincia); ?>" class="widefat">
-            </p>
-            <p>
-                <label for="despacho_areas_practica">Áreas de Práctica:</label><br>
-                <input type="text" id="despacho_areas_practica" name="despacho_areas_practica" 
-                       value="<?php echo esc_attr($areas_practica); ?>" class="widefat">
-                <span class="description">Separar por comas</span>
             </p>
             <p>
                 <label for="despacho_codigo_postal">Código Postal:</label><br>
@@ -300,7 +296,6 @@ class LexhoyDespachosCPT {
             'despacho_nombre' => '_despacho_nombre',
             'despacho_localidad' => '_despacho_localidad',
             'despacho_provincia' => '_despacho_provincia',
-            'despacho_areas_practica' => '_despacho_areas_practica',
             'despacho_codigo_postal' => '_despacho_codigo_postal',
             'despacho_direccion' => '_despacho_direccion',
             'despacho_telefono' => '_despacho_telefono',
@@ -378,13 +373,16 @@ class LexhoyDespachosCPT {
             // Obtener meta datos
             $meta_data = get_post_meta($post_id);
             
+            // Obtener áreas de práctica como taxonomía
+            $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+            
             // Preparar datos para Algolia
             $record = array(
                 'objectID' => $post_id,
                 'nombre' => get_the_title($post_id),
                 'localidad' => isset($meta_data['_despacho_localidad'][0]) ? $meta_data['_despacho_localidad'][0] : '',
                 'provincia' => isset($meta_data['_despacho_provincia'][0]) ? $meta_data['_despacho_provincia'][0] : '',
-                'areas_practica' => isset($meta_data['_despacho_areas_practica'][0]) ? unserialize($meta_data['_despacho_areas_practica'][0]) : array(),
+                'areas_practica' => $areas_practica,
                 'codigo_postal' => isset($meta_data['_despacho_codigo_postal'][0]) ? $meta_data['_despacho_codigo_postal'][0] : '',
                 'direccion' => isset($meta_data['_despacho_direccion'][0]) ? $meta_data['_despacho_direccion'][0] : '',
                 'telefono' => isset($meta_data['_despacho_telefono'][0]) ? $meta_data['_despacho_telefono'][0] : '',
@@ -506,7 +504,51 @@ class LexhoyDespachosCPT {
             }
 
             // Actualizar meta datos
-            $this->update_post_meta_from_algolia($post_id, $object);
+            $meta_fields = array(
+                '_despacho_object_id' => $object['objectID'],
+                '_despacho_nombre' => $object['nombre'],
+                '_despacho_localidad' => $object['localidad'] ?? '',
+                '_despacho_provincia' => $object['provincia'] ?? '',
+                '_despacho_codigo_postal' => $object['codigo_postal'] ?? '',
+                '_despacho_direccion' => $object['direccion'] ?? '',
+                '_despacho_telefono' => $object['telefono'] ?? '',
+                '_despacho_email' => $object['email'] ?? '',
+                '_despacho_web' => $object['web'] ?? '',
+                '_despacho_descripcion' => $object['descripcion'] ?? '',
+                '_despacho_estado_verificacion' => $object['estado_verificacion'] ?? 'pendiente',
+                '_despacho_is_verified' => $object['isVerified'] ?? false,
+                '_despacho_ultima_actualizacion' => $object['ultima_actualizacion'] ?? date('d-m-Y'),
+                '_despacho_slug' => $object['slug'] ?? '',
+                '_despacho_especialidades' => $object['especialidades'] ?? array(),
+                '_despacho_horario' => $object['horario'] ?? array(),
+                '_despacho_redes_sociales' => $object['redes_sociales'] ?? array(),
+                '_despacho_experiencia' => $object['experiencia'] ?? '',
+                '_despacho_tamaño' => $object['tamaño_despacho'] ?? '',
+                '_despacho_año_fundacion' => $object['año_fundacion'] ?? 0,
+                '_despacho_estado_registro' => $object['estado_registro'] ?? 'activo'
+            );
+
+            foreach ($meta_fields as $key => $value) {
+                update_post_meta($post_id, $key, $value);
+            }
+
+            // Actualizar áreas de práctica como taxonomía
+            if (isset($object['areas_practica']) && is_array($object['areas_practica'])) {
+                $areas_practica = array();
+                foreach ($object['areas_practica'] as $area) {
+                    // Buscar si existe el término
+                    $term = term_exists($area, 'area_practica');
+                    if (!$term) {
+                        // Crear el término si no existe
+                        $term = wp_insert_term($area, 'area_practica');
+                    }
+                    if (!is_wp_error($term)) {
+                        $areas_practica[] = $term['term_id'];
+                    }
+                }
+                // Asignar las áreas al post
+                wp_set_object_terms($post_id, $areas_practica, 'area_practica');
+            }
 
             error_log('Sincronización completada exitosamente para el objeto: ' . $object_id);
             return true;
@@ -631,40 +673,6 @@ class LexhoyDespachosCPT {
                 'success' => false,
                 'message' => 'Error en sincronización de prueba: ' . $e->getMessage()
             ];
-        }
-    }
-
-    /**
-     * Actualizar meta datos del post desde objeto de Algolia
-     */
-    private function update_post_meta_from_algolia($post_id, $object) {
-        $meta_fields = array(
-            'object_id' => $object['objectID'],
-            'nombre' => $object['nombre'],
-            'localidad' => $object['localidad'],
-            'provincia' => $object['provincia'],
-            'areas_practica' => $object['areas_practica'],
-            'codigo_postal' => $object['codigo_postal'],
-            'direccion' => $object['direccion'],
-            'telefono' => $object['telefono'],
-            'email' => $object['email'],
-            'web' => $object['web'],
-            'descripcion' => $object['descripcion'],
-            'estado_verificacion' => $object['estado_verificacion'],
-            'isVerified' => $object['isVerified'],
-            'ultima_actualizacion' => $object['ultima_actualizacion'],
-            'slug' => $object['slug'],
-            'especialidades' => $object['especialidades'],
-            'horario' => $object['horario'],
-            'redes_sociales' => $object['redes_sociales'],
-            'experiencia' => $object['experiencia'],
-            'tamaño_despacho' => $object['tamaño_despacho'],
-            'año_fundacion' => $object['año_fundacion'],
-            'estado_registro' => $object['estado_registro']
-        );
-
-        foreach ($meta_fields as $field => $value) {
-            update_post_meta($post_id, '_despacho_' . $field, $value);
         }
     }
 
@@ -817,5 +825,36 @@ class LexhoyDespachosCPT {
             error_log('Stack trace: ' . $e->getTraceAsString());
             throw $e;
         }
+    }
+
+    /**
+     * Registrar taxonomías
+     */
+    public function register_taxonomies() {
+        $labels = array(
+            'name'              => 'Áreas de Práctica',
+            'singular_name'     => 'Área de Práctica',
+            'search_items'      => 'Buscar Áreas de Práctica',
+            'all_items'         => 'Todas las Áreas de Práctica',
+            'parent_item'       => 'Área de Práctica Padre',
+            'parent_item_colon' => 'Área de Práctica Padre:',
+            'edit_item'         => 'Editar Área de Práctica',
+            'update_item'       => 'Actualizar Área de Práctica',
+            'add_new_item'      => 'Añadir Nueva Área de Práctica',
+            'new_item_name'     => 'Nueva Área de Práctica',
+            'menu_name'         => 'Áreas de Práctica'
+        );
+
+        $args = array(
+            'hierarchical'      => true,
+            'labels'            => $labels,
+            'show_ui'          => true,
+            'show_admin_column' => true,
+            'query_var'        => true,
+            'rewrite'          => array('slug' => 'area-practica'),
+            'show_in_rest'     => true
+        );
+
+        register_taxonomy('area_practica', array('despacho'), $args);
     }
 } 
