@@ -521,150 +521,116 @@ class LexhoyDespachosCPT {
      * Sincronizar todos los objetos desde Algolia
      */
     public function sync_all_from_algolia() {
+        error_log('=== INICIO DE SYNC_ALL_FROM_ALGOLIA ===');
+        
+        // Verificar credenciales de Algolia
+        $algolia_client = new LexhoyAlgoliaClient();
+        if (!$algolia_client->verify_credentials()) {
+            error_log('Error: Credenciales de Algolia no configuradas');
+            return [
+                'success' => false,
+                'message' => 'Credenciales de Algolia no configuradas'
+            ];
+        }
+
         try {
-            error_log('Iniciando sincronización de prueba con un solo despacho');
+            // Obtener un objeto de prueba de Algolia
+            $result = $algolia_client->browse_all();
             
-            // Obtener las credenciales de Algolia
-            $app_id = get_option('lexhoy_despachos_algolia_app_id');
-            $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
-            $index_name = get_option('lexhoy_despachos_algolia_index_name');
-
-            error_log('Credenciales de Algolia:');
-            error_log('App ID: ' . $app_id);
-            error_log('Admin API Key: ' . substr($admin_api_key, 0, 4) . '...');
-            error_log('Index Name: ' . $index_name);
-            
-            // Inicializar el cliente de Algolia con las credenciales
-            $this->algolia_client = new LexhoyAlgoliaClient($app_id, $admin_api_key);
-            
-            // Obtener un solo objeto de Algolia
-            $objects = $this->algolia_client->browse_all($index_name);
-            
-            if (empty($objects)) {
-                error_log('No se encontraron objetos en Algolia');
-                return array(
+            if (!$result['success']) {
+                error_log('Error al obtener objeto de prueba: ' . $result['message']);
+                return [
                     'success' => false,
-                    'message' => 'No se encontraron objetos en Algolia'
-                );
+                    'message' => 'Error en sincronización de prueba: ' . $result['message']
+                ];
             }
 
-            // Tomar solo el primer objeto para la prueba
-            $test_object = $objects[0];
-            error_log('Objeto de prueba obtenido: ' . print_r($test_object, true));
-            
-            // Verificar si el objeto tiene los campos necesarios
-            if (!isset($test_object['objectID'])) {
-                error_log('El objeto no tiene objectID: ' . print_r($test_object, true));
-                return array(
+            $object = $result['object'];
+            $total_records = $result['total_records'];
+
+            error_log('Objeto obtenido de Algolia: ' . print_r($object, true));
+            error_log('Total de registros disponibles: ' . $total_records);
+
+            // Verificar que el objeto tenga los campos necesarios
+            if (empty($object['objectID']) || empty($object['nombre'])) {
+                error_log('Error: Objeto de Algolia incompleto');
+                return [
                     'success' => false,
-                    'message' => 'El objeto de Algolia no tiene objectID'
-                );
+                    'message' => 'El registro de Algolia no contiene los campos necesarios'
+                ];
             }
 
-            // Verificar si ya existe un post con este objectID
-            $existing_posts = get_posts(array(
+            // Buscar si ya existe un post con este objectID
+            $existing_posts = get_posts([
                 'post_type' => 'despacho',
-                'meta_key' => 'despacho_object_id',
-                'meta_value' => $test_object['objectID'],
+                'meta_key' => '_algolia_object_id',
+                'meta_value' => $object['objectID'],
                 'posts_per_page' => 1
-            ));
+            ]);
+
+            $post_data = [
+                'post_title' => $object['nombre'],
+                'post_type' => 'despacho',
+                'post_status' => 'publish'
+            ];
 
             if (!empty($existing_posts)) {
-                error_log('El despacho ya existe con ID: ' . $existing_posts[0]->ID);
-                return array(
-                    'success' => true,
-                    'message' => 'El despacho ya existe',
-                    'post_id' => $existing_posts[0]->ID,
-                    'object' => $test_object
-                );
+                $post_data['ID'] = $existing_posts[0]->ID;
+                $post_id = wp_update_post($post_data);
+                $action = 'actualizado';
+            } else {
+                $post_id = wp_insert_post($post_data);
+                $action = 'creado';
             }
-            
-            // Intentar crear el post
-            $post_data = array(
-                'post_title'    => $test_object['caratulado'] ?? $test_object['nombre'] ?? 'Sin título',
-                'post_content'  => $test_object['descripcion'] ?? '',
-                'post_status'   => 'publish',
-                'post_type'     => 'despacho'
-            );
 
-            error_log('Intentando crear post con datos: ' . print_r($post_data, true));
-
-            // Insertar el post
-            $post_id = wp_insert_post($post_data);
-            
             if (is_wp_error($post_id)) {
-                error_log('Error al crear el post: ' . $post_id->get_error_message());
-                return array(
+                error_log('Error al crear/actualizar post: ' . $post_id->get_error_message());
+                return [
                     'success' => false,
-                    'message' => 'Error al crear el post: ' . $post_id->get_error_message()
-                );
+                    'message' => 'Error al crear/actualizar el despacho: ' . $post_id->get_error_message()
+                ];
             }
 
-            error_log('Post creado con ID: ' . $post_id);
+            // Guardar metadatos
+            $meta_fields = [
+                '_algolia_object_id' => $object['objectID'],
+                '_localidad' => $object['localidad'] ?? '',
+                '_provincia' => $object['provincia'] ?? '',
+                '_areas_practica' => $object['areas_practica'] ?? [],
+                '_codigo_postal' => $object['codigo_postal'] ?? '',
+                '_direccion' => $object['direccion'] ?? '',
+                '_telefono' => $object['telefono'] ?? '',
+                '_email' => $object['email'] ?? '',
+                '_web' => $object['web'] ?? '',
+                '_estado' => $object['estado'] ?? '',
+                '_ultima_actualizacion' => $object['ultima_actualizacion'] ?? '',
+                '_slug' => $object['slug'] ?? '',
+                '_horario' => $object['horario'] ?? [],
+                '_redes_sociales' => $object['redes_sociales'] ?? []
+            ];
 
-            // Guardar los metadatos
-            $meta_fields = array(
-                'despacho_object_id' => 'objectID',
-                'despacho_id' => 'id',
-                'despacho_fecha' => 'fecha',
-                'despacho_tipo' => 'tipo',
-                'despacho_rol' => 'rol',
-                'despacho_caratulado' => 'caratulado',
-                'despacho_tribunal' => 'tribunal',
-                'despacho_ministerio' => 'ministerio',
-                'despacho_url' => 'url',
-                'despacho_estado' => 'estado',
-                'despacho_etiquetas' => 'etiquetas',
-                'despacho_metadata' => 'metadata',
-                'despacho_descripcion' => 'descripcion',
-                'despacho_estado_verificacion' => 'estado_verificacion',
-                'despacho_is_verified' => 'isVerified',
-                'despacho_ultima_actualizacion' => 'ultima_actualizacion',
-                'despacho_slug' => 'slug'
-            );
-
-            $saved_meta = array();
-            foreach ($meta_fields as $meta_key => $algolia_key) {
-                if (isset($test_object[$algolia_key])) {
-                    $value = $test_object[$algolia_key];
-                    error_log("Guardando meta {$meta_key}: " . print_r($value, true));
-                    update_post_meta($post_id, $meta_key, $value);
-                    $saved_meta[$meta_key] = $value;
-                } else {
-                    error_log("Campo {$algolia_key} no encontrado en el objeto de Algolia");
-                }
+            foreach ($meta_fields as $key => $value) {
+                update_post_meta($post_id, $key, $value);
             }
 
-            // Guardar el objeto completo como metadato para referencia
-            update_post_meta($post_id, 'despacho_algolia_object', $test_object);
+            error_log('Post ' . $action . ' exitosamente. ID: ' . $post_id);
 
-            if (empty($saved_meta)) {
-                error_log('No se guardaron metadatos para el post');
-                error_log('Objeto completo de Algolia: ' . print_r($test_object, true));
-                return array(
-                    'success' => false,
-                    'message' => 'No se encontraron meta datos para el post',
-                    'object' => $test_object
-                );
-            }
-
-            error_log('Sincronización de prueba completada exitosamente');
-            return array(
+            return [
                 'success' => true,
-                'message' => 'Sincronización de prueba completada exitosamente',
+                'message' => 'Sincronización completada exitosamente',
                 'post_id' => $post_id,
-                'post_data' => $post_data,
-                'saved_meta' => $saved_meta,
-                'object' => $test_object
-            );
+                'action' => $action,
+                'object' => $object,
+                'total_records' => $total_records
+            ];
 
         } catch (Exception $e) {
-            error_log('Error en sincronización de prueba: ' . $e->getMessage());
+            error_log('Error en sync_all_from_algolia: ' . $e->getMessage());
             error_log('Stack trace: ' . $e->getTraceAsString());
-            return array(
+            return [
                 'success' => false,
                 'message' => 'Error en sincronización de prueba: ' . $e->getMessage()
-            );
+            ];
         }
     }
 

@@ -60,7 +60,7 @@ class LexhoyAlgoliaClient {
             
             curl_close($ch);
 
-            if ($http_code === 200) {
+            if ($http_code === 200 || $http_code === 201) {
                 error_log('Conexión exitosa con Algolia. Respuesta: ' . $response);
                 return true;
             } else {
@@ -186,84 +186,107 @@ class LexhoyAlgoliaClient {
     /**
      * Obtener todos los objetos de Algolia con paginación
      */
-    public function browse_all($index_name) {
-        try {
-            error_log('=== INICIO DE BROWSE_ALL ===');
-            error_log('Índice: ' . $index_name);
-            
-            // Verificar credenciales
-            if (empty($this->app_id) || empty($this->admin_api_key)) {
-                error_log('ERROR: Credenciales de Algolia no configuradas');
-                throw new Exception('Credenciales de Algolia no configuradas');
-            }
-
-            // Construir la URL correcta para la API de Algolia
-            $url = "https://{$this->app_id}.algolia.net/1/indexes/{$index_name}/browse";
-            
-            error_log('URL: ' . $url);
-            error_log('App ID: ' . $this->app_id);
-            error_log('API Key: ' . substr($this->admin_api_key, 0, 4) . '...');
-
-            // Configurar la solicitud cURL
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-                'X-Algolia-API-Key: ' . $this->admin_api_key,
-                'X-Algolia-Application-Id: ' . $this->app_id
-            ));
-
-            // Ejecutar la solicitud
-            $response = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            
-            if (curl_errno($ch)) {
-                $error = curl_error($ch);
-                error_log('ERROR CURL: ' . $error);
-                throw new Exception('Error de conexión: ' . $error);
-            }
-            
-            curl_close($ch);
-
-            error_log('Código HTTP: ' . $http_code);
-            error_log('Respuesta: ' . $response);
-
-            if ($http_code !== 200) {
-                throw new Exception('Error de Algolia (HTTP ' . $http_code . '): ' . $response);
-            }
-
-            // Decodificar la respuesta JSON
-            $data = json_decode($response, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                $error = json_last_error_msg();
-                error_log('ERROR JSON: ' . $error);
-                throw new Exception('Error al decodificar la respuesta de Algolia: ' . $error);
-            }
-
-            if (!isset($data['hits']) || !is_array($data['hits'])) {
-                error_log('ERROR: No hay hits en la respuesta');
-                error_log('Respuesta completa: ' . print_r($data, true));
-                throw new Exception('Respuesta de Algolia no contiene hits');
-            }
-
-            // Mostrar la estructura del primer hit
-            if (!empty($data['hits'])) {
-                error_log('Primer hit:');
-                error_log(print_r($data['hits'][0], true));
-            } else {
-                error_log('ERROR: No se encontraron hits');
-                throw new Exception('No se encontraron hits en la respuesta de Algolia');
-            }
-
-            error_log('Total de hits: ' . count($data['hits']));
-            error_log('=== FIN DE BROWSE_ALL ===');
-            return $data['hits'];
-
-        } catch (Exception $e) {
-            error_log('ERROR EN BROWSE_ALL: ' . $e->getMessage());
-            error_log('Stack trace: ' . $e->getTraceAsString());
-            throw $e;
+    public function browse_all() {
+        if (!$this->verify_credentials()) {
+            error_log('LexHoy Despachos - Error: Credenciales de Algolia no configuradas');
+            return [
+                'success' => false,
+                'message' => 'Credenciales de Algolia no configuradas',
+                'error' => 'missing_credentials'
+            ];
         }
+
+        $url = "https://{$this->app_id}-dsn.algolia.net/1/indexes/{$this->index_name}/browse";
+        $headers = [
+            'X-Algolia-API-Key: ' . $this->admin_api_key,
+            'X-Algolia-Application-Id: ' . $this->app_id,
+            'Content-Type: application/json'
+        ];
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url . '?hitsPerPage=1');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($ch);
+        curl_close($ch);
+
+        error_log('LexHoy Despachos - Respuesta de Algolia: ' . print_r($response, true));
+        error_log('LexHoy Despachos - Código HTTP: ' . $http_code);
+
+        if ($curl_error) {
+            error_log('LexHoy Despachos - Error cURL: ' . $curl_error);
+            return [
+                'success' => false,
+                'message' => 'Error de conexión: ' . $curl_error,
+                'error' => 'curl_error'
+            ];
+        }
+
+        if ($http_code !== 200 && $http_code !== 201) {
+            error_log('LexHoy Despachos - Error HTTP: ' . $http_code);
+            return [
+                'success' => false,
+                'message' => 'Error de Algolia (HTTP ' . $http_code . ')',
+                'error' => 'http_error'
+            ];
+        }
+
+        $data = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('LexHoy Despachos - Error al decodificar JSON: ' . json_last_error_msg());
+            return [
+                'success' => false,
+                'message' => 'Error al procesar la respuesta de Algolia',
+                'error' => 'json_error'
+            ];
+        }
+
+        if (!isset($data['hits']) || !is_array($data['hits'])) {
+            error_log('LexHoy Despachos - Formato de respuesta inválido: ' . print_r($data, true));
+            return [
+                'success' => false,
+                'message' => 'Formato de respuesta de Algolia inválido',
+                'error' => 'invalid_format'
+            ];
+        }
+
+        if (empty($data['hits'])) {
+            error_log('LexHoy Despachos - No se encontraron registros en Algolia');
+            return [
+                'success' => false,
+                'message' => 'No se encontraron registros en Algolia',
+                'error' => 'no_records'
+            ];
+        }
+
+        // Filtrar registros inválidos
+        $valid_hits = array_filter($data['hits'], function($hit) {
+            return !empty($hit['objectID']) && !empty($hit['nombre']);
+        });
+
+        if (empty($valid_hits)) {
+            error_log('LexHoy Despachos - No se encontraron registros válidos en Algolia');
+            return [
+                'success' => false,
+                'message' => 'No se encontraron registros válidos en Algolia',
+                'error' => 'no_valid_records'
+            ];
+        }
+
+        // Tomar el primer registro válido
+        $first_valid_hit = reset($valid_hits);
+        error_log('LexHoy Despachos - Registro válido encontrado: ' . print_r($first_valid_hit, true));
+
+        return [
+            'success' => true,
+            'object' => $first_valid_hit,
+            'total_records' => $data['nbHits'] ?? 0
+        ];
     }
 
     /**

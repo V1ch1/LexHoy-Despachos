@@ -71,6 +71,42 @@ function lexhoy_despachos_algolia_page() {
     // Verificar si se está realizando una sincronización
     $is_syncing = isset($_POST['sync_from_algolia']) && check_admin_referer('lexhoy_despachos_sync_from_algolia');
     
+    // Verificar si se está guardando la configuración
+    $settings_updated = isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true';
+    
+    if ($settings_updated) {
+        try {
+            $app_id = get_option('lexhoy_despachos_algolia_app_id');
+            $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+            $index_name = get_option('lexhoy_despachos_algolia_index_name');
+
+            if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+                throw new Exception('Configuración incompleta de Algolia');
+            }
+
+            $client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
+            
+            // Verificar credenciales
+            if ($client->verify_credentials()) {
+                add_settings_error(
+                    'lexhoy_despachos_algolia',
+                    'settings_updated',
+                    '✅ Configuración guardada correctamente y conexión verificada con Algolia.',
+                    'success'
+                );
+            } else {
+                throw new Exception('No se pudo verificar la conexión con Algolia');
+            }
+        } catch (Exception $e) {
+            add_settings_error(
+                'lexhoy_despachos_algolia',
+                'settings_error',
+                '❌ Error al verificar la configuración: ' . $e->getMessage(),
+                'error'
+            );
+        }
+    }
+    
     if ($is_syncing) {
         try {
             $app_id = get_option('lexhoy_despachos_algolia_app_id');
@@ -99,55 +135,50 @@ function lexhoy_despachos_algolia_page() {
             $message .= '<strong>Sincronización completada exitosamente</strong><br>';
             $message .= 'Total de registros encontrados: ' . count($hits) . '<br><br>';
             
-            // Mostrar los primeros 5 registros como ejemplo
-            $message .= '<strong>Ejemplo de registros encontrados:</strong><br>';
-            $count = 0;
-            foreach ($hits as $hit) {
-                if ($count >= 5) break;
+            // Mostrar solo el primer registro válido
+            $valid_hits = array_filter($hits, function($hit) {
+                return !empty($hit['objectID']) && !empty($hit['nombre']);
+            });
+
+            if (!empty($valid_hits)) {
+                $first_hit = reset($valid_hits);
+                $message .= '<strong>Registro sincronizado:</strong><br>';
+                $message .= 'ID: ' . esc_html($first_hit['objectID']) . '<br>';
+                $message .= 'Nombre: ' . esc_html($first_hit['nombre']) . '<br>';
+                $message .= 'Localidad: ' . esc_html($first_hit['localidad'] ?? 'N/A') . '<br>';
+                $message .= 'Provincia: ' . esc_html($first_hit['provincia'] ?? 'N/A') . '<br>';
                 
-                $message .= '<br><strong>Registro #' . ($count + 1) . ':</strong><br>';
-                $message .= 'ID: ' . (isset($hit['objectID']) ? esc_html($hit['objectID']) : 'N/A') . '<br>';
-                $message .= 'Nombre: ' . (isset($hit['nombre']) ? esc_html($hit['nombre']) : 'N/A') . '<br>';
-                $message .= 'Localidad: ' . (isset($hit['localidad']) ? esc_html($hit['localidad']) : 'N/A') . '<br>';
-                $message .= 'Provincia: ' . (isset($hit['provincia']) ? esc_html($hit['provincia']) : 'N/A') . '<br>';
-                
-                if (isset($hit['areas_practica']) && is_array($hit['areas_practica'])) {
-                    $message .= 'Áreas de práctica: ' . esc_html(implode(', ', $hit['areas_practica'])) . '<br>';
+                if (isset($first_hit['areas_practica']) && is_array($first_hit['areas_practica'])) {
+                    $message .= 'Áreas de práctica: ' . esc_html(implode(', ', $first_hit['areas_practica'])) . '<br>';
                 }
                 
-                $message .= 'Código Postal: ' . (isset($hit['codigo_postal']) ? esc_html($hit['codigo_postal']) : 'N/A') . '<br>';
-                $message .= 'Dirección: ' . (isset($hit['direccion']) ? esc_html($hit['direccion']) : 'N/A') . '<br>';
-                $message .= 'Teléfono: ' . (isset($hit['telefono']) ? esc_html($hit['telefono']) : 'N/A') . '<br>';
-                $message .= 'Email: ' . (isset($hit['email']) ? esc_html($hit['email']) : 'N/A') . '<br>';
-                $message .= 'Web: ' . (isset($hit['web']) ? esc_html($hit['web']) : 'N/A') . '<br>';
-                $message .= 'Estado: ' . (isset($hit['estado_verificacion']) ? esc_html($hit['estado_verificacion']) : 'N/A') . '<br>';
-                $message .= 'Última actualización: ' . (isset($hit['ultima_actualizacion']) ? esc_html($hit['ultima_actualizacion']) : 'N/A') . '<br>';
-                $message .= 'Slug: ' . (isset($hit['slug']) ? esc_html($hit['slug']) : 'N/A') . '<br>';
-                
-                if (isset($hit['horario']) && is_array($hit['horario'])) {
-                    $message .= 'Horario:<br>';
-                    foreach ($hit['horario'] as $dia => $horas) {
-                        $message .= '- ' . ucfirst($dia) . ': ' . esc_html($horas) . '<br>';
-                    }
-                }
-                
-                if (isset($hit['redes_sociales']) && is_array($hit['redes_sociales'])) {
-                    $message .= 'Redes Sociales:<br>';
-                    foreach ($hit['redes_sociales'] as $red => $url) {
-                        if (!empty($url)) {
-                            $message .= '- ' . ucfirst($red) . ': ' . esc_html($url) . '<br>';
-                        }
-                    }
-                }
-                
-                $count++;
+                $message .= 'Código Postal: ' . esc_html($first_hit['codigo_postal'] ?? 'N/A') . '<br>';
+                $message .= 'Dirección: ' . esc_html($first_hit['direccion'] ?? 'N/A') . '<br>';
+                $message .= 'Teléfono: ' . esc_html($first_hit['telefono'] ?? 'N/A') . '<br>';
+                $message .= 'Email: ' . esc_html($first_hit['email'] ?? 'N/A') . '<br>';
+                $message .= 'Web: ' . esc_html($first_hit['web'] ?? 'N/A') . '<br>';
+                $message .= 'Estado: ' . esc_html($first_hit['estado'] ?? 'N/A') . '<br>';
+                $message .= 'Última actualización: ' . esc_html($first_hit['ultima_actualizacion'] ?? 'N/A') . '<br>';
+                $message .= 'Slug: ' . esc_html($first_hit['slug'] ?? 'N/A') . '<br>';
+            } else {
+                $message .= 'No se encontraron registros válidos para sincronizar.<br>';
             }
-            
+
             $message .= '</p></div>';
-            echo $message;
+            add_settings_error(
+                'lexhoy_despachos_algolia',
+                'sync_success',
+                $message,
+                'success'
+            );
 
         } catch (Exception $e) {
-            echo '<div class="notice notice-error"><p>Error durante la sincronización: ' . esc_html($e->getMessage()) . '</p></div>';
+            add_settings_error(
+                'lexhoy_despachos_algolia',
+                'sync_error',
+                '❌ Error en la sincronización: ' . $e->getMessage(),
+                'error'
+            );
         }
     }
 
@@ -181,6 +212,8 @@ function lexhoy_despachos_algolia_page() {
     ?>
     <div class="wrap">
         <h1>Configuración de Algolia</h1>
+        
+        <?php settings_errors('lexhoy_despachos_algolia'); ?>
         
         <form method="post" action="options.php">
             <?php
@@ -243,11 +276,83 @@ function lexhoy_despachos_algolia_page() {
         <form method="post" action="">
             <?php wp_nonce_field('lexhoy_despachos_sync_from_algolia'); ?>
             <p>
-                <button type="submit" name="sync_from_algolia" class="button button-primary" onclick="return confirm('¿Estás seguro de que deseas sincronizar todos los despachos desde Algolia?');">
-                    Sincronizar desde Algolia
+                <button type="submit" name="sync_from_algolia" class="button button-primary">
+                    Probar sincronización con un registro
                 </button>
             </p>
         </form>
+
+        <?php if ($is_syncing): ?>
+            <?php
+            $cpt = new LexhoyDespachosCPT();
+            $result = $cpt->sync_all_from_algolia();
+            
+            if ($result['success']): ?>
+                <div class="notice notice-success">
+                    <p><strong>✅ <?php echo esc_html($result['message']); ?></strong></p>
+                    <p>Total de registros disponibles en Algolia: <?php echo esc_html($result['total_records']); ?></p>
+                    <div style="background: #f0f0f1; padding: 15px; margin: 10px 0; border-radius: 4px;">
+                        <h3>Registro sincronizado:</h3>
+                        <?php if (!empty($result['object'])): ?>
+                            <ul style="list-style: none; padding: 0;">
+                                <li><strong>ID de Algolia:</strong> <?php echo esc_html($result['object']['objectID']); ?></li>
+                                <li><strong>Nombre:</strong> <?php echo esc_html($result['object']['nombre']); ?></li>
+                                <li><strong>Localidad:</strong> <?php echo esc_html($result['object']['localidad'] ?? 'N/A'); ?></li>
+                                <li><strong>Provincia:</strong> <?php echo esc_html($result['object']['provincia'] ?? 'N/A'); ?></li>
+                                <li><strong>Áreas de práctica:</strong> <?php echo esc_html(implode(', ', $result['object']['areas_practica'] ?? [])); ?></li>
+                                <li><strong>Código Postal:</strong> <?php echo esc_html($result['object']['codigo_postal'] ?? 'N/A'); ?></li>
+                                <li><strong>Dirección:</strong> <?php echo esc_html($result['object']['direccion'] ?? 'N/A'); ?></li>
+                                <li><strong>Teléfono:</strong> <?php echo esc_html($result['object']['telefono'] ?? 'N/A'); ?></li>
+                                <li><strong>Email:</strong> <?php echo esc_html($result['object']['email'] ?? 'N/A'); ?></li>
+                                <li><strong>Web:</strong> <?php echo esc_html($result['object']['web'] ?? 'N/A'); ?></li>
+                                <li><strong>Estado:</strong> <?php echo esc_html($result['object']['estado'] ?? 'N/A'); ?></li>
+                                <li><strong>Última actualización:</strong> <?php echo esc_html($result['object']['ultima_actualizacion'] ?? 'N/A'); ?></li>
+                                <li><strong>Slug:</strong> <?php echo esc_html($result['object']['slug'] ?? 'N/A'); ?></li>
+                                <?php if (!empty($result['object']['horario'])): ?>
+                                    <li>
+                                        <strong>Horario:</strong>
+                                        <ul style="list-style: none; margin-left: 20px;">
+                                            <?php foreach ($result['object']['horario'] as $dia => $horas): ?>
+                                                <li><?php echo esc_html(ucfirst($dia)); ?>: <?php echo esc_html($horas ?: 'N/A'); ?></li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    </li>
+                                <?php endif; ?>
+                                <?php if (!empty($result['object']['redes_sociales'])): ?>
+                                    <li>
+                                        <strong>Redes Sociales:</strong>
+                                        <ul style="list-style: none; margin-left: 20px;">
+                                            <?php foreach ($result['object']['redes_sociales'] as $red => $url): ?>
+                                                <li><?php echo esc_html(ucfirst($red)); ?>: <?php echo esc_html($url ?: 'N/A'); ?></li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    </li>
+                                <?php endif; ?>
+                            </ul>
+                            <p><strong>ID del post en WordPress:</strong> <?php echo esc_html($result['post_id']); ?></p>
+                            <p><strong>Acción realizada:</strong> <?php echo esc_html($result['action']); ?></p>
+                            <p>
+                                <a href="<?php echo get_edit_post_link($result['post_id']); ?>" class="button button-primary">Ver/Editar el despacho</a>
+                                <a href="<?php echo get_permalink($result['post_id']); ?>" class="button button-secondary" target="_blank">Ver en el sitio</a>
+                            </p>
+                        <?php else: ?>
+                            <p>No se encontró ningún registro válido para sincronizar.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="notice notice-error">
+                    <p><strong>❌ Error en la sincronización:</strong></p>
+                    <p><?php echo esc_html($result['message']); ?></p>
+                    <p>Por favor, verifica:</p>
+                    <ul style="list-style: disc; margin-left: 20px;">
+                        <li>Que todas las credenciales de Algolia sean correctas</li>
+                        <li>Que el índice exista y contenga datos</li>
+                        <li>Que los datos en Algolia tengan el formato correcto</li>
+                    </ul>
+                </div>
+            <?php endif; ?>
+        <?php endif; ?>
 
         <hr>
 
