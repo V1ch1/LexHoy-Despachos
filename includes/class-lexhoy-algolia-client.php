@@ -204,7 +204,7 @@ class LexhoyAlgoliaClient {
         ];
 
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url . '?hitsPerPage=1');
+        curl_setopt($ch, CURLOPT_URL, $url . '?hitsPerPage=1000');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
@@ -264,28 +264,10 @@ class LexhoyAlgoliaClient {
             ];
         }
 
-        // Filtrar registros inválidos
-        $valid_hits = array_filter($data['hits'], function($hit) {
-            return !empty($hit['objectID']) && !empty($hit['nombre']);
-        });
-
-        if (empty($valid_hits)) {
-            error_log('LexHoy Despachos - No se encontraron registros válidos en Algolia');
-            return [
-                'success' => false,
-                'message' => 'No se encontraron registros válidos en Algolia',
-                'error' => 'no_valid_records'
-            ];
-        }
-
-        // Tomar el primer registro válido
-        $first_valid_hit = reset($valid_hits);
-        error_log('LexHoy Despachos - Registro válido encontrado: ' . print_r($first_valid_hit, true));
-
         return [
             'success' => true,
-            'object' => $first_valid_hit,
-            'total_records' => $data['nbHits'] ?? 0
+            'hits' => $data['hits'],
+            'total_records' => $data['nbHits'] ?? count($data['hits'])
         ];
     }
 
