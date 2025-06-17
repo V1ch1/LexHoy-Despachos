@@ -1,0 +1,147 @@
+/* Estilos para el formulario de despachos */
+
+.despacho-meta-box {
+  max-width: 100%;
+}
+
+.despacho-meta-box p {
+  margin-bottom: 15px;
+}
+
+.despacho-meta-box label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.despacho-meta-box label strong {
+  color: #d63638;
+}
+
+.despacho-meta-box input[type="text"],
+.despacho-meta-box input[type="email"],
+.despacho-meta-box input[type="tel"],
+.despacho-meta-box input[type="url"],
+.despacho-meta-box input[type="number"],
+.despacho-meta-box select,
+.despacho-meta-box textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.despacho-meta-box input[readonly] {
+  background-color: #f9f9f9;
+  color: #666;
+}
+
+.despacho-meta-box input:focus,
+.despacho-meta-box select:focus,
+.despacho-meta-box textarea:focus {
+  border-color: #2271b1;
+  box-shadow: 0 0 0 1px #2271b1;
+  outline: none;
+}
+
+.despacho-meta-box input[required] {
+  border-left: 3px solid #d63638;
+}
+
+.despacho-meta-box .description {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+  margin-top: 3px;
+  display: block;
+}
+
+.despacho-meta-box h4 {
+  margin: 20px 0 10px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #ddd;
+  color: #2271b1;
+  font-size: 16px;
+}
+
+/* Estilos para campos de horario */
+.despacho-meta-box .horario-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* Estilos para campos de redes sociales */
+.despacho-meta-box .redes-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* Estilos para checkbox */
+.despacho-meta-box input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+.despacho-meta-box label input[type="checkbox"] {
+  display: inline;
+  width: auto;
+}
+
+/* Mensajes de error */
+.notice-error ul {
+  margin: 5px 0;
+  padding-left: 20px;
+}
+
+.notice-error li {
+  margin-bottom: 3px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .despacho-meta-box .horario-fields,
+  .despacho-meta-box .redes-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Estilos para el estado de verificación */
+.despacho-meta-box .verification-status {
+  background: #f0f6fc;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.despacho-meta-box .verification-status label {
+  margin-bottom: 0;
+}
+
+/* Estilos para campos de fecha */
+.despacho-meta-box input[type="date"] {
+  width: 200px;
+}
+
+/* Estilos para campos numéricos */
+.despacho-meta-box input[type="number"] {
+  width: 150px;
+}
+
+/* Estilos para textareas */
+.despacho-meta-box textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Estilos para selects */
+.despacho-meta-box select {
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%2020%20height%2020%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M5%206l5%205%205-5%202%201-7%207-7-7%202-1z%22%20fill%3D%22%23555%22/%3E%3C/svg%3E");
+  background-position: right 5px top 55%;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  padding-right: 30px;
+}

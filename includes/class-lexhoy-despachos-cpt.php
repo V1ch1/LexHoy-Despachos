@@ -16,12 +16,27 @@ class LexhoyDespachosCPT {
         // Acciones para Algolia
         add_action('save_post_despacho', array($this, 'sync_to_algolia'), 10, 3);
         add_action('before_delete_post', array($this, 'delete_from_algolia'));
+        add_action('wp_trash_post', array($this, 'delete_from_algolia'));
+        add_action('trash_despacho', array($this, 'delete_from_algolia'));
+        add_action('untrash_post', array($this, 'restore_from_trash'));
         
         // Acción para sincronización programada
         add_action('lexhoy_despachos_sync_from_algolia', array($this, 'sync_all_from_algolia'));
 
         // Registrar taxonomía de áreas de práctica
         add_action('init', array($this, 'register_taxonomies'));
+        
+        // Mostrar notificación si no hay configuración de Algolia
+        add_action('admin_notices', array($this, 'show_algolia_config_notice'));
+        
+        // Cargar estilos CSS en el admin
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_styles'));
+        
+        // Forzar limpieza de reglas de reescritura en la activación
+        add_action('admin_init', array($this, 'maybe_flush_rewrite_rules'));
+        
+        // Agregar acción para limpiar reglas de reescritura manualmente
+        add_action('admin_post_flush_rewrite_rules', array($this, 'manual_flush_rewrite_rules'));
         
         // Inicializar cliente de Algolia
         $this->init_algolia_client();
@@ -69,7 +84,7 @@ class LexhoyDespachosCPT {
             'show_ui'           => true,
             'show_in_menu'      => true,
             'query_var'         => true,
-            'rewrite'           => array('slug' => 'despachos'),
+            'rewrite'           => array('slug' => 'abogado', 'with_front' => false),
             'capability_type'   => 'post',
             'has_archive'       => true,
             'hierarchical'      => false,
@@ -80,6 +95,37 @@ class LexhoyDespachosCPT {
         );
 
         register_post_type('despacho', $args);
+        
+        // Forzar limpieza de reglas de reescritura
+        $this->force_flush_rewrite_rules();
+    }
+
+    /**
+     * Forzar limpieza de reglas de reescritura
+     */
+    public function force_flush_rewrite_rules() {
+        // Marcar que se necesita limpiar las reglas
+        update_option('lexhoy_despachos_need_rewrite_flush', 'yes');
+        
+        // Limpiar las reglas inmediatamente si es posible
+        if (function_exists('flush_rewrite_rules')) {
+            // Limpiar reglas de reescritura
+            flush_rewrite_rules();
+            
+            // Limpiar caché de transients relacionados con rewrite
+            delete_transient('rewrite_rules');
+            
+            // Limpiar caché de opciones relacionadas
+            delete_option('rewrite_rules');
+            
+            // Forzar regeneración de reglas
+            global $wp_rewrite;
+            if ($wp_rewrite) {
+                $wp_rewrite->flush_rules();
+            }
+            
+            error_log('Reglas de reescritura limpiadas agresivamente para despachos');
+        }
     }
 
     /**
@@ -101,7 +147,6 @@ class LexhoyDespachosCPT {
      */
     public function render_meta_box($post) {
         // Obtener valores guardados
-        $object_id = get_post_meta($post->ID, '_despacho_object_id', true);
         $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
         $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
         $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
@@ -128,24 +173,22 @@ class LexhoyDespachosCPT {
         ?>
         <div class="despacho-meta-box">
             <p>
-                <label for="despacho_object_id">Object ID:</label><br>
-                <input type="text" id="despacho_object_id" name="despacho_object_id" 
-                       value="<?php echo esc_attr($object_id); ?>" class="widefat">
-            </p>
-            <p>
-                <label for="despacho_nombre">Nombre:</label><br>
+                <label for="despacho_nombre"><strong>Nombre: *</strong></label><br>
                 <input type="text" id="despacho_nombre" name="despacho_nombre" 
-                       value="<?php echo esc_attr($nombre); ?>" class="widefat">
+                       value="<?php echo esc_attr($nombre); ?>" class="widefat" required>
+                <span class="description">Nombre del despacho (obligatorio)</span>
             </p>
             <p>
-                <label for="despacho_localidad">Localidad:</label><br>
+                <label for="despacho_localidad"><strong>Localidad: *</strong></label><br>
                 <input type="text" id="despacho_localidad" name="despacho_localidad" 
-                       value="<?php echo esc_attr($localidad); ?>" class="widefat">
+                       value="<?php echo esc_attr($localidad); ?>" class="widefat" required>
+                <span class="description">Ciudad donde se encuentra el despacho (obligatorio)</span>
             </p>
             <p>
-                <label for="despacho_provincia">Provincia:</label><br>
+                <label for="despacho_provincia"><strong>Provincia: *</strong></label><br>
                 <input type="text" id="despacho_provincia" name="despacho_provincia" 
-                       value="<?php echo esc_attr($provincia); ?>" class="widefat">
+                       value="<?php echo esc_attr($provincia); ?>" class="widefat" required>
+                <span class="description">Provincia/estado (obligatorio)</span>
             </p>
             <p>
                 <label for="despacho_codigo_postal">Código Postal:</label><br>
@@ -158,24 +201,28 @@ class LexhoyDespachosCPT {
                        value="<?php echo esc_attr($direccion); ?>" class="widefat">
             </p>
             <p>
-                <label for="despacho_telefono">Teléfono:</label><br>
+                <label for="despacho_telefono"><strong>Teléfono: *</strong></label><br>
                 <input type="tel" id="despacho_telefono" name="despacho_telefono" 
-                       value="<?php echo esc_attr($telefono); ?>" class="widefat">
+                       value="<?php echo esc_attr($telefono); ?>" class="widefat" required>
+                <span class="description">Número de teléfono (obligatorio)</span>
             </p>
             <p>
-                <label for="despacho_email">Email:</label><br>
+                <label for="despacho_email"><strong>Email: *</strong></label><br>
                 <input type="email" id="despacho_email" name="despacho_email" 
-                       value="<?php echo esc_attr($email); ?>" class="widefat">
+                       value="<?php echo esc_attr($email); ?>" class="widefat" required>
+                <span class="description">Dirección de correo electrónico (obligatorio)</span>
             </p>
             <p>
                 <label for="despacho_web">Web:</label><br>
                 <input type="url" id="despacho_web" name="despacho_web" 
                        value="<?php echo esc_attr($web); ?>" class="widefat">
+                <span class="description">Sitio web del despacho (opcional)</span>
             </p>
             <p>
                 <label for="despacho_descripcion">Descripción:</label><br>
                 <textarea id="despacho_descripcion" name="despacho_descripcion" 
                           class="widefat" rows="3"><?php echo esc_textarea($descripcion); ?></textarea>
+                <span class="description">Descripción del despacho (opcional)</span>
             </p>
             <p>
                 <label for="despacho_estado_verificacion">Estado de Verificación:</label><br>
@@ -195,18 +242,20 @@ class LexhoyDespachosCPT {
             <p>
                 <label for="despacho_ultima_actualizacion">Última Actualización:</label><br>
                 <input type="text" id="despacho_ultima_actualizacion" name="despacho_ultima_actualizacion" 
-                       value="<?php echo esc_attr($ultima_actualizacion); ?>" class="widefat">
+                       value="<?php echo esc_attr($ultima_actualizacion); ?>" class="widefat" readonly>
+                <span class="description">Se actualiza automáticamente</span>
             </p>
             <p>
                 <label for="despacho_slug">Slug:</label><br>
                 <input type="text" id="despacho_slug" name="despacho_slug" 
                        value="<?php echo esc_attr($slug); ?>" class="widefat">
+                <span class="description">URL amigable (se genera automáticamente si está vacío)</span>
             </p>
             <p>
                 <label for="despacho_especialidades">Especialidades:</label><br>
                 <input type="text" id="despacho_especialidades" name="despacho_especialidades" 
                        value="<?php echo esc_attr($especialidades); ?>" class="widefat">
-                <span class="description">Separar por comas</span>
+                <span class="description">Separar por comas (opcional)</span>
             </p>
             
             <h4>Horario</h4>
@@ -220,6 +269,7 @@ class LexhoyDespachosCPT {
                     <input type="text" id="despacho_horario_<?php echo $dia; ?>" 
                            name="despacho_horario[<?php echo $dia; ?>]" 
                            value="<?php echo esc_attr($valor); ?>" class="widefat">
+                    <span class="description">Ej: 9:00-18:00 (opcional)</span>
                 </p>
                 <?php
             }
@@ -236,6 +286,7 @@ class LexhoyDespachosCPT {
                     <input type="url" id="despacho_redes_<?php echo $red; ?>" 
                            name="despacho_redes_sociales[<?php echo $red; ?>]" 
                            value="<?php echo esc_attr($valor); ?>" class="widefat">
+                    <span class="description">URL del perfil (opcional)</span>
                 </p>
                 <?php
             }
@@ -245,16 +296,19 @@ class LexhoyDespachosCPT {
                 <label for="despacho_experiencia">Experiencia:</label><br>
                 <textarea id="despacho_experiencia" name="despacho_experiencia" 
                           class="widefat" rows="3"><?php echo esc_textarea($experiencia); ?></textarea>
+                <span class="description">Años de experiencia o información adicional (opcional)</span>
             </p>
             <p>
                 <label for="despacho_tamaño">Tamaño del Despacho:</label><br>
                 <input type="text" id="despacho_tamaño" name="despacho_tamaño" 
                        value="<?php echo esc_attr($tamaño_despacho); ?>" class="widefat">
+                <span class="description">Ej: 5 abogados, pequeño, mediano, grande (opcional)</span>
             </p>
             <p>
                 <label for="despacho_año_fundacion">Año de Fundación:</label><br>
                 <input type="number" id="despacho_año_fundacion" name="despacho_año_fundacion" 
-                       value="<?php echo esc_attr($año_fundacion); ?>" class="widefat">
+                       value="<?php echo esc_attr($año_fundacion); ?>" class="widefat" min="1800" max="<?php echo date('Y'); ?>">
+                <span class="description">Año en que se fundó el despacho (opcional)</span>
             </p>
             <p>
                 <label for="despacho_estado_registro">Estado del Registro:</label><br>
@@ -290,9 +344,67 @@ class LexhoyDespachosCPT {
             return;
         }
 
+        // Verificar que es un despacho
+        if (get_post_type($post_id) !== 'despacho') {
+            return;
+        }
+
+        // Validar campos obligatorios
+        $required_fields = array(
+            'despacho_nombre' => 'Nombre',
+            'despacho_localidad' => 'Localidad',
+            'despacho_provincia' => 'Provincia',
+            'despacho_telefono' => 'Teléfono',
+            'despacho_email' => 'Email'
+        );
+
+        $errors = array();
+        foreach ($required_fields as $field => $label) {
+            if (empty($_POST[$field])) {
+                $errors[] = "El campo '$label' es obligatorio.";
+            }
+        }
+
+        // Si hay errores, mostrar mensaje y no guardar
+        if (!empty($errors)) {
+            // Agregar mensaje de error
+            add_action('admin_notices', function() use ($errors) {
+                echo '<div class="notice notice-error is-dismissible">';
+                echo '<p><strong>Error al guardar el despacho:</strong></p>';
+                echo '<ul>';
+                foreach ($errors as $error) {
+                    echo '<li>' . esc_html($error) . '</li>';
+                }
+                echo '</ul>';
+                echo '</div>';
+            });
+            
+            // No guardar el post si hay errores
+            return;
+        }
+
+        // Validar formato de email
+        if (!empty($_POST['despacho_email']) && !is_email($_POST['despacho_email'])) {
+            add_action('admin_notices', function() {
+                echo '<div class="notice notice-error is-dismissible">';
+                echo '<p><strong>Error:</strong> El formato del email no es válido.</p>';
+                echo '</div>';
+            });
+            return;
+        }
+
+        // Validar formato de URL web
+        if (!empty($_POST['despacho_web']) && !filter_var($_POST['despacho_web'], FILTER_VALIDATE_URL)) {
+            add_action('admin_notices', function() {
+                echo '<div class="notice notice-error is-dismissible">';
+                echo '<p><strong>Error:</strong> El formato de la URL web no es válido.</p>';
+                echo '</div>';
+            });
+            return;
+        }
+
         // Guardar datos
         $fields = array(
-            'despacho_object_id' => '_despacho_object_id',
             'despacho_nombre' => '_despacho_nombre',
             'despacho_localidad' => '_despacho_localidad',
             'despacho_provincia' => '_despacho_provincia',
@@ -303,7 +415,6 @@ class LexhoyDespachosCPT {
             'despacho_web' => '_despacho_web',
             'despacho_descripcion' => '_despacho_descripcion',
             'despacho_estado_verificacion' => '_despacho_estado_verificacion',
-            'despacho_is_verified' => '_despacho_is_verified',
             'despacho_ultima_actualizacion' => '_despacho_ultima_actualizacion',
             'despacho_slug' => '_despacho_slug',
             'despacho_especialidades' => '_despacho_especialidades',
@@ -313,11 +424,26 @@ class LexhoyDespachosCPT {
             'despacho_estado_registro' => '_despacho_estado_registro'
         );
 
-        foreach ($fields as $field => $meta_key) {
-            if (isset($_POST[$field])) {
-                update_post_meta($post_id, $meta_key, sanitize_text_field($_POST[$field]));
+        foreach ($fields as $post_field => $meta_field) {
+            if (isset($_POST[$post_field])) {
+                $value = sanitize_text_field($_POST[$post_field]);
+                
+                // Validaciones específicas
+                if ($post_field === 'despacho_email') {
+                    $value = sanitize_email($_POST[$post_field]);
+                } elseif ($post_field === 'despacho_web') {
+                    $value = esc_url_raw($_POST[$post_field]);
+                } elseif ($post_field === 'despacho_descripcion' || $post_field === 'despacho_experiencia') {
+                    $value = sanitize_textarea_field($_POST[$post_field]);
+                }
+                
+                update_post_meta($post_id, $meta_field, $value);
             }
         }
+
+        // Guardar checkbox de verificado
+        $is_verified = isset($_POST['despacho_is_verified']) ? '1' : '0';
+        update_post_meta($post_id, '_despacho_is_verified', $is_verified);
 
         // Guardar horario
         if (isset($_POST['despacho_horario']) && is_array($_POST['despacho_horario'])) {
@@ -335,6 +461,26 @@ class LexhoyDespachosCPT {
                 $redes_sociales[$red] = esc_url_raw($valor);
             }
             update_post_meta($post_id, '_despacho_redes_sociales', $redes_sociales);
+        }
+
+        // Actualizar última actualización automáticamente
+        update_post_meta($post_id, '_despacho_ultima_actualizacion', date('d-m-Y'));
+
+        // Generar slug automáticamente si está vacío
+        $slug = get_post_meta($post_id, '_despacho_slug', true);
+        if (empty($slug)) {
+            $nombre = get_post_meta($post_id, '_despacho_nombre', true);
+            if (!empty($nombre)) {
+                $slug = sanitize_title($nombre);
+                update_post_meta($post_id, '_despacho_slug', $slug);
+            }
+        }
+
+        // Generar Object ID automáticamente si no existe
+        $object_id = get_post_meta($post_id, '_despacho_object_id', true);
+        if (empty($object_id)) {
+            $object_id = 'despacho_' . $post_id . '_' . time();
+            update_post_meta($post_id, '_despacho_object_id', $object_id);
         }
     }
 
@@ -364,7 +510,9 @@ class LexhoyDespachosCPT {
             $index_name = get_option('lexhoy_despachos_algolia_index_name');
 
             if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
-                throw new Exception('Configuración incompleta de Algolia');
+                // En lugar de lanzar una excepción, solo registrar un error y continuar
+                error_log('Configuración incompleta de Algolia. El despacho se guardó localmente pero no se sincronizó con Algolia.');
+                return; // Salir sin hacer nada más
             }
 
             // Inicializar cliente Algolia
@@ -413,7 +561,8 @@ class LexhoyDespachosCPT {
         } catch (Exception $e) {
             error_log('Error al sincronizar con Algolia: ' . $e->getMessage());
             error_log('Stack trace: ' . $e->getTraceAsString());
-            throw $e;
+            // No lanzar la excepción para evitar que falle la creación del post
+            // throw $e;
         }
     }
 
@@ -426,30 +575,61 @@ class LexhoyDespachosCPT {
             return;
         }
 
-        // Verificar si el cliente de Algolia está inicializado
-        if (!$this->algolia_client) {
-            error_log('Error: Cliente de Algolia no inicializado');
+        try {
+            // Obtener configuración de Algolia
+            $app_id = get_option('lexhoy_despachos_algolia_app_id');
+            $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+            $index_name = get_option('lexhoy_despachos_algolia_index_name');
+
+            if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+                error_log('Configuración incompleta de Algolia. No se puede eliminar el despacho de Algolia.');
+                return;
+            }
+
+            // Obtener el object_id del despacho
+            $object_id = get_post_meta($post_id, '_despacho_object_id', true);
+            if (!$object_id) {
+                // Si no hay object_id, usar el post_id como fallback
+                $object_id = $post_id;
+            }
+
+            // Crear cliente de Algolia temporal
+            $client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
+
+            // Eliminar de Algolia usando el método del cliente
+            $result = $client->delete_object($index_name, $object_id);
+            
+            if ($result) {
+                error_log('Despacho eliminado exitosamente de Algolia - Post ID: ' . $post_id . ', Object ID: ' . $object_id);
+            } else {
+                error_log('Error al eliminar despacho de Algolia - Post ID: ' . $post_id . ', Object ID: ' . $object_id);
+            }
+
+        } catch (Exception $e) {
+            error_log('Error al eliminar de Algolia: ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
+        }
+    }
+
+    /**
+     * Restaurar desde la papelera - volver a sincronizar con Algolia
+     */
+    public function restore_from_trash($post_id) {
+        // Verificar si es un despacho
+        if (get_post_type($post_id) !== 'despacho') {
             return;
         }
 
-        $object_id = get_post_meta($post_id, '_despacho_object_id', true);
-        if (!$object_id) {
+        // Obtener el post
+        $post = get_post($post_id);
+        if (!$post) {
             return;
         }
 
-        // Eliminar de Algolia
-        $response = wp_remote_post($this->algolia_client->api_url . '/1/indexes/' . $this->algolia_client->index_name . '/objects/delete', array(
-            'headers' => array(
-                'X-Algolia-API-Key' => $this->algolia_client->admin_api_key,
-                'X-Algolia-Application-Id' => $this->algolia_client->app_id,
-                'Content-Type' => 'application/json'
-            ),
-            'body' => json_encode(array($object_id))
-        ));
-
-        if (is_wp_error($response)) {
-            error_log('Error al eliminar de Algolia: ' . $response->get_error_message());
-        }
+        // Sincronizar con Algolia
+        $this->sync_to_algolia($post_id, $post, true);
+        
+        error_log('Despacho restaurado y sincronizado con Algolia - Post ID: ' . $post_id);
     }
 
     /**
@@ -856,5 +1036,112 @@ class LexhoyDespachosCPT {
         );
 
         register_taxonomy('area_practica', array('despacho'), $args);
+    }
+
+    /**
+     * Mostrar notificación si no hay configuración de Algolia
+     */
+    public function show_algolia_config_notice() {
+        // Solo mostrar en páginas relacionadas con despachos
+        $screen = get_current_screen();
+        if (!$screen || !in_array($screen->id, array('despacho', 'edit-despacho'))) {
+            return;
+        }
+
+        // Mostrar mensaje de éxito si se limpiaron las reglas de reescritura
+        if (isset($_GET['rewrite_flushed']) && $_GET['rewrite_flushed'] === '1') {
+            ?>
+            <div class="notice notice-success is-dismissible">
+                <p>
+                    <strong>✅ Reglas de reescritura actualizadas</strong><br>
+                    Las URLs de los despachos ahora deberían funcionar correctamente sin el prefijo "/despacho/".
+                </p>
+            </div>
+            <?php
+        }
+
+        $app_id = get_option('lexhoy_despachos_algolia_app_id');
+        $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+        $index_name = get_option('lexhoy_despachos_algolia_index_name');
+
+        if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+            ?>
+            <div class="notice notice-warning is-dismissible">
+                <p>
+                    <strong>⚠️ Configuración de Algolia incompleta</strong><br>
+                    Para sincronizar los despachos con Algolia, necesitas configurar las credenciales en 
+                    <a href="<?php echo admin_url('edit.php?post_type=despacho&page=lexhoy-despachos-algolia'); ?>">Configuración de Algolia</a>.
+                    Los despachos se guardarán localmente pero no se sincronizarán con Algolia.
+                </p>
+            </div>
+            <?php
+        }
+
+        // Mostrar botón para limpiar reglas de reescritura si las URLs no funcionan correctamente
+        ?>
+        <div class="notice notice-info is-dismissible">
+            <p>
+                <strong>ℹ️ URLs de Despachos</strong><br>
+                Si las URLs de los despachos siguen mostrando "/despacho/" en lugar de ser directamente "/nombre-despacho", 
+                puedes limpiar las reglas de reescritura haciendo clic en el botón de abajo.
+            </p>
+            <p>
+                <a href="<?php echo wp_nonce_url(admin_url('admin-post.php?action=flush_rewrite_rules'), 'flush_rewrite_rules'); ?>" 
+                   class="button button-primary">
+                    Limpiar Reglas de Reescritura
+                </a>
+            </p>
+        </div>
+        <?php
+    }
+
+    /**
+     * Cargar estilos CSS en el admin
+     */
+    public function enqueue_admin_styles($hook) {
+        // Solo cargar en páginas de despachos
+        if (in_array($hook, array('post.php', 'post-new.php'))) {
+            $screen = get_current_screen();
+            if ($screen && $screen->post_type === 'despacho') {
+                wp_enqueue_style(
+                    'lexhoy-despachos-admin',
+                    LEXHOY_DESPACHOS_PLUGIN_URL . 'assets/css/lexhoy-despachos-admin.css',
+                    array(),
+                    LEXHOY_DESPACHOS_VERSION
+                );
+            }
+        }
+    }
+
+    /**
+     * Forzar limpieza de reglas de reescritura si es necesario
+     */
+    public function maybe_flush_rewrite_rules() {
+        if (get_option('lexhoy_despachos_need_rewrite_flush') === 'yes') {
+            flush_rewrite_rules();
+            delete_option('lexhoy_despachos_need_rewrite_flush');
+        }
+    }
+
+    /**
+     * Limpiar reglas de reescritura manualmente
+     */
+    public function manual_flush_rewrite_rules() {
+        // Verificar permisos
+        if (!current_user_can('manage_options')) {
+            wp_die('No tienes permisos para realizar esta acción.');
+        }
+
+        // Verificar nonce
+        if (!isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'flush_rewrite_rules')) {
+            wp_die('Verificación de seguridad fallida.');
+        }
+
+        // Limpiar las reglas de reescritura
+        flush_rewrite_rules();
+        
+        // Redirigir de vuelta con mensaje de éxito
+        wp_redirect(admin_url('edit.php?post_type=despacho&rewrite_flushed=1'));
+        exit;
     }
 } 

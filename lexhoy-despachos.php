@@ -55,6 +55,9 @@ function lexhoy_despachos_activate() {
     // Registrar CPT y limpiar las reglas de reescritura
     new LexhoyDespachosCPT();
     flush_rewrite_rules();
+    
+    // Marcar que se necesita limpiar las reglas de reescritura
+    update_option('lexhoy_despachos_need_rewrite_flush', 'yes');
 }
 register_activation_hook(__FILE__, 'lexhoy_despachos_activate');
 
