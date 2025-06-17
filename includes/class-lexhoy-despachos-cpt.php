@@ -135,6 +135,15 @@ class LexhoyDespachosCPT {
         $estado_verificacion = get_post_meta($post->ID, '_despacho_estado_verificacion', true);
         $is_verified = get_post_meta($post->ID, '_despacho_is_verified', true);
 
+        // NUEVOS CAMPOS
+        $especialidades = get_post_meta($post->ID, '_despacho_especialidades', true);
+        $horario = get_post_meta($post->ID, '_despacho_horario', true);
+        $redes_sociales = get_post_meta($post->ID, '_despacho_redes_sociales', true);
+        $experiencia = get_post_meta($post->ID, '_despacho_experiencia', true);
+        $tamano_despacho = get_post_meta($post->ID, '_despacho_tamaño', true);
+        $ano_fundacion = get_post_meta($post->ID, '_despacho_año_fundacion', true);
+        $estado_registro = get_post_meta($post->ID, '_despacho_estado_registro', true);
+
         // Nonce para seguridad
         wp_nonce_field('despacho_meta_box', 'despacho_meta_box_nonce');
         ?>
@@ -206,6 +215,61 @@ class LexhoyDespachosCPT {
                     Verificado
                 </label>
             </p>
+
+            <!-- NUEVO: Especialidades -->
+            <p>
+                <label for="despacho_especialidades">Especialidades (separadas por coma):</label><br>
+                <input type="text" id="despacho_especialidades" name="despacho_especialidades" value="<?php echo esc_attr($especialidades); ?>" class="widefat">
+            </p>
+
+            <!-- NUEVO: Horario -->
+            <h4>Horario</h4>
+            <div class="field-grid">
+                <?php
+                $dias = array('lunes','martes','miercoles','jueves','viernes','sabado','domingo');
+                foreach($dias as $dia){
+                    $valor = isset($horario[$dia]) ? $horario[$dia] : '';
+                    echo '<label for="despacho_horario_'.$dia.'">'.ucfirst($dia).':</label><input type="text" id="despacho_horario_'.$dia.'" name="despacho_horario['.$dia.']" value="'.esc_attr($valor).'" class="widefat">';
+                }
+                ?>
+            </div>
+
+            <!-- NUEVO: Redes Sociales -->
+            <h4>Redes Sociales</h4>
+            <div class="field-grid">
+                <?php
+                $redes = array('facebook','twitter','linkedin','instagram');
+                foreach($redes as $red){
+                    $valor = isset($redes_sociales[$red]) ? $redes_sociales[$red] : '';
+                    echo '<label for="despacho_red_'.$red.'">'.ucfirst($red).':</label><input type="url" id="despacho_red_'.$red.'" name="despacho_redes_sociales['.$red.']" value="'.esc_attr($valor).'" class="widefat">';
+                }
+                ?>
+            </div>
+
+            <!-- NUEVO: Experiencia -->
+            <p>
+                <label for="despacho_experiencia">Experiencia:</label><br>
+                <textarea id="despacho_experiencia" name="despacho_experiencia" class="widefat" rows="3"><?php echo esc_textarea($experiencia); ?></textarea>
+            </p>
+
+            <!-- NUEVO: Tamaño del despacho y Año fundación -->
+            <p>
+                <label for="despacho_tamaño">Tamaño del Despacho:</label><br>
+                <input type="text" id="despacho_tamaño" name="despacho_tamaño" value="<?php echo esc_attr($tamano_despacho); ?>" class="widefat">
+            </p>
+            <p>
+                <label for="despacho_año_fundacion">Año de Fundación:</label><br>
+                <input type="number" id="despacho_año_fundacion" name="despacho_año_fundacion" value="<?php echo esc_attr($ano_fundacion); ?>" class="widefat" min="1800" max="<?php echo date('Y'); ?>">
+            </p>
+
+            <!-- NUEVO: Estado de registro -->
+            <p>
+                <label for="despacho_estado_registro">Estado de Registro:</label><br>
+                <select id="despacho_estado_registro" name="despacho_estado_registro" class="widefat">
+                    <option value="activo" <?php selected($estado_registro, 'activo'); ?>>Activo</option>
+                    <option value="inactivo" <?php selected($estado_registro, 'inactivo'); ?>>Inactivo</option>
+                </select>
+            </p>
         </div>
         <?php
     }
@@ -271,7 +335,13 @@ class LexhoyDespachosCPT {
             'despacho_email' => '_despacho_email',
             'despacho_web' => '_despacho_web',
             'despacho_descripcion' => '_despacho_descripcion',
-            'despacho_estado_verificacion' => '_despacho_estado_verificacion'
+            'despacho_estado_verificacion' => '_despacho_estado_verificacion',
+            // NUEVOS CAMPOS
+            'despacho_especialidades' => '_despacho_especialidades',
+            'despacho_experiencia' => '_despacho_experiencia',
+            'despacho_tamaño' => '_despacho_tamaño',
+            'despacho_año_fundacion' => '_despacho_año_fundacion',
+            'despacho_estado_registro' => '_despacho_estado_registro'
         );
 
         foreach ($fields as $post_field => $meta_field) {
@@ -294,6 +364,19 @@ class LexhoyDespachosCPT {
         // Guardar checkbox de verificado
         $is_verified = isset($_POST['despacho_is_verified']) ? '1' : '0';
         update_post_meta($post_id, '_despacho_is_verified', $is_verified);
+
+        // Guardar horario (array de días)
+        if (isset($_POST['despacho_horario']) && is_array($_POST['despacho_horario'])) {
+            // Sanitizar cada valor
+            $horario_clean = array_map('sanitize_text_field', $_POST['despacho_horario']);
+            update_post_meta($post_id, '_despacho_horario', $horario_clean);
+        }
+
+        // Guardar redes sociales (array)
+        if (isset($_POST['despacho_redes_sociales']) && is_array($_POST['despacho_redes_sociales'])) {
+            $redes_clean = array_map('esc_url_raw', $_POST['despacho_redes_sociales']);
+            update_post_meta($post_id, '_despacho_redes_sociales', $redes_clean);
+        }
     }
 
     /**
@@ -350,6 +433,14 @@ class LexhoyDespachosCPT {
                 'descripcion' => isset($meta_data['_despacho_descripcion'][0]) ? $meta_data['_despacho_descripcion'][0] : '',
                 'estado_verificacion' => isset($meta_data['_despacho_estado_verificacion'][0]) ? $meta_data['_despacho_estado_verificacion'][0] : 'pendiente',
                 'isVerified' => isset($meta_data['_despacho_is_verified'][0]) ? $meta_data['_despacho_is_verified'][0] : false,
+                // NUEVOS CAMPOS
+                'especialidades' => isset($meta_data['_despacho_especialidades'][0]) ? array_map('trim', explode(',', $meta_data['_despacho_especialidades'][0])) : array(),
+                'horario' => isset($meta_data['_despacho_horario'][0]) ? maybe_unserialize($meta_data['_despacho_horario'][0]) : array(),
+                'redes_sociales' => isset($meta_data['_despacho_redes_sociales'][0]) ? maybe_unserialize($meta_data['_despacho_redes_sociales'][0]) : array(),
+                'experiencia' => isset($meta_data['_despacho_experiencia'][0]) ? $meta_data['_despacho_experiencia'][0] : '',
+                'tamaño_despacho' => isset($meta_data['_despacho_tamaño'][0]) ? $meta_data['_despacho_tamaño'][0] : '',
+                'año_fundacion' => isset($meta_data['_despacho_año_fundacion'][0]) ? intval($meta_data['_despacho_año_fundacion'][0]) : 0,
+                'estado_registro' => isset($meta_data['_despacho_estado_registro'][0]) ? $meta_data['_despacho_estado_registro'][0] : 'activo',
                 'ultima_actualizacion' => date('d-m-Y'),
                 'slug' => $post->post_name
             );
@@ -394,7 +485,7 @@ class LexhoyDespachosCPT {
                 $record = $this->algolia_client->get_object($this->algolia_client->get_index_name(), $object_id);
                 if ($record) {
                     // Actualizar post con datos de Algolia
-            $post_data = array(
+                    $post_data = array(
                         'ID' => $object_id,
                         'post_title' => $record['nombre'],
                         'post_content' => $record['descripcion'],
@@ -403,7 +494,7 @@ class LexhoyDespachosCPT {
                     
                     wp_update_post($post_data);
 
-            // Actualizar meta datos
+                    // Actualizar meta datos
                     update_post_meta($object_id, '_despacho_nombre', $record['nombre']);
                     update_post_meta($object_id, '_despacho_localidad', $record['localidad']);
                     update_post_meta($object_id, '_despacho_provincia', $record['provincia']);
@@ -415,6 +506,14 @@ class LexhoyDespachosCPT {
                     update_post_meta($object_id, '_despacho_descripcion', $record['descripcion']);
                     update_post_meta($object_id, '_despacho_estado_verificacion', $record['estado_verificacion']);
                     update_post_meta($object_id, '_despacho_is_verified', $record['isVerified']);
+                    // NUEVOS CAMPOS
+                    update_post_meta($object_id, '_despacho_especialidades', implode(',', $record['especialidades'] ?? array()));
+                    update_post_meta($object_id, '_despacho_horario', $record['horario'] ?? array());
+                    update_post_meta($object_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
+                    update_post_meta($object_id, '_despacho_experiencia', $record['experiencia'] ?? '');
+                    update_post_meta($object_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
+                    update_post_meta($object_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
+                    update_post_meta($object_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
                 }
             }
         } catch (Exception $e) {

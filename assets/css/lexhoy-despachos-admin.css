@@ -2,10 +2,26 @@
 
 .despacho-meta-box {
   max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
 }
 
 .despacho-meta-box p {
+  width: 48%;
+  margin-right: 4%;
+  box-sizing: border-box;
   margin-bottom: 15px;
+}
+
+/* Quitar margen derecho al segundo elemento de cada fila */
+.despacho-meta-box p:nth-child(2n) {
+  margin-right: 0;
+}
+
+/* Forzar ciertos campos a ocupar ancho completo si se les añade la clase .full-width */
+.despacho-meta-box p.full-width {
+  width: 100%;
+  margin-right: 0;
 }
 
 .despacho-meta-box label {
@@ -107,6 +123,10 @@
   .despacho-meta-box .redes-fields {
     grid-template-columns: 1fr;
   }
+  .despacho-meta-box p {
+    width: 100%;
+    margin-right: 0;
+  }
 }
 
 /* Estilos para el estado de verificación */
@@ -144,4 +164,26 @@
   background-repeat: no-repeat;
   background-size: 16px 16px;
   padding-right: 30px;
+}
+
+/* --------------------------------------------------
+   Nueva grilla etiqueta / input de 2 columnas
+   --------------------------------------------------*/
+.field-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  column-gap: 10px;
+  row-gap: 8px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.field-grid label {
+  margin-bottom: 0;
+}
+
+@media (max-width: 768px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
 }

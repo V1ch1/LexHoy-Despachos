@@ -44,39 +44,38 @@ get_header(); ?>
                         $web = get_post_meta(get_the_ID(), '_despacho_web', true);
                         $descripcion = get_post_meta(get_the_ID(), '_despacho_descripcion', true);
                         $especialidades = get_post_meta(get_the_ID(), '_despacho_especialidades', true);
+                        $especialidades_array = array_filter(array_map('trim', explode(',', $especialidades)));
                         $horario = get_post_meta(get_the_ID(), '_despacho_horario', true);
                         $experiencia = get_post_meta(get_the_ID(), '_despacho_experiencia', true);
                         $tamaño_despacho = get_post_meta(get_the_ID(), '_despacho_tamaño', true);
                         $año_fundacion = get_post_meta(get_the_ID(), '_despacho_año_fundacion', true);
                         $is_verified = get_post_meta(get_the_ID(), '_despacho_is_verified', true);
+                        $redes_sociales = get_post_meta(get_the_ID(), '_despacho_redes_sociales', true);
+                        // Obtener áreas de práctica (taxonomía)
+                        $areas_practica = wp_get_post_terms(get_the_ID(), 'area_practica');
                         ?>
                         
                         <!-- Información de contacto -->
                         <div class="despacho-contact">
                             <h3>Información de Contacto</h3>
-                            <div class="contact-details">
+                            <div class="contact-details definition-grid">
                                 <?php if ($localidad && $provincia) : ?>
-                                    <p><strong>Ubicación:</strong> <?php echo esc_html($localidad . ', ' . $provincia); ?></p>
+                                    <span class="def-label">Ubicación:</span><span class="def-value"><?php echo esc_html($localidad . ', ' . $provincia); ?></span>
                                 <?php endif; ?>
-                                
                                 <?php if ($direccion) : ?>
-                                    <p><strong>Dirección:</strong> <?php echo esc_html($direccion); ?></p>
+                                    <span class="def-label">Dirección:</span><span class="def-value"><?php echo esc_html($direccion); ?></span>
                                 <?php endif; ?>
-                                
                                 <?php if ($codigo_postal) : ?>
-                                    <p><strong>Código Postal:</strong> <?php echo esc_html($codigo_postal); ?></p>
+                                    <span class="def-label">Código Postal:</span><span class="def-value"><?php echo esc_html($codigo_postal); ?></span>
                                 <?php endif; ?>
-                                
                                 <?php if ($telefono) : ?>
-                                    <p><strong>Teléfono:</strong> <a href="tel:<?php echo esc_attr($telefono); ?>"><?php echo esc_html($telefono); ?></a></p>
+                                    <span class="def-label">Teléfono:</span><span class="def-value"><a href="tel:<?php echo esc_attr($telefono); ?>"><?php echo esc_html($telefono); ?></a></span>
                                 <?php endif; ?>
-                                
                                 <?php if ($email) : ?>
-                                    <p><strong>Email:</strong> <a href="mailto:<?php echo esc_attr($email); ?>"><?php echo esc_html($email); ?></a></p>
+                                    <span class="def-label">Email:</span><span class="def-value"><a href="mailto:<?php echo esc_attr($email); ?>"><?php echo esc_html($email); ?></a></span>
                                 <?php endif; ?>
-                                
                                 <?php if ($web) : ?>
-                                    <p><strong>Sitio Web:</strong> <a href="<?php echo esc_url($web); ?>" target="_blank" rel="noopener"><?php echo esc_html($web); ?></a></p>
+                                    <span class="def-label">Sitio Web:</span><span class="def-value"><a href="<?php echo esc_url($web); ?>" target="_blank" rel="noopener"><?php echo esc_html($web); ?></a></span>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -89,40 +88,72 @@ get_header(); ?>
                             </div>
                         <?php endif; ?>
 
+                        <!-- Áreas de práctica -->
+                        <?php if ($areas_practica) : ?>
+                            <div class="despacho-areas">
+                                <h3>Áreas de Práctica</h3>
+                                <ul class="two-col-grid">
+                                    <?php foreach ($areas_practica as $area) : ?>
+                                        <li><a href="<?php echo get_term_link($area); ?>"><?php echo esc_html($area->name); ?></a></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
+
                         <!-- Especialidades -->
-                        <?php if ($especialidades) : ?>
+                        <?php if (!empty($especialidades_array)) : ?>
                             <div class="despacho-specialties">
                                 <h3>Especialidades</h3>
-                                <p><?php echo esc_html($especialidades); ?></p>
+                                <ul class="two-col-grid">
+                                    <?php foreach ($especialidades_array as $esp) : ?>
+                                        <li><?php echo esc_html($esp); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Horario -->
+                        <?php if ($horario && is_array($horario)) : ?>
+                            <div class="despacho-horario">
+                                <h3>Horario de Atención</h3>
+                                <div class="definition-grid">
+                                    <?php foreach ($horario as $dia => $valor) : ?>
+                                        <?php if ($valor) : ?>
+                                            <span class="def-label"><?php echo ucfirst($dia); ?>:</span><span class="def-value"><?php echo esc_html($valor); ?></span>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Redes sociales -->
+                        <?php if ($redes_sociales && is_array($redes_sociales)) : ?>
+                            <div class="despacho-redes">
+                                <h3>Redes Sociales</h3>
+                                <div class="definition-grid">
+                                    <?php foreach ($redes_sociales as $red => $url) : ?>
+                                        <?php if ($url) : ?>
+                                            <span class="def-label"><?php echo ucfirst($red); ?>:</span><span class="def-value"><a href="<?php echo esc_url($url); ?>" target="_blank" rel="noopener"><span class="dashicons dashicons-<?php echo esc_attr($red); ?>"></span> <?php echo ucfirst($red); ?></a></span>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </div>
                             </div>
                         <?php endif; ?>
 
                         <!-- Información adicional -->
                         <div class="despacho-details">
                             <h3>Información Adicional</h3>
-                            <div class="details-grid">
-                                <?php if ($horario) : ?>
-                                    <div class="detail-item">
-                                        <strong>Horario:</strong> <?php echo esc_html($horario); ?>
-                                    </div>
-                                <?php endif; ?>
-                                
+                            <div class="definition-grid">
                                 <?php if ($experiencia) : ?>
-                                    <div class="detail-item">
-                                        <strong>Experiencia:</strong> <?php echo esc_html($experiencia); ?>
-                                    </div>
+                                    <span class="def-label">Experiencia:</span><span class="def-value"><?php echo esc_html($experiencia); ?></span>
                                 <?php endif; ?>
                                 
                                 <?php if ($tamaño_despacho) : ?>
-                                    <div class="detail-item">
-                                        <strong>Tamaño del Despacho:</strong> <?php echo esc_html($tamaño_despacho); ?>
-                                    </div>
+                                    <span class="def-label">Tamaño del Despacho:</span><span class="def-value"><?php echo esc_html($tamaño_despacho); ?></span>
                                 <?php endif; ?>
                                 
                                 <?php if ($año_fundacion) : ?>
-                                    <div class="detail-item">
-                                        <strong>Año de Fundación:</strong> <?php echo esc_html($año_fundacion); ?>
-                                    </div>
+                                    <span class="def-label">Año de Fundación:</span><span class="def-value"><?php echo esc_html($año_fundacion); ?></span>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -281,6 +312,47 @@ get_header(); ?>
     .details-grid {
         grid-template-columns: 1fr;
     }
+}
+
+.despacho-info ul.two-col-grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 1rem;
+}
+
+.despacho-info ul.two-col-grid li {
+    margin: 0;
+}
+
+@media (max-width: 768px) {
+    .despacho-info ul.two-col-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Nueva definición grid label/valor */
+.definition-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    row-gap: 0.4rem;
+    column-gap: 1rem;
+    margin: 0;
+}
+
+.definition-grid .def-label {
+    font-weight: 600;
+}
+
+.definition-grid .def-value a {
+    color: #007cba;
+    text-decoration: none;
+}
+
+.definition-grid .def-value a:hover {
+    text-decoration: underline;
 }
 </style>
 
