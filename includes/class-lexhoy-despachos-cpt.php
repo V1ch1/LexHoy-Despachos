@@ -224,24 +224,24 @@ class LexhoyDespachosCPT {
 
             <!-- NUEVO: Horario -->
             <h4>Horario</h4>
-            <div class="field-grid">
+            <div class="horario-pairs">
                 <?php
                 $dias = array('lunes','martes','miercoles','jueves','viernes','sabado','domingo');
                 foreach($dias as $dia){
                     $valor = isset($horario[$dia]) ? $horario[$dia] : '';
-                    echo '<label for="despacho_horario_'.$dia.'">'.ucfirst($dia).':</label><input type="text" id="despacho_horario_'.$dia.'" name="despacho_horario['.$dia.']" value="'.esc_attr($valor).'" class="widefat">';
+                    echo '<div class="pair"><label for="despacho_horario_'.$dia.'">'.ucfirst($dia).':</label><input type="text" id="despacho_horario_'.$dia.'" name="despacho_horario['.$dia.']" value="'.esc_attr($valor).'" class="widefat"></div>';
                 }
                 ?>
             </div>
 
             <!-- NUEVO: Redes Sociales -->
             <h4>Redes Sociales</h4>
-            <div class="field-grid">
+            <div class="redes-pairs">
                 <?php
                 $redes = array('facebook','twitter','linkedin','instagram');
                 foreach($redes as $red){
                     $valor = isset($redes_sociales[$red]) ? $redes_sociales[$red] : '';
-                    echo '<label for="despacho_red_'.$red.'">'.ucfirst($red).':</label><input type="url" id="despacho_red_'.$red.'" name="despacho_redes_sociales['.$red.']" value="'.esc_attr($valor).'" class="widefat">';
+                    echo '<div class="pair"><label for="despacho_red_'.$red.'">'.ucfirst($red).':</label><input type="url" id="despacho_red_'.$red.'" name="despacho_redes_sociales['.$red.']" value="'.esc_attr($valor).'" class="widefat"></div>';
                 }
                 ?>
             </div>
@@ -270,6 +270,24 @@ class LexhoyDespachosCPT {
                     <option value="inactivo" <?php selected($estado_registro, 'inactivo'); ?>>Inactivo</option>
                 </select>
             </p>
+
+            <!-- NUEVO: Áreas de Práctica -->
+            <h4>Áreas de Práctica</h4>
+            <div class="areas-checkboxes">
+                <?php
+                // Obtener todas las áreas (taxonomía area_practica)
+                $all_areas = get_terms(array(
+                    'taxonomy' => 'area_practica',
+                    'hide_empty' => false,
+                ));
+                // Áreas seleccionadas para este despacho
+                $selected_areas = wp_get_post_terms($post->ID, 'area_practica', array('fields' => 'ids'));
+                foreach ($all_areas as $area) {
+                    $checked = in_array($area->term_id, $selected_areas) ? 'checked' : '';
+                    echo '<label><input type="checkbox" name="despacho_areas_practica[]" value="'.esc_attr($area->term_id).'" '.$checked.'> '.esc_html($area->name).'</label>';
+                }
+                ?>
+            </div>
         </div>
         <?php
     }
@@ -364,6 +382,15 @@ class LexhoyDespachosCPT {
         // Guardar checkbox de verificado
         $is_verified = isset($_POST['despacho_is_verified']) ? '1' : '0';
         update_post_meta($post_id, '_despacho_is_verified', $is_verified);
+
+        // Guardar áreas de práctica (taxonomía)
+        if (isset($_POST['despacho_areas_practica'])) {
+            $area_ids = array_map('intval', (array) $_POST['despacho_areas_practica']);
+            wp_set_post_terms($post_id, $area_ids, 'area_practica', false);
+        } else {
+            // Si no hay selección, quitar términos existentes
+            wp_set_post_terms($post_id, array(), 'area_practica', false);
+        }
 
         // Guardar horario (array de días)
         if (isset($_POST['despacho_horario']) && is_array($_POST['despacho_horario'])) {
@@ -514,6 +541,23 @@ class LexhoyDespachosCPT {
                     update_post_meta($object_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
                     update_post_meta($object_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
                     update_post_meta($object_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
+
+                    // Sincronizar áreas de práctica (crear términos si no existen)
+                    if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
+                        $term_ids = array();
+                        foreach ($record['areas_practica'] as $area_name) {
+                            $term = term_exists($area_name, 'area_practica');
+                            if (!$term) {
+                                $term = wp_insert_term($area_name, 'area_practica');
+                            }
+                            if (!is_wp_error($term)) {
+                                $term_ids[] = intval($term['term_id']);
+                            }
+                        }
+                        if ($term_ids) {
+                            wp_set_post_terms($object_id, $term_ids, 'area_practica', false);
+                        }
+                    }
                 }
             }
         } catch (Exception $e) {

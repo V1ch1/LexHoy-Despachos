@@ -187,3 +187,36 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Áreas de práctica en fila */
+.despacho-meta-box .areas-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-bottom: 15px;
+}
+
+.despacho-meta-box .areas-checkboxes label {
+  margin: 0;
+}
+
+/* Horario y Redes en fila */
+.despacho-meta-box .horario-pairs,
+.despacho-meta-box .redes-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-bottom: 15px;
+}
+
+.despacho-meta-box .horario-pairs .pair,
+.despacho-meta-box .redes-pairs .pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.despacho-meta-box .horario-pairs label,
+.despacho-meta-box .redes-pairs label {
+  margin-bottom: 0;
+}
