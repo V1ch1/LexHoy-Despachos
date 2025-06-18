@@ -36,6 +36,10 @@ class LexhoyDespachosCPT {
         // Acción para sincronización programada
         add_action('lexhoy_despachos_sync_from_algolia', array($this, 'sync_all_from_algolia'));
 
+        // NUEVO: menú y acción de importación manual de un despacho
+        add_action('admin_menu', array($this, 'register_import_submenu'));
+        add_action('admin_post_lexhoy_import_one_despacho', array($this, 'handle_import_one_despacho'));
+
         // Registrar taxonomía de áreas de práctica
         add_action('init', array($this, 'register_taxonomies'));
         
@@ -511,36 +515,66 @@ class LexhoyDespachosCPT {
             if ($this->algolia_client) {
                 $record = $this->algolia_client->get_object($this->algolia_client->get_index_name(), $object_id);
                 if ($record) {
-                    // Actualizar post con datos de Algolia
-                    $post_data = array(
-                        'ID' => $object_id,
-                        'post_title' => $record['nombre'],
-                        'post_content' => $record['descripcion'],
-                        'post_name' => $record['slug']
-                    );
-                    
-                    wp_update_post($post_data);
+                    // Determinar slug único
+                    $slug = sanitize_title($record['slug'] ?? $record['nombre']);
 
-                    // Actualizar meta datos
-                    update_post_meta($object_id, '_despacho_nombre', $record['nombre']);
-                    update_post_meta($object_id, '_despacho_localidad', $record['localidad']);
-                    update_post_meta($object_id, '_despacho_provincia', $record['provincia']);
-                    update_post_meta($object_id, '_despacho_codigo_postal', $record['codigo_postal']);
-                    update_post_meta($object_id, '_despacho_direccion', $record['direccion']);
-                    update_post_meta($object_id, '_despacho_telefono', $record['telefono']);
-                    update_post_meta($object_id, '_despacho_email', $record['email']);
-                    update_post_meta($object_id, '_despacho_web', $record['web']);
-                    update_post_meta($object_id, '_despacho_descripcion', $record['descripcion']);
-                    update_post_meta($object_id, '_despacho_estado_verificacion', $record['estado_verificacion']);
-                    update_post_meta($object_id, '_despacho_is_verified', $record['isVerified']);
+                    // ¿Existe ya un despacho con este slug?
+                    $existing = get_posts(array(
+                        'post_type'   => 'despacho',
+                        'name'        => $slug,
+                        'post_status' => 'any',
+                        'numberposts' => 1,
+                        'fields'      => 'ids'
+                    ));
+
+                    if ($existing) {
+                        $post_id = (int) $existing[0];
+                    } else {
+                        // Crear nuevo post
+                        $post_id = wp_insert_post(array(
+                            'post_type'   => 'despacho',
+                            'post_title'  => $record['nombre'] ?? 'Despacho sin título',
+                            'post_content'=> $record['descripcion'] ?? '',
+                            'post_status' => 'publish',
+                            'post_name'   => $slug
+                        ));
+                    }
+
+                    // Verificar que se obtuvo un ID válido
+                    if (is_wp_error($post_id) || $post_id <= 0) {
+                        throw new Exception('No se pudo crear/obtener el post de WordPress.');
+                    }
+
+                    // Guardar meta para mapear con Algolia
+                    update_post_meta($post_id, '_algolia_object_id', $object_id);
+
+                    // Actualizar post si ya existía (título, contenido, etc.)
+                    wp_update_post(array(
+                        'ID'          => $post_id,
+                        'post_title'  => $record['nombre'] ?? 'Despacho sin título',
+                        'post_content'=> $record['descripcion'] ?? ''
+                    ));
+
+                    // Actualizar meta datos restantes
+                    update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
+                    update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
+                    update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
+                    update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
+                    update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
+                    update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
+                    update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
+                    update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
+                    update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
+                    update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
+                    update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? 0);
                     // NUEVOS CAMPOS
-                    update_post_meta($object_id, '_despacho_especialidades', implode(',', $record['especialidades'] ?? array()));
-                    update_post_meta($object_id, '_despacho_horario', $record['horario'] ?? array());
-                    update_post_meta($object_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
-                    update_post_meta($object_id, '_despacho_experiencia', $record['experiencia'] ?? '');
-                    update_post_meta($object_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
-                    update_post_meta($object_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
-                    update_post_meta($object_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
+                    update_post_meta($post_id, '_despacho_especialidades', isset($record['especialidades']) && is_array($record['especialidades']) ? implode(',', $record['especialidades']) : '');
+                    update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
+                    update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
+                    update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
+                    update_post_meta($post_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
+                    update_post_meta($post_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
+                    update_post_meta($post_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
 
                     // Sincronizar áreas de práctica (crear términos si no existen)
                     if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
@@ -555,7 +589,7 @@ class LexhoyDespachosCPT {
                             }
                         }
                         if ($term_ids) {
-                            wp_set_post_terms($object_id, $term_ids, 'area_practica', false);
+                            wp_set_post_terms($post_id, $term_ids, 'area_practica', false);
                         }
                     }
                 }
@@ -735,5 +769,90 @@ class LexhoyDespachosCPT {
             return home_url('/' . $post->post_name . '/');
         }
         return $post_link;
+    }
+
+    /**
+     * Registrar submenú para importar un despacho desde Algolia
+     */
+    public function register_import_submenu() {
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Importar un Despacho',
+            'Importar un Despacho',
+            'manage_options',
+            'lexhoy-despachos-import-one',
+            array($this, 'render_import_page')
+        );
+    }
+
+    /**
+     * Renderizar la página de importación
+     */
+    public function render_import_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('No tienes permisos suficientes para acceder a esta página.'));
+        }
+
+        // Comprobar mensajes
+        $mensaje = isset($_GET['mensaje']) ? sanitize_text_field($_GET['mensaje']) : '';
+
+        echo '<div class="wrap">';
+        echo '<h1>Importar un Despacho desde Algolia</h1>';
+
+        if ($mensaje === 'ok') {
+            echo '<div class="notice notice-success is-dismissible"><p>Despacho importado correctamente.</p></div>';
+        } elseif ($mensaje === 'error') {
+            echo '<div class="notice notice-error is-dismissible"><p>No se pudo importar el despacho. Revisa los registros de error para más detalles.</p></div>';
+        }
+
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        wp_nonce_field('lexhoy_import_one_despacho');
+        echo '<input type="hidden" name="action" value="lexhoy_import_one_despacho" />';
+        submit_button('Importar primer despacho');
+        echo '</form>';
+        echo '</div>';
+    }
+
+    /**
+     * Manejar la importación de un despacho desde Algolia
+     */
+    public function handle_import_one_despacho() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('No tienes permisos suficientes para realizar esta acción.'));
+        }
+
+        check_admin_referer('lexhoy_import_one_despacho');
+
+        $redirect_url = admin_url('edit.php?post_type=despacho&page=lexhoy-despachos-import-one');
+
+        try {
+            if (!$this->algolia_client) {
+                throw new Exception('Cliente de Algolia no inicializado.');
+            }
+
+            // Obtener el primer registro de Algolia
+            $index_name = $this->algolia_client->get_index_name();
+            $search_result = $this->algolia_client->search($index_name, '', array('hitsPerPage' => 1));
+
+            if (!$search_result || empty($search_result['hits'])) {
+                throw new Exception('No se encontró ningún registro en Algolia.');
+            }
+
+            $first_record = $search_result['hits'][0];
+            if (!isset($first_record['objectID'])) {
+                throw new Exception('El registro no tiene un objectID.');
+            }
+
+            // Sincronizar usando el método existente
+            $this->sync_from_algolia($first_record['objectID']);
+
+            // Redirigir con éxito
+            wp_redirect(add_query_arg('mensaje', 'ok', $redirect_url));
+            exit;
+        } catch (Exception $e) {
+            error_log('Error al importar un despacho: ' . $e->getMessage());
+            wp_redirect(add_query_arg('mensaje', 'error', $redirect_url));
+            exit;
+        }
     }
 } 
