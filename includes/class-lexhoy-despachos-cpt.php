@@ -288,7 +288,7 @@ class LexhoyDespachosCPT {
                 $selected_areas = wp_get_post_terms($post->ID, 'area_practica', array('fields' => 'ids'));
                 foreach ($all_areas as $area) {
                     $checked = in_array($area->term_id, $selected_areas) ? 'checked' : '';
-                    echo '<label><input type="checkbox" name="despacho_areas_practica[]" value="'.esc_attr($area->term_id).'" '.$checked.'> '.esc_html($area->name).'</label>';
+                    echo '<label><input type="checkbox" name="tax_input[area_practica][]" value="'.esc_attr($area->term_id).'" '.$checked.'> '.esc_html($area->name).'</label>';
                 }
                 ?>
             </div>
@@ -300,8 +300,10 @@ class LexhoyDespachosCPT {
      * Guardar meta boxes
      */
     public function save_meta_boxes($post_id) {
+        error_log('LexHoy DEBUG save_meta_boxes llamado para post ' . $post_id);
         // Verificar nonce
         if (!isset($_POST['despacho_meta_box_nonce']) || !wp_verify_nonce($_POST['despacho_meta_box_nonce'], 'despacho_meta_box')) {
+            error_log('LexHoy DEBUG nonce inválido');
             return;
         }
 
@@ -328,11 +330,13 @@ class LexhoyDespachosCPT {
         foreach ($required_fields as $field => $label) {
             if (empty($_POST[$field])) {
                 $errors[] = "El campo '$label' es obligatorio.";
+                error_log('LexHoy DEBUG campo requerido vacío: ' . $field);
             }
         }
 
         // Si hay errores, mostrar mensaje y no guardar
         if (!empty($errors)) {
+            error_log('LexHoy DEBUG errores de validación. No se guarda.');
             add_action('admin_notices', function() use ($errors) {
                 echo '<div class="notice notice-error is-dismissible">';
                 echo '<p><strong>Error al guardar el despacho:</strong></p>';
@@ -387,14 +391,7 @@ class LexhoyDespachosCPT {
         $is_verified = isset($_POST['despacho_is_verified']) ? '1' : '0';
         update_post_meta($post_id, '_despacho_is_verified', $is_verified);
 
-        // Guardar áreas de práctica (taxonomía)
-        if (isset($_POST['despacho_areas_practica'])) {
-            $area_ids = array_map('intval', (array) $_POST['despacho_areas_practica']);
-            wp_set_post_terms($post_id, $area_ids, 'area_practica', false);
-        } else {
-            // Si no hay selección, quitar términos existentes
-            wp_set_post_terms($post_id, array(), 'area_practica', false);
-        }
+        // Ya no gestionamos manualmente las áreas de práctica; WordPress las manejará con tax_input.
 
         // Guardar horario (array de días)
         if (isset($_POST['despacho_horario']) && is_array($_POST['despacho_horario'])) {
@@ -408,6 +405,9 @@ class LexhoyDespachosCPT {
             $redes_clean = array_map('esc_url_raw', $_POST['despacho_redes_sociales']);
             update_post_meta($post_id, '_despacho_redes_sociales', $redes_clean);
         }
+
+        // Nota: no actualizamos el título/slug aquí para evitar recursión infinita.
+        error_log('LexHoy DEBUG guardado completo para ' . $post_id);
     }
 
     /**
@@ -450,8 +450,15 @@ class LexhoyDespachosCPT {
             $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
             
             // Preparar datos para Algolia
+            $object_id_algolia = get_post_meta($post_id, '_algolia_object_id', true);
+            if (empty($object_id_algolia)) {
+                // Si no existe, usar el ID del post y guardarlo para futuras referencias
+                $object_id_algolia = $post_id;
+                update_post_meta($post_id, '_algolia_object_id', $object_id_algolia);
+            }
+
             $record = array(
-                'objectID' => $post_id,
+                'objectID' => $object_id_algolia,
                 'nombre' => get_the_title($post_id),
                 'localidad' => isset($meta_data['_despacho_localidad'][0]) ? $meta_data['_despacho_localidad'][0] : '',
                 'provincia' => isset($meta_data['_despacho_provincia'][0]) ? $meta_data['_despacho_provincia'][0] : '',

@@ -322,7 +322,7 @@ class LexhoyAlgoliaClient {
             
             curl_close($ch);
 
-            if ($http_code !== 200) {
+            if ($http_code !== 200 && $http_code !== 201) {
                 error_log('Error de Algolia (HTTP ' . $http_code . '): ' . $response);
                 throw new Exception('Error de Algolia (HTTP ' . $http_code . ')');
             }
