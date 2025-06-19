@@ -16,9 +16,13 @@ class LexhoyDespachosCPT {
      * Constructor
      */
     public function __construct() {
+        // Test de inicialización
+        $this->custom_log("=== LexHoy CONSTRUCTOR: Clase inicializada ===");
+        
         add_action('init', array($this, 'register_post_type'));
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
-        add_action('save_post', array($this, 'save_meta_boxes'));
+        add_action('save_post', array($this, 'save_meta_boxes'), 1, 1);
+        add_action('save_post', array($this, 'test_save_post_hook'), 1, 1);
         
         // Redirecciones para URLs limpias
         add_action('template_redirect', array($this, 'handle_clean_urls'));
@@ -27,7 +31,7 @@ class LexhoyDespachosCPT {
         add_filter('post_type_link', array($this, 'filter_post_type_link'), 10, 2);
         
         // Acciones para Algolia
-        add_action('save_post_despacho', array($this, 'sync_to_algolia'), 10, 3);
+        add_action('save_post_despacho', array($this, 'sync_to_algolia'), 20, 3);
         add_action('before_delete_post', array($this, 'delete_from_algolia'));
         add_action('wp_trash_post', array($this, 'delete_from_algolia'));
         add_action('trash_despacho', array($this, 'delete_from_algolia'));
@@ -51,6 +55,21 @@ class LexhoyDespachosCPT {
         
         // Inicializar cliente de Algolia
         $this->init_algolia_client();
+
+        // Nuevo: disparar sincronización cuando un despacho se publica
+        add_action(
+            'transition_post_status',
+            function ( $new_status, $old_status, $post ) {
+                if ( $post->post_type === 'despacho' && $new_status === 'publish' ) {
+                    ( new LexhoyDespachosCPT )->sync_to_algolia( $post->ID, $post, true );
+                }
+            },
+            10,
+            3
+        );
+
+        // Evitar bucle infinito entre /despacho/slug y /slug
+        add_filter('redirect_canonical', array($this, 'prevent_canonical_redirect_for_despachos'), 10, 2);
     }
 
     /**
@@ -297,46 +316,75 @@ class LexhoyDespachosCPT {
     }
 
     /**
+     * Test para verificar que el hook save_post funciona
+     */
+    public function test_save_post_hook($post_id) {
+        $this->custom_log("=== LexHoy TEST: save_post hook ejecutado para post {$post_id} ===");
+        $post = get_post($post_id);
+        if ($post) {
+            $this->custom_log("LexHoy TEST: Post type = {$post->post_type}");
+        }
+    }
+
+    /**
+     * Sistema de logging personalizado
+     */
+    private function custom_log($message) {
+        $log_file = ABSPATH . 'wp-content/lexhoy-debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $log_entry = "[{$timestamp}] {$message}" . PHP_EOL;
+        file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+    }
+
+    /**
      * Guardar meta boxes
      */
     public function save_meta_boxes($post_id) {
-        error_log('LexHoy DEBUG save_meta_boxes llamado para post ' . $post_id);
+        $this->custom_log('=== LexHoy DEBUG save_meta_boxes INICIO para post ' . $post_id . ' ===');
+        $this->custom_log('POST data keys: ' . implode(', ', array_keys($_POST)));
+        
         // Verificar nonce
         if (!isset($_POST['despacho_meta_box_nonce']) || !wp_verify_nonce($_POST['despacho_meta_box_nonce'], 'despacho_meta_box')) {
-            error_log('LexHoy DEBUG nonce inválido');
+            $this->custom_log('LexHoy DEBUG: nonce inválido o faltante');
+            $this->custom_log('Nonce recibido: ' . (isset($_POST['despacho_meta_box_nonce']) ? $_POST['despacho_meta_box_nonce'] : 'NO EXISTE'));
             return;
         }
+        $this->custom_log('LexHoy DEBUG: nonce válido');
 
         // Verificar permisos
         if (!current_user_can('edit_post', $post_id)) {
+            $this->custom_log('LexHoy DEBUG: usuario sin permisos para editar post ' . $post_id);
             return;
         }
+        $this->custom_log('LexHoy DEBUG: permisos OK');
 
         // No guardar en autoguardado
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            $this->custom_log('LexHoy DEBUG: autoguardado detectado, saliendo');
             return;
         }
+        $this->custom_log('LexHoy DEBUG: no es autoguardado');
 
         // Validar campos obligatorios
         $required_fields = array(
-            'despacho_nombre' => 'Nombre',
-            'despacho_localidad' => 'Localidad',
-            'despacho_provincia' => 'Provincia',
-            'despacho_telefono' => 'Teléfono',
-            'despacho_email' => 'Email'
+            'despacho_nombre' => 'Nombre'
+            // Quitamos email, telefono, etc para permitir guardado
         );
 
+        $this->custom_log('LexHoy DEBUG: Validando campos obligatorios...');
         $errors = array();
         foreach ($required_fields as $field => $label) {
-            if (empty($_POST[$field])) {
+            $value = isset($_POST[$field]) ? $_POST[$field] : '';
+            $this->custom_log("LexHoy DEBUG: Campo {$field} = '{$value}'");
+            if (empty($value)) {
                 $errors[] = "El campo '$label' es obligatorio.";
-                error_log('LexHoy DEBUG campo requerido vacío: ' . $field);
+                $this->custom_log('LexHoy DEBUG campo requerido vacío: ' . $field);
             }
         }
 
         // Si hay errores, mostrar mensaje y no guardar
         if (!empty($errors)) {
-            error_log('LexHoy DEBUG errores de validación. No se guarda.');
+            $this->custom_log('LexHoy DEBUG errores de validación. No se guarda.');
             add_action('admin_notices', function() use ($errors) {
                 echo '<div class="notice notice-error is-dismissible">';
                 echo '<p><strong>Error al guardar el despacho:</strong></p>';
@@ -349,6 +397,7 @@ class LexhoyDespachosCPT {
             });
             return;
         }
+        $this->custom_log('LexHoy DEBUG: validación OK, procediendo a guardar metadatos');
 
         // Guardar datos
         $fields = array(
@@ -383,31 +432,44 @@ class LexhoyDespachosCPT {
                     $value = sanitize_textarea_field($_POST[$post_field]);
                 }
                 
-                update_post_meta($post_id, $meta_field, $value);
+                $this->custom_log("LexHoy DEBUG: Guardando {$meta_field} = '{$value}' para post {$post_id}");
+                $result = update_post_meta($post_id, $meta_field, $value);
+                $this->custom_log("LexHoy DEBUG: update_post_meta resultado: " . ($result ? 'SUCCESS' : 'FAILED'));
+                
+                // Verificar que se guardó
+                $saved_value = get_post_meta($post_id, $meta_field, true);
+                $this->custom_log("LexHoy DEBUG: Valor guardado verificado: '{$saved_value}'");
+            } else {
+                $this->custom_log("LexHoy DEBUG: Campo {$post_field} no existe en POST");
             }
         }
 
         // Guardar checkbox de verificado
         $is_verified = isset($_POST['despacho_is_verified']) ? '1' : '0';
+        $this->custom_log("LexHoy DEBUG: Guardando _despacho_is_verified = '{$is_verified}'");
         update_post_meta($post_id, '_despacho_is_verified', $is_verified);
-
-        // Ya no gestionamos manualmente las áreas de práctica; WordPress las manejará con tax_input.
 
         // Guardar horario (array de días)
         if (isset($_POST['despacho_horario']) && is_array($_POST['despacho_horario'])) {
             // Sanitizar cada valor
             $horario_clean = array_map('sanitize_text_field', $_POST['despacho_horario']);
+            $this->custom_log("LexHoy DEBUG: Guardando horario: " . print_r($horario_clean, true));
             update_post_meta($post_id, '_despacho_horario', $horario_clean);
         }
 
         // Guardar redes sociales (array)
         if (isset($_POST['despacho_redes_sociales']) && is_array($_POST['despacho_redes_sociales'])) {
             $redes_clean = array_map('esc_url_raw', $_POST['despacho_redes_sociales']);
+            $this->custom_log("LexHoy DEBUG: Guardando redes sociales: " . print_r($redes_clean, true));
             update_post_meta($post_id, '_despacho_redes_sociales', $redes_clean);
         }
 
-        // Nota: no actualizamos el título/slug aquí para evitar recursión infinita.
-        error_log('LexHoy DEBUG guardado completo para ' . $post_id);
+        // --- NUEVO: Sincronizar título y slug con el campo Nombre ---
+        if (isset($_POST['despacho_nombre'])) {
+            // Eliminado: ya no sincronizamos título/slug automáticamente
+        }
+
+        $this->custom_log('=== LexHoy DEBUG save_meta_boxes FINAL para post ' . $post_id . ' ===');
     }
 
     /**
@@ -449,38 +511,43 @@ class LexhoyDespachosCPT {
             // Obtener áreas de práctica como taxonomía
             $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
             
-            // Preparar datos para Algolia
-            $object_id_algolia = get_post_meta($post_id, '_algolia_object_id', true);
-            if (empty($object_id_algolia)) {
-                // Si no existe, usar el ID del post y guardarlo para futuras referencias
-                $object_id_algolia = $post_id;
-                update_post_meta($post_id, '_algolia_object_id', $object_id_algolia);
-            }
+            // Helper para preferir el dato recién enviado sobre el almacenado
+            $posted_or_meta = function($post_field, $meta_key, $sanitize_cb = 'sanitize_text_field') use ($post_id) {
+                if (isset($_POST[$post_field])) {
+                    return is_callable($sanitize_cb) ? $sanitize_cb($_POST[$post_field]) : $_POST[$post_field];
+                }
+                // Limpiar caché de metadatos para este post antes de leer
+                wp_cache_delete($post_id, 'post_meta');
+                return get_post_meta($post_id, $meta_key, true);
+            };
+
+            error_log("LexHoy DEBUG: sync_to_algolia ejecutándose para post {$post_id}");
+            error_log("LexHoy DEBUG: Datos POST disponibles: " . print_r(array_keys($_POST), true));
 
             $record = array(
-                'objectID' => $object_id_algolia,
-                'nombre' => get_the_title($post_id),
-                'localidad' => isset($meta_data['_despacho_localidad'][0]) ? $meta_data['_despacho_localidad'][0] : '',
-                'provincia' => isset($meta_data['_despacho_provincia'][0]) ? $meta_data['_despacho_provincia'][0] : '',
-                'areas_practica' => $areas_practica,
-                'codigo_postal' => isset($meta_data['_despacho_codigo_postal'][0]) ? $meta_data['_despacho_codigo_postal'][0] : '',
-                'direccion' => isset($meta_data['_despacho_direccion'][0]) ? $meta_data['_despacho_direccion'][0] : '',
-                'telefono' => isset($meta_data['_despacho_telefono'][0]) ? $meta_data['_despacho_telefono'][0] : '',
-                'email' => isset($meta_data['_despacho_email'][0]) ? $meta_data['_despacho_email'][0] : '',
-                'web' => isset($meta_data['_despacho_web'][0]) ? $meta_data['_despacho_web'][0] : '',
-                'descripcion' => isset($meta_data['_despacho_descripcion'][0]) ? $meta_data['_despacho_descripcion'][0] : '',
-                'estado_verificacion' => isset($meta_data['_despacho_estado_verificacion'][0]) ? $meta_data['_despacho_estado_verificacion'][0] : 'pendiente',
-                'isVerified' => isset($meta_data['_despacho_is_verified'][0]) ? $meta_data['_despacho_is_verified'][0] : false,
+                'objectID'         => get_post_meta($post_id, '_algolia_object_id', true) ?: $post_id,
+                'nombre'           => $posted_or_meta('despacho_nombre', '_despacho_nombre'),
+                'localidad'        => $posted_or_meta('despacho_localidad', '_despacho_localidad'),
+                'provincia'        => $posted_or_meta('despacho_provincia', '_despacho_provincia'),
+                'areas_practica'   => $areas_practica,
+                'codigo_postal'    => $posted_or_meta('despacho_codigo_postal', '_despacho_codigo_postal'),
+                'direccion'        => $posted_or_meta('despacho_direccion', '_despacho_direccion'),
+                'telefono'         => $posted_or_meta('despacho_telefono', '_despacho_telefono'),
+                'email'            => $posted_or_meta('despacho_email', '_despacho_email', 'sanitize_email'),
+                'web'              => $posted_or_meta('despacho_web', '_despacho_web', 'esc_url_raw'),
+                'descripcion'      => $posted_or_meta('despacho_descripcion', '_despacho_descripcion', 'sanitize_textarea_field'),
+                'estado_verificacion'=> $posted_or_meta('despacho_estado_verificacion', '_despacho_estado_verificacion'),
+                'isVerified'       => isset($_POST['despacho_is_verified']) ? true : (get_post_meta($post_id, '_despacho_is_verified', true) ? true : false),
                 // NUEVOS CAMPOS
-                'especialidades' => isset($meta_data['_despacho_especialidades'][0]) ? array_map('trim', explode(',', $meta_data['_despacho_especialidades'][0])) : array(),
-                'horario' => isset($meta_data['_despacho_horario'][0]) ? maybe_unserialize($meta_data['_despacho_horario'][0]) : array(),
-                'redes_sociales' => isset($meta_data['_despacho_redes_sociales'][0]) ? maybe_unserialize($meta_data['_despacho_redes_sociales'][0]) : array(),
-                'experiencia' => isset($meta_data['_despacho_experiencia'][0]) ? $meta_data['_despacho_experiencia'][0] : '',
-                'tamaño_despacho' => isset($meta_data['_despacho_tamaño'][0]) ? $meta_data['_despacho_tamaño'][0] : '',
-                'año_fundacion' => isset($meta_data['_despacho_año_fundacion'][0]) ? intval($meta_data['_despacho_año_fundacion'][0]) : 0,
-                'estado_registro' => isset($meta_data['_despacho_estado_registro'][0]) ? $meta_data['_despacho_estado_registro'][0] : 'activo',
+                'especialidades'   => isset($_POST['despacho_especialidades']) ? array_filter(array_map('trim', explode(',', $_POST['despacho_especialidades']))) : array_filter(array_map('trim', explode(',', get_post_meta($post_id, '_despacho_especialidades', true) ))),
+                'horario'          => isset($_POST['despacho_horario']) ? array_map('sanitize_text_field', $_POST['despacho_horario']) : (array) get_post_meta($post_id, '_despacho_horario', true),
+                'redes_sociales'   => isset($_POST['despacho_redes_sociales']) ? array_map('esc_url_raw', $_POST['despacho_redes_sociales']) : (array) get_post_meta($post_id, '_despacho_redes_sociales', true),
+                'experiencia'      => $posted_or_meta('despacho_experiencia', '_despacho_experiencia'),
+                'tamaño_despacho'  => $posted_or_meta('despacho_tamaño', '_despacho_tamaño'),
+                'año_fundacion'    => (int) $posted_or_meta('despacho_año_fundacion', '_despacho_año_fundacion'),
+                'estado_registro'  => $posted_or_meta('despacho_estado_registro', '_despacho_estado_registro'),
                 'ultima_actualizacion' => date('d-m-Y'),
-                'slug' => $post->post_name
+                'slug'             => $post->post_name,
             );
 
             // Sincronizar con Algolia
@@ -861,5 +928,31 @@ class LexhoyDespachosCPT {
             wp_redirect(add_query_arg('mensaje', 'error', $redirect_url));
             exit;
         }
+    }
+
+    public function prevent_canonical_redirect_for_despachos($redirect_url, $requested_url) {
+        // Si ya estamos en un despacho singular => no redirigir
+        if (is_singular('despacho')) {
+            return false;
+        }
+
+        // Si la URL solicitada es del tipo /slug/ sin "despacho/"
+        $path = trim(parse_url($requested_url, PHP_URL_PATH), '/');
+        if ( $path && strpos( $path, 'despacho/' ) === false ) {
+            $despacho = get_posts(array(
+                'post_type'   => 'despacho',
+                'name'        => $path,
+                'post_status' => 'publish',
+                'numberposts' => 1,
+                'fields'      => 'ids',
+            ));
+
+            if ( $despacho ) {
+                // Evitamos que WordPress redirija a /despacho/slug/
+                return false;
+            }
+        }
+
+        return $redirect_url; // para el resto de casos, comportamiento normal
     }
 } 

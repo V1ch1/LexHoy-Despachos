@@ -22,7 +22,17 @@ get_header(); ?>
                     
                     <!-- Encabezado del despacho -->
                     <header class="despacho-header">
-                        <h1 class="despacho-title"><?php the_title(); ?></h1>
+                        <?php
+                        // Forzar limpieza de caché para asegurar datos frescos
+                        wp_cache_flush();
+                        
+                        // Obtener nombre desde meta (preferencia) o título del post
+                        $nombre_despacho = get_post_meta(get_the_ID(), '_despacho_nombre', true);
+                        if (empty($nombre_despacho)) {
+                            $nombre_despacho = get_the_title();
+                        }
+                        ?>
+                        <h1 class="despacho-title"><?php echo esc_html($nombre_despacho); ?></h1>
                         
                         <?php if (has_post_thumbnail()) : ?>
                             <div class="despacho-image">
