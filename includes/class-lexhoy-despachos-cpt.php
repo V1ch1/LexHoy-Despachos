@@ -16,8 +16,7 @@ class LexhoyDespachosCPT {
      * Constructor
      */
     public function __construct() {
-        // Test de inicialización
-        $this->custom_log("=== LexHoy CONSTRUCTOR: Clase inicializada ===");
+        // Constructor inicializado
         
         add_action('init', array($this, 'register_post_type'));
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
@@ -44,6 +43,10 @@ class LexhoyDespachosCPT {
         add_action('admin_menu', array($this, 'register_import_submenu'));
         add_action('admin_post_lexhoy_import_one_despacho', array($this, 'handle_import_one_despacho'));
 
+        // NUEVO: Handlers AJAX para importación masiva
+        add_action('wp_ajax_lexhoy_get_algolia_count', array($this, 'ajax_get_algolia_count'));
+        add_action('wp_ajax_lexhoy_bulk_import_block', array($this, 'ajax_bulk_import_block'));
+
         // Registrar taxonomía de áreas de práctica
         add_action('init', array($this, 'register_taxonomies'));
         
@@ -56,14 +59,10 @@ class LexhoyDespachosCPT {
         // Inicializar cliente de Algolia
         $this->init_algolia_client();
 
-        // Nuevo: disparar sincronización cuando un despacho se publica
+        // Nuevo: disparar sincronización cuando un despacho se publica - CORREGIDO para evitar nuevas instancias
         add_action(
             'transition_post_status',
-            function ( $new_status, $old_status, $post ) {
-                if ( $post->post_type === 'despacho' && $new_status === 'publish' ) {
-                    ( new LexhoyDespachosCPT )->sync_to_algolia( $post->ID, $post, true );
-                }
-            },
+            array($this, 'handle_transition_post_status'),
             10,
             3
         );
@@ -319,10 +318,24 @@ class LexhoyDespachosCPT {
      * Test para verificar que el hook save_post funciona
      */
     public function test_save_post_hook($post_id) {
-        $this->custom_log("=== LexHoy TEST: save_post hook ejecutado para post {$post_id} ===");
-        $post = get_post($post_id);
-        if ($post) {
-            $this->custom_log("LexHoy TEST: Post type = {$post->post_type}");
+        // Solo logear si no estamos en importación masiva
+        $is_bulk_import = isset($_POST['action']) && $_POST['action'] === 'lexhoy_bulk_import_block';
+        
+        if (!$is_bulk_import) {
+            $this->custom_log("=== LexHoy TEST: save_post hook ejecutado para post {$post_id} ===");
+            $post = get_post($post_id);
+            if ($post) {
+                $this->custom_log("LexHoy TEST: Post type = {$post->post_type}");
+            }
+        }
+    }
+
+    /**
+     * Manejar cambios de estado de post para sincronización
+     */
+    public function handle_transition_post_status($new_status, $old_status, $post) {
+        if ($post->post_type === 'despacho' && $new_status === 'publish') {
+            $this->sync_to_algolia($post->ID, $post, true);
         }
     }
 
@@ -340,30 +353,47 @@ class LexhoyDespachosCPT {
      * Guardar meta boxes
      */
     public function save_meta_boxes($post_id) {
-        $this->custom_log('=== LexHoy DEBUG save_meta_boxes INICIO para post ' . $post_id . ' ===');
-        $this->custom_log('POST data keys: ' . implode(', ', array_keys($_POST)));
+        // Solo logear si no estamos en importación masiva para evitar spam
+        $is_bulk_import = isset($_POST['action']) && $_POST['action'] === 'lexhoy_bulk_import_block';
         
-        // Verificar nonce
-        if (!isset($_POST['despacho_meta_box_nonce']) || !wp_verify_nonce($_POST['despacho_meta_box_nonce'], 'despacho_meta_box')) {
-            $this->custom_log('LexHoy DEBUG: nonce inválido o faltante');
-            $this->custom_log('Nonce recibido: ' . (isset($_POST['despacho_meta_box_nonce']) ? $_POST['despacho_meta_box_nonce'] : 'NO EXISTE'));
+        if (!$is_bulk_import) {
+            $this->custom_log('=== LexHoy DEBUG save_meta_boxes INICIO para post ' . $post_id . ' ===');
+            $this->custom_log('POST data keys: ' . implode(', ', array_keys($_POST)));
+        }
+        
+        // Verificar nonce - pero saltarlo durante importación masiva
+        if (!$is_bulk_import && (!isset($_POST['despacho_meta_box_nonce']) || !wp_verify_nonce($_POST['despacho_meta_box_nonce'], 'despacho_meta_box'))) {
+            if (!$is_bulk_import) {
+                $this->custom_log('LexHoy DEBUG: nonce inválido o faltante');
+                $this->custom_log('Nonce recibido: ' . (isset($_POST['despacho_meta_box_nonce']) ? $_POST['despacho_meta_box_nonce'] : 'NO EXISTE'));
+            }
             return;
         }
-        $this->custom_log('LexHoy DEBUG: nonce válido');
+        if (!$is_bulk_import) {
+            $this->custom_log('LexHoy DEBUG: nonce válido');
+        }
 
         // Verificar permisos
         if (!current_user_can('edit_post', $post_id)) {
-            $this->custom_log('LexHoy DEBUG: usuario sin permisos para editar post ' . $post_id);
+            if (!$is_bulk_import) {
+                $this->custom_log('LexHoy DEBUG: usuario sin permisos para editar post ' . $post_id);
+            }
             return;
         }
-        $this->custom_log('LexHoy DEBUG: permisos OK');
+        if (!$is_bulk_import) {
+            $this->custom_log('LexHoy DEBUG: permisos OK');
+        }
 
         // No guardar en autoguardado
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
-            $this->custom_log('LexHoy DEBUG: autoguardado detectado, saliendo');
+            if (!$is_bulk_import) {
+                $this->custom_log('LexHoy DEBUG: autoguardado detectado, saliendo');
+            }
             return;
         }
-        $this->custom_log('LexHoy DEBUG: no es autoguardado');
+        if (!$is_bulk_import) {
+            $this->custom_log('LexHoy DEBUG: no es autoguardado');
+        }
 
         // Validar campos obligatorios
         $required_fields = array(
@@ -371,33 +401,43 @@ class LexhoyDespachosCPT {
             // Quitamos email, telefono, etc para permitir guardado
         );
 
-        $this->custom_log('LexHoy DEBUG: Validando campos obligatorios...');
+        if (!$is_bulk_import) {
+            $this->custom_log('LexHoy DEBUG: Validando campos obligatorios...');
+        }
         $errors = array();
         foreach ($required_fields as $field => $label) {
             $value = isset($_POST[$field]) ? $_POST[$field] : '';
-            $this->custom_log("LexHoy DEBUG: Campo {$field} = '{$value}'");
+            if (!$is_bulk_import) {
+                $this->custom_log("LexHoy DEBUG: Campo {$field} = '{$value}'");
+            }
             if (empty($value)) {
                 $errors[] = "El campo '$label' es obligatorio.";
-                $this->custom_log('LexHoy DEBUG campo requerido vacío: ' . $field);
+                if (!$is_bulk_import) {
+                    $this->custom_log('LexHoy DEBUG campo requerido vacío: ' . $field);
+                }
             }
         }
 
         // Si hay errores, mostrar mensaje y no guardar
         if (!empty($errors)) {
-            $this->custom_log('LexHoy DEBUG errores de validación. No se guarda.');
-            add_action('admin_notices', function() use ($errors) {
-                echo '<div class="notice notice-error is-dismissible">';
-                echo '<p><strong>Error al guardar el despacho:</strong></p>';
-                echo '<ul>';
-                foreach ($errors as $error) {
-                    echo '<li>' . esc_html($error) . '</li>';
-                }
-                echo '</ul>';
-                echo '</div>';
-            });
+            if (!$is_bulk_import) {
+                $this->custom_log('LexHoy DEBUG errores de validación. No se guarda.');
+                add_action('admin_notices', function() use ($errors) {
+                    echo '<div class="notice notice-error is-dismissible">';
+                    echo '<p><strong>Error al guardar el despacho:</strong></p>';
+                    echo '<ul>';
+                    foreach ($errors as $error) {
+                        echo '<li>' . esc_html($error) . '</li>';
+                    }
+                    echo '</ul>';
+                    echo '</div>';
+                });
+            }
             return;
         }
-        $this->custom_log('LexHoy DEBUG: validación OK, procediendo a guardar metadatos');
+        if (!$is_bulk_import) {
+            $this->custom_log('LexHoy DEBUG: validación OK, procediendo a guardar metadatos');
+        }
 
         // Guardar datos
         $fields = array(
@@ -432,35 +472,47 @@ class LexhoyDespachosCPT {
                     $value = sanitize_textarea_field($_POST[$post_field]);
                 }
                 
-                $this->custom_log("LexHoy DEBUG: Guardando {$meta_field} = '{$value}' para post {$post_id}");
+                if (!$is_bulk_import) {
+                    $this->custom_log("LexHoy DEBUG: Guardando {$meta_field} = '{$value}' para post {$post_id}");
+                }
                 $result = update_post_meta($post_id, $meta_field, $value);
-                $this->custom_log("LexHoy DEBUG: update_post_meta resultado: " . ($result ? 'SUCCESS' : 'FAILED'));
-                
-                // Verificar que se guardó
-                $saved_value = get_post_meta($post_id, $meta_field, true);
-                $this->custom_log("LexHoy DEBUG: Valor guardado verificado: '{$saved_value}'");
+                if (!$is_bulk_import) {
+                    $this->custom_log("LexHoy DEBUG: update_post_meta resultado: " . ($result ? 'SUCCESS' : 'FAILED'));
+                    
+                    // Verificar que se guardó
+                    $saved_value = get_post_meta($post_id, $meta_field, true);
+                    $this->custom_log("LexHoy DEBUG: Valor guardado verificado: '{$saved_value}'");
+                }
             } else {
-                $this->custom_log("LexHoy DEBUG: Campo {$post_field} no existe en POST");
+                if (!$is_bulk_import) {
+                    $this->custom_log("LexHoy DEBUG: Campo {$post_field} no existe en POST");
+                }
             }
         }
 
         // Guardar checkbox de verificado
         $is_verified = isset($_POST['despacho_is_verified']) ? '1' : '0';
-        $this->custom_log("LexHoy DEBUG: Guardando _despacho_is_verified = '{$is_verified}'");
+        if (!$is_bulk_import) {
+            $this->custom_log("LexHoy DEBUG: Guardando _despacho_is_verified = '{$is_verified}'");
+        }
         update_post_meta($post_id, '_despacho_is_verified', $is_verified);
 
         // Guardar horario (array de días)
         if (isset($_POST['despacho_horario']) && is_array($_POST['despacho_horario'])) {
             // Sanitizar cada valor
             $horario_clean = array_map('sanitize_text_field', $_POST['despacho_horario']);
-            $this->custom_log("LexHoy DEBUG: Guardando horario: " . print_r($horario_clean, true));
+            if (!$is_bulk_import) {
+                $this->custom_log("LexHoy DEBUG: Guardando horario: " . print_r($horario_clean, true));
+            }
             update_post_meta($post_id, '_despacho_horario', $horario_clean);
         }
 
         // Guardar redes sociales (array)
         if (isset($_POST['despacho_redes_sociales']) && is_array($_POST['despacho_redes_sociales'])) {
             $redes_clean = array_map('esc_url_raw', $_POST['despacho_redes_sociales']);
-            $this->custom_log("LexHoy DEBUG: Guardando redes sociales: " . print_r($redes_clean, true));
+            if (!$is_bulk_import) {
+                $this->custom_log("LexHoy DEBUG: Guardando redes sociales: " . print_r($redes_clean, true));
+            }
             update_post_meta($post_id, '_despacho_redes_sociales', $redes_clean);
         }
 
@@ -469,7 +521,9 @@ class LexhoyDespachosCPT {
             // Eliminado: ya no sincronizamos título/slug automáticamente
         }
 
-        $this->custom_log('=== LexHoy DEBUG save_meta_boxes FINAL para post ' . $post_id . ' ===');
+        if (!$is_bulk_import) {
+            $this->custom_log('=== LexHoy DEBUG save_meta_boxes FINAL para post ' . $post_id . ' ===');
+        }
     }
 
     /**
@@ -857,6 +911,16 @@ class LexhoyDespachosCPT {
             'lexhoy-despachos-import-one',
             array($this, 'render_import_page')
         );
+
+        // NUEVO: Página de importación masiva
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Importación Masiva desde Algolia',
+            'Importación Masiva',
+            'manage_options',
+            'lexhoy-despachos-import-bulk',
+            array($this, 'render_bulk_import_page')
+        );
     }
 
     /**
@@ -930,6 +994,232 @@ class LexhoyDespachosCPT {
         }
     }
 
+    /**
+     * Renderizar página de importación masiva
+     */
+    public function render_bulk_import_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('No tienes permisos suficientes para acceder a esta página.'));
+        }
+
+        $mensaje = isset($_GET['mensaje']) ? sanitize_text_field($_GET['mensaje']) : '';
+
+        echo '<div class="wrap">';
+        echo '<h1>Importación Masiva desde Algolia</h1>';
+
+        if ($mensaje === 'iniciado') {
+            echo '<div class="notice notice-info"><p>Importación iniciada. Revisa el progreso abajo.</p></div>';
+        }
+
+        // Verificar configuración de Algolia
+        $app_id = get_option('lexhoy_despachos_algolia_app_id');
+        $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+        $index_name = get_option('lexhoy_despachos_algolia_index_name');
+
+        if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+            echo '<div class="notice notice-error"><p>⚠️ <strong>Configuración de Algolia incompleta.</strong> Completa la configuración antes de importar.</p></div>';
+            echo '</div>';
+            return;
+        }
+
+        // Obtener estadísticas
+        $total_wp_despachos = wp_count_posts('despacho')->publish;
+        
+        try {
+            $algolia_client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
+            $result = $algolia_client->browse_all();
+            $total_algolia = $result['success'] ? $result['total_records'] : 0;
+        } catch (Exception $e) {
+            $total_algolia = 'Error: ' . $e->getMessage();
+        }
+
+        ?>
+        <div class="card" style="max-width: 600px;">
+            <h2>📊 Estadísticas</h2>
+            <table class="form-table">
+                <tr>
+                    <th>Despachos en WordPress:</th>
+                    <td><strong><?php echo $total_wp_despachos; ?></strong></td>
+                </tr>
+                <tr>
+                    <th>Registros en Algolia:</th>
+                    <td><strong><?php echo $total_algolia; ?></strong></td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="card" style="max-width: 600px; margin-top: 20px;">
+            <h2>🚀 Iniciar Importación por Bloques</h2>
+            <p>La importación se realizará en bloques de <strong>200 registros</strong> para evitar timeouts.</p>
+            
+            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" id="bulk-import-form">
+                <input type="hidden" name="action" value="lexhoy_bulk_import_start" />
+                <?php wp_nonce_field('lexhoy_bulk_import', 'bulk_import_nonce'); ?>
+                
+                <p>
+                    <label>
+                        <input type="checkbox" name="overwrite_existing" value="1" />
+                        Sobrescribir despachos existentes (actualizar datos)
+                    </label>
+                </p>
+                
+                <button type="button" class="button button-primary" onclick="startBulkImport()">
+                    🔄 Iniciar Importación Masiva
+                </button>
+            </form>
+        </div>
+
+        <!-- Área de progreso -->
+        <div id="import-progress" style="display: none; margin-top: 20px;">
+            <div class="card">
+                <h2>📈 Progreso de Importación</h2>
+                <div id="progress-bar-container" style="background: #f0f0f1; height: 20px; border-radius: 10px; overflow: hidden;">
+                    <div id="progress-bar" style="background: #00a32a; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="progress-text">Preparando importación...</p>
+                <div id="import-log" style="background: #f8f9fa; padding: 15px; height: 300px; overflow-y: scroll; border: 1px solid #ccd0d4; font-family: monospace; font-size: 12px; margin-top: 15px;"></div>
+            </div>
+        </div>
+
+        <style>
+        .card { background: white; padding: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04); }
+        .form-table th { width: 200px; }
+        #import-log { white-space: pre-wrap; }
+        </style>
+
+        <script>
+        let importInProgress = false;
+        let currentBlock = 0;
+        let totalBlocks = 0;
+        let processedRecords = 0;
+        let totalRecords = 0;
+
+        function startBulkImport() {
+            if (importInProgress) {
+                alert('Ya hay una importación en curso.');
+                return;
+            }
+
+            importInProgress = true;
+            document.getElementById('import-progress').style.display = 'block';
+            document.querySelector('#bulk-import-form button').disabled = true;
+            document.querySelector('#bulk-import-form button').textContent = '⏳ Importando...';
+
+            logMessage('🚀 Iniciando importación masiva...');
+            
+            // Primero obtener el total de registros
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'lexhoy_get_algolia_count',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_get_count"); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        totalRecords = response.data.total;
+                        totalBlocks = Math.ceil(totalRecords / 200);
+                        logMessage(`📊 Total de registros en Algolia: ${totalRecords}`);
+                        logMessage(`📦 Se procesarán ${totalBlocks} bloques de 200 registros`);
+                        
+                        // Iniciar el primer bloque
+                        processNextBlock();
+                    } else {
+                        logMessage('❌ Error al obtener el conteo: ' + response.data);
+                        finishImport();
+                    }
+                },
+                error: function() {
+                    logMessage('❌ Error de conexión al obtener el conteo');
+                    finishImport();
+                }
+            });
+        }
+
+        function processNextBlock() {
+            if (currentBlock >= totalBlocks) {
+                logMessage('✅ ¡Importación completada!');
+                finishImport();
+                return;
+            }
+
+            currentBlock++;
+            const startRecord = (currentBlock - 1) * 200;
+            
+            logMessage(`\n🔄 Procesando bloque ${currentBlock}/${totalBlocks} (registros ${startRecord + 1}-${Math.min(startRecord + 200, totalRecords)})`);
+            
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'lexhoy_bulk_import_block',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_bulk_import_block"); ?>',
+                    block: currentBlock,
+                    overwrite: document.querySelector('input[name="overwrite_existing"]').checked ? 1 : 0
+                },
+                success: function(response) {
+                    if (response.success) {
+                        const data = response.data;
+                        processedRecords += data.processed;
+                        
+                        logMessage(`✅ Bloque ${currentBlock} completado:`);
+                        logMessage(`   • Procesados: ${data.processed}`);
+                        logMessage(`   • Creados: ${data.created}`);
+                        logMessage(`   • Actualizados: ${data.updated}`);
+                        logMessage(`   • Saltados: ${data.skipped || 0}`);
+                        logMessage(`   • Errores: ${data.errors}`);
+                        
+                        if (data.error_details && data.error_details.length > 0) {
+                            data.error_details.forEach(error => {
+                                logMessage(`   ⚠️ ${error}`);
+                            });
+                        }
+                        
+                        // Actualizar barra de progreso
+                        const progress = (processedRecords / totalRecords) * 100;
+                        document.getElementById('progress-bar').style.width = progress + '%';
+                        document.getElementById('progress-text').textContent = 
+                            `Progreso: ${processedRecords}/${totalRecords} (${Math.round(progress)}%)`;
+                        
+                        // Procesar siguiente bloque después de una pausa corta
+                        setTimeout(processNextBlock, 1000);
+                    } else {
+                        logMessage(`❌ Error en bloque ${currentBlock}: ${response.data}`);
+                        // Continuar con el siguiente bloque a pesar del error
+                        setTimeout(processNextBlock, 2000);
+                    }
+                },
+                error: function() {
+                    logMessage(`❌ Error de conexión en bloque ${currentBlock}`);
+                    // Continuar con el siguiente bloque a pesar del error
+                    setTimeout(processNextBlock, 2000);
+                }
+            });
+        }
+
+        function logMessage(message) {
+            const log = document.getElementById('import-log');
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function finishImport() {
+            importInProgress = false;
+            document.querySelector('#bulk-import-form button').disabled = false;
+            document.querySelector('#bulk-import-form button').textContent = '🔄 Iniciar Importación Masiva';
+            
+            // Actualizar estadísticas
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+        }
+        </script>
+        <?php
+
+        echo '</div>';
+    }
+
     public function prevent_canonical_redirect_for_despachos($redirect_url, $requested_url) {
         // Si ya estamos en un despacho singular => no redirigir
         if (is_singular('despacho')) {
@@ -954,5 +1244,134 @@ class LexhoyDespachosCPT {
         }
 
         return $redirect_url; // para el resto de casos, comportamiento normal
+    }
+
+    /**
+     * Manejar AJAX para obtener el conteo de registros en Algolia
+     */
+    public function ajax_get_algolia_count() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_get_count', 'nonce');
+
+        try {
+            if (!$this->algolia_client) {
+                throw new Exception('Cliente de Algolia no inicializado.');
+            }
+
+            $this->custom_log('AJAX: Obteniendo conteo de registros de Algolia...');
+            
+            // Usar browse_all() temporalmente para obtener el conteo
+            $result = $this->algolia_client->browse_all();
+            $total_algolia = $result['success'] ? $result['total_records'] : 0;
+            
+            $this->custom_log("AJAX: Total encontrado: {$total_algolia}");
+
+            wp_send_json_success(array('total' => $total_algolia));
+        } catch (Exception $e) {
+            $this->custom_log('AJAX Error: ' . $e->getMessage());
+            wp_send_json_error('Error al obtener el conteo: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Manejar AJAX para importar bloques de registros desde Algolia
+     */
+    public function ajax_bulk_import_block() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_bulk_import_block', 'nonce');
+
+        $block = isset($_POST['block']) ? intval($_POST['block']) : 1;
+        $overwrite = isset($_POST['overwrite']) ? boolval($_POST['overwrite']) : false;
+
+        $this->custom_log("AJAX: Iniciando importación del bloque {$block} (overwrite: " . ($overwrite ? 'SI' : 'NO') . ")");
+
+        try {
+            if (!$this->algolia_client) {
+                throw new Exception('Cliente de Algolia no inicializado.');
+            }
+
+            // Obtener solo los registros de este bloque específico
+            $this->custom_log("AJAX: Obteniendo página {$block} de Algolia...");
+            $result = $this->algolia_client->browse_page($block - 1, 200);
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
+            }
+
+            $hits = $result['hits'];
+            $this->custom_log("AJAX: Obtenidos " . count($hits) . " registros de Algolia");
+
+            $imported_records = 0;
+            $created_records = 0;
+            $updated_records = 0;
+            $skipped_records = 0;
+            $error_details = array();
+
+            foreach ($hits as $index => $record) {
+                try {
+                    if (!isset($record['objectID'])) {
+                        $error_details[] = "Registro sin objectID en posición {$index}";
+                        continue;
+                    }
+
+                    $objectID = $record['objectID'];
+                    $this->custom_log("AJAX: Procesando registro {$objectID}...");
+
+                    // Verificar si el despacho ya existe
+                    $existing_post = get_posts(array(
+                        'post_type' => 'despacho',
+                        'meta_key' => '_algolia_object_id',
+                        'meta_value' => $objectID,
+                        'post_status' => 'any',
+                        'numberposts' => 1,
+                        'fields' => 'ids'
+                    ));
+
+                    if ($existing_post && !$overwrite) {
+                        // Ya existe y no queremos sobrescribir
+                        $skipped_records++;
+                        $this->custom_log("AJAX: Registro {$objectID} ya existe, saltando");
+                        continue;
+                    } elseif ($existing_post) {
+                        $updated_records++;
+                        $this->custom_log("AJAX: Actualizando registro existente {$objectID}");
+                    } else {
+                        $created_records++;
+                        $this->custom_log("AJAX: Creando nuevo registro {$objectID}");
+                    }
+
+                    $this->sync_from_algolia($objectID);
+                    $imported_records++;
+                    $this->custom_log("AJAX: Registro {$objectID} procesado exitosamente");
+
+                } catch (Exception $e) {
+                    $error_msg = "Error en registro {$index} (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
+                    $error_details[] = $error_msg;
+                    $this->custom_log("AJAX ERROR: {$error_msg}");
+                }
+            }
+
+            $this->custom_log("AJAX: Bloque {$block} completado - Procesados: {$imported_records}, Creados: {$created_records}, Actualizados: {$updated_records}, Saltados: {$skipped_records}, Errores: " . count($error_details));
+
+            wp_send_json_success(array(
+                'processed' => $imported_records,
+                'created' => $created_records,
+                'updated' => $updated_records,
+                'skipped' => $skipped_records,
+                'errors' => count($error_details),
+                'error_details' => $error_details
+            ));
+
+        } catch (Exception $e) {
+            $error_msg = 'Error al importar bloque: ' . $e->getMessage();
+            $this->custom_log("AJAX FATAL ERROR: {$error_msg}");
+            wp_send_json_error($error_msg);
+        }
     }
 } 

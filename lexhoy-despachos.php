@@ -30,11 +30,7 @@ require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/shortcode-page.php';
 
 // Inicializar el plugin
 function lexhoy_despachos_init() {
-    // Test básico de escritura de archivo
-    $log_file = ABSPATH . 'wp-content/lexhoy-debug.log';
-    $timestamp = date('Y-m-d H:i:s');
-    $log_entry = "[{$timestamp}] === Plugin LexHoy Despachos cargado ===" . PHP_EOL;
-    file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+    // Inicializar clases principales
     
     if (class_exists('LexhoyDespachosCPT')) {
         new LexhoyDespachosCPT();

@@ -25,6 +25,18 @@ class LexhoyAlgoliaClient {
         $this->api_url = $api_url ?: "https://{$app_id}.algolia.net";
     }
 
+
+
+    /**
+     * Logging personalizado - igual que en LexhoyDespachosCPT
+     */
+    private function custom_log($message) {
+        $log_file = ABSPATH . 'wp-content/lexhoy-debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $log_entry = "[{$timestamp}] {$message}" . PHP_EOL;
+        file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+    }
+
     /**
      * Obtener el nombre del índice
      */
@@ -383,6 +395,193 @@ class LexhoyAlgoliaClient {
             error_log('Error en delete_object: ' . $e->getMessage());
             error_log('Stack trace: ' . $e->getTraceAsString());
             throw $e;
+        }
+    }
+
+    /**
+     * Obtener registros de Algolia por página específica usando search API
+     */
+    public function browse_page($page = 0, $hits_per_page = 200) {
+        try {
+            $this->custom_log("=== ALGOLIA browse_page iniciado - página {$page}, hits por página: {$hits_per_page} ===");
+            $this->custom_log("ALGOLIA App ID: {$this->app_id}");
+            $this->custom_log("ALGOLIA Index Name: {$this->index_name}");
+            
+            if (!$this->verify_credentials()) {
+                $this->custom_log('ALGOLIA FATAL: Credenciales no válidas en browse_page');
+                return [
+                    'success' => false,
+                    'message' => 'Credenciales de Algolia no configuradas',
+                    'error' => 'missing_credentials'
+                ];
+            }
+
+            // Usar la API de search POST con paginación por página
+            $url = "https://{$this->app_id}-dsn.algolia.net/1/indexes/{$this->index_name}/query";
+            $headers = [
+                'X-Algolia-API-Key: ' . $this->admin_api_key,
+                'X-Algolia-Application-Id: ' . $this->app_id,
+                'Content-Type: application/json'
+            ];
+
+            $post_data = [
+                'query' => '',
+                'hitsPerPage' => $hits_per_page,
+                'page' => $page
+            ];
+
+            $this->custom_log('ALGOLIA URL corregida: ' . $url);
+            $this->custom_log('ALGOLIA Datos POST: ' . json_encode($post_data));
+            $this->custom_log('ALGOLIA Headers: ' . print_r($headers, true));
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch);
+            curl_close($ch);
+
+            $this->custom_log('ALGOLIA HTTP Code: ' . $http_code);
+            $this->custom_log('ALGOLIA cURL Error: ' . ($curl_error ?: 'ninguno'));
+            $this->custom_log('ALGOLIA Response (primeros 500 chars): ' . substr($response, 0, 500));
+
+            if ($curl_error) {
+                error_log('LexHoy: Error cURL en browse_page: ' . $curl_error);
+                return [
+                    'success' => false,
+                    'message' => 'Error de conexión: ' . $curl_error,
+                    'error' => 'curl_error'
+                ];
+            }
+
+            if ($http_code !== 200) {
+                error_log('LexHoy: HTTP Error en browse_page: ' . $http_code . ' - ' . $response);
+                return [
+                    'success' => false,
+                    'message' => 'Error de Algolia (HTTP ' . $http_code . ')',
+                    'error' => 'http_error'
+                ];
+            }
+
+            $data = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                error_log('LexHoy: JSON decode error en browse_page: ' . json_last_error_msg());
+                return [
+                    'success' => false,
+                    'message' => 'Error al procesar la respuesta de Algolia',
+                    'error' => 'json_error'
+                ];
+            }
+
+            if (!isset($data['hits']) || !is_array($data['hits'])) {
+                error_log('LexHoy: Formato de respuesta inválido en browse_page: ' . print_r($data, true));
+                return [
+                    'success' => false,
+                    'message' => 'Formato de respuesta de Algolia inválido',
+                    'error' => 'invalid_format'
+                ];
+            }
+
+            error_log('LexHoy: browse_page exitoso - ' . count($data['hits']) . ' registros obtenidos');
+
+            return [
+                'success' => true,
+                'hits' => $data['hits'],
+                'total_records' => $data['nbHits'] ?? count($data['hits']),
+                'page' => $data['page'] ?? $page,
+                'nbPages' => $data['nbPages'] ?? 1
+            ];
+
+        } catch (Exception $e) {
+            error_log('LexHoy: Exception en browse_page: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error interno: ' . $e->getMessage(),
+                'error' => 'exception'
+            ];
+        }
+    }
+
+    /**
+     * Obtener solo el conteo total de registros sin cargar datos
+     */
+    public function get_total_count() {
+        try {
+            error_log('LexHoy: get_total_count iniciado');
+            
+            if (!$this->verify_credentials()) {
+                error_log('LexHoy: Credenciales no válidas en get_total_count');
+                return 0;
+            }
+
+            $url = "https://{$this->app_id}-dsn.algolia.net/1/indexes/{$this->index_name}/query";
+            error_log('LexHoy: URL para conteo: ' . $url);
+            
+            $headers = [
+                'X-Algolia-API-Key: ' . $this->admin_api_key,
+                'X-Algolia-Application-Id: ' . $this->app_id,
+                'Content-Type: application/json'
+            ];
+
+            $post_data = [
+                'query' => '',
+                'hitsPerPage' => 1, // Cambiado de 0 a 1 para asegurar que funcione
+                'attributesToRetrieve' => ['objectID'] // Solo necesitamos el ID
+            ];
+
+            error_log('LexHoy: Datos POST: ' . json_encode($post_data));
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch);
+            curl_close($ch);
+
+            error_log('LexHoy: HTTP Code: ' . $http_code);
+            error_log('LexHoy: cURL Error: ' . ($curl_error ?: 'ninguno'));
+            error_log('LexHoy: Response: ' . substr($response, 0, 500));
+
+            if ($curl_error) {
+                error_log('LexHoy: Error cURL en get_total_count: ' . $curl_error);
+                return 0;
+            }
+
+            if ($http_code === 200) {
+                $data = json_decode($response, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($data['nbHits'])) {
+                    $total = intval($data['nbHits']);
+                    error_log('LexHoy: Total encontrado: ' . $total);
+                    return $total;
+                } else {
+                    error_log('LexHoy: Error decodificando JSON o nbHits no encontrado: ' . json_last_error_msg());
+                    error_log('LexHoy: Data recibida: ' . print_r($data, true));
+                }
+            } else {
+                error_log('LexHoy: HTTP Error en get_total_count: ' . $http_code . ' - ' . $response);
+            }
+
+            return 0;
+
+        } catch (Exception $e) {
+            error_log('LexHoy: Exception en get_total_count: ' . $e->getMessage());
+            return 0;
         }
     }
 } 
