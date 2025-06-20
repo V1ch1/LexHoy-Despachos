@@ -706,15 +706,48 @@
 
 /* Para pantallas muy anchas */
 @media (min-width: 1400px) {
+  .lexhoy-despachos-search > * {
+    width: 90% !important;
+  }
+
   .search-header {
-    width: 80%;
+    width: 90% !important;
     margin-left: auto;
     margin-right: auto;
   }
 
   .search-content {
-    width: 80%;
+    width: 90% !important;
     margin: 0 auto;
     padding: 0 15px;
+    max-width: 1600px;
+  }
+
+  .filters-sidebar {
+    width: 400px;
+  }
+
+  .results-sidebar {
+    max-width: none;
+  }
+}
+
+/* Para pantallas ultra anchas */
+@media (min-width: 1800px) {
+  .lexhoy-despachos-search > * {
+    width: 95% !important;
+  }
+
+  .search-header {
+    width: 95% !important;
+  }
+
+  .search-content {
+    width: 95% !important;
+    max-width: 2000px;
+  }
+
+  .filters-sidebar {
+    width: 450px;
   }
 }

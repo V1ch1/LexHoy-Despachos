@@ -13,8 +13,6 @@ jQuery(document).ready(function ($) {
   initializeSearch();
 
   function initializeSearch() {
-    console.log("Inicializando búsqueda de WordPress...");
-
     // Cargar despachos iniciales con delay para mejorar UX
     setTimeout(function () {
       loadDespachos();
@@ -25,6 +23,11 @@ jQuery(document).ready(function ($) {
   }
 
   function setupEventListeners() {
+    // Verificar que el input existe
+    if ($("#searchbox").length === 0) {
+      return;
+    }
+
     // Búsqueda por texto con debounce optimizado
     $("#searchbox").on("input", function () {
       clearTimeout(searchTimeout);
@@ -39,7 +42,9 @@ jQuery(document).ready(function ($) {
 
     // Botón de búsqueda
     $("#search-button").on("click", function () {
-      if (isLoading) return; // Evitar múltiples clics
+      if (isLoading) {
+        return; // Evitar múltiples clics
+      }
       currentFilters.search = $("#searchbox").val();
       currentPage = 1;
       loadDespachos();
@@ -81,12 +86,36 @@ jQuery(document).ready(function ($) {
     $(".filter-search-input").on(
       "input",
       debounce(function () {
-        const filterType = $(this).data("filter");
-        const searchTerm = $(this).val().toLowerCase();
+        const $input = $(this);
+        const filterType = $input.data("filter");
+        const searchTerm = $input.val() || "";
 
-        $(`#${filterType}s-filter .filter-item`).each(function () {
+        // Mapear el tipo de filtro al ID correcto del contenedor
+        let containerId;
+        switch (filterType) {
+          case "provincia":
+            containerId = "provincias-filter";
+            break;
+          case "localidad":
+            containerId = "localidades-filter";
+            break;
+          case "area":
+            containerId = "areas-filter";
+            break;
+          default:
+            return;
+        }
+
+        const container = $(`#${containerId}`);
+
+        if (container.length === 0) {
+          return;
+        }
+
+        container.find(".filter-item").each(function () {
           const text = $(this).find(".filter-text").text().toLowerCase();
-          if (text.includes(searchTerm)) {
+
+          if (text.includes(searchTerm.toLowerCase())) {
             $(this).show();
           } else {
             $(this).hide();
@@ -145,7 +174,9 @@ jQuery(document).ready(function ($) {
   }
 
   function loadDespachos() {
-    if (isLoading) return; // Evitar múltiples requests
+    if (isLoading) {
+      return; // Evitar múltiples requests
+    }
 
     isLoading = true;
     const data = {
@@ -360,9 +391,10 @@ jQuery(document).ready(function ($) {
   function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
+      const context = this;
       const later = () => {
         clearTimeout(timeout);
-        func(...args);
+        func.apply(context, args);
       };
       clearTimeout(timeout);
       timeout = setTimeout(later, wait);
