@@ -1,266 +1,371 @@
 jQuery(document).ready(function ($) {
-  const searchForm = $("#lexhoy-despachos-search-form");
-  const resultsContainer = $("#lexhoy-despachos-results");
+  let currentPage = 1;
+  let currentFilters = {
+    search: "",
+    provincia: [],
+    localidad: [],
+    area: [],
+  };
+  let isLoading = false;
+  let searchTimeout;
 
-  searchForm.on("submit", function (e) {
-    e.preventDefault();
+  // Inicializar la búsqueda
+  initializeSearch();
 
-    const searchData = {
+  function initializeSearch() {
+    console.log("Inicializando búsqueda de WordPress...");
+
+    // Cargar despachos iniciales con delay para mejorar UX
+    setTimeout(function () {
+      loadDespachos();
+    }, 100);
+
+    // Event listeners
+    setupEventListeners();
+  }
+
+  function setupEventListeners() {
+    // Búsqueda por texto con debounce optimizado
+    $("#searchbox").on("input", function () {
+      clearTimeout(searchTimeout);
+      const searchTerm = $(this).val();
+
+      searchTimeout = setTimeout(function () {
+        currentFilters.search = searchTerm;
+        currentPage = 1;
+        loadDespachos();
+      }, 300); // Reducido de 500ms a 300ms
+    });
+
+    // Botón de búsqueda
+    $("#search-button").on("click", function () {
+      if (isLoading) return; // Evitar múltiples clics
+      currentFilters.search = $("#searchbox").val();
+      currentPage = 1;
+      loadDespachos();
+    });
+
+    // Enter en el campo de búsqueda
+    $("#searchbox").on("keypress", function (e) {
+      if (e.which === 13 && !isLoading) {
+        currentFilters.search = $(this).val();
+        currentPage = 1;
+        loadDespachos();
+      }
+    });
+
+    // Filtros por checkbox con optimización
+    $(".filter-checkbox").on("change", function () {
+      if (isLoading) return; // Evitar cambios durante carga
+
+      const filterType = $(this).data("filter");
+      const filterValue = $(this).val();
+      const isChecked = $(this).is(":checked");
+
+      if (isChecked) {
+        if (!currentFilters[filterType].includes(filterValue)) {
+          currentFilters[filterType].push(filterValue);
+        }
+      } else {
+        currentFilters[filterType] = currentFilters[filterType].filter(
+          (val) => val !== filterValue
+        );
+      }
+
+      currentPage = 1;
+      loadDespachos();
+      updateCurrentRefinements();
+    });
+
+    // Búsqueda en filtros optimizada
+    $(".filter-search-input").on(
+      "input",
+      debounce(function () {
+        const filterType = $(this).data("filter");
+        const searchTerm = $(this).val().toLowerCase();
+
+        $(`#${filterType}s-filter .filter-item`).each(function () {
+          const text = $(this).find(".filter-text").text().toLowerCase();
+          if (text.includes(searchTerm)) {
+            $(this).show();
+          } else {
+            $(this).hide();
+          }
+        });
+      }, 200)
+    );
+
+    // Pestañas de filtros
+    $(".filter-tab-btn").on("click", function () {
+      const tab = $(this).data("tab");
+
+      // Remover clase active de todos los botones y paneles
+      $(".filter-tab-btn").removeClass("active");
+      $(".filter-tab-pane").removeClass("active");
+
+      // Agregar clase active al botón y panel seleccionado
+      $(this).addClass("active");
+      $(`#${tab}-list`).addClass("active");
+    });
+
+    // Letras del alfabeto
+    $(".alphabet-letter").on("click", function () {
+      if (isLoading) return; // Evitar clics durante carga
+
+      $(".alphabet-letter").removeClass("active");
+      $(this).addClass("active");
+
+      const letter = $(this).data("letter");
+      currentFilters.search = letter;
+      $("#searchbox").val(letter);
+      currentPage = 1;
+      loadDespachos();
+    });
+
+    // Eliminar refinamientos
+    $(document).on("click", ".refinement-remove", function () {
+      if (isLoading) return; // Evitar clics durante carga
+
+      const filterType = $(this).data("filter");
+      const filterValue = $(this).data("value");
+
+      currentFilters[filterType] = currentFilters[filterType].filter(
+        (val) => val !== filterValue
+      );
+
+      // Desmarcar checkbox correspondiente
+      $(
+        `.filter-checkbox[data-filter="${filterType}"][value="${filterValue}"]`
+      ).prop("checked", false);
+
+      currentPage = 1;
+      loadDespachos();
+      updateCurrentRefinements();
+    });
+  }
+
+  function loadDespachos() {
+    if (isLoading) return; // Evitar múltiples requests
+
+    isLoading = true;
+    const data = {
       action: "lexhoy_despachos_search",
       nonce: lexhoyDespachosData.nonce,
-      search: $("#search").val(),
-      provincia: $("#provincia").val(),
-      area: $("#area").val(),
+      search: currentFilters.search,
+      provincia: currentFilters.provincia.join(","),
+      localidad: currentFilters.localidad.join(","),
+      area: currentFilters.area.join(","),
+      page: currentPage,
     };
 
+    // Mostrar loading con spinner
+    $("#hits").html(
+      '<div class="loading-message"><i class="fas fa-spinner fa-spin"></i> Buscando despachos...</div>'
+    );
+
     $.ajax({
-      url: lexhoyDespachosData.ajaxurl,
+      url: lexhoyDespachosData.ajaxUrl,
       type: "POST",
-      data: searchData,
-      beforeSend: function () {
-        resultsContainer.html(
-          '<div class="loading">Buscando despachos...</div>'
-        );
-      },
+      data: data,
+      timeout: 30000, // 30 segundos de timeout
       success: function (response) {
+        isLoading = false;
         if (response.success) {
           displayResults(response.data);
         } else {
-          resultsContainer.html(
-            '<div class="error">Error en la búsqueda: ' +
+          $("#hits").html(
+            '<div class="error-message">Error en la búsqueda: ' +
               response.data +
               "</div>"
           );
         }
       },
-      error: function () {
-        resultsContainer.html(
-          '<div class="error">Error al conectar con el servidor</div>'
+      error: function (xhr, status, error) {
+        isLoading = false;
+        let errorMessage = "Error al conectar con el servidor";
+
+        if (status === "timeout") {
+          errorMessage = "La búsqueda tardó demasiado. Intenta de nuevo.";
+        } else if (xhr.status === 500) {
+          errorMessage =
+            "Error interno del servidor. Contacta al administrador.";
+        }
+
+        $("#hits").html(
+          '<div class="error-message">' + errorMessage + "</div>"
         );
       },
     });
-  });
+  }
 
-  function displayResults(results) {
-    if (!results.length) {
-      resultsContainer.html(
-        '<div class="no-results">No se encontraron despachos</div>'
-      );
+  function displayResults(data) {
+    const despachos = data.despachos;
+    const total = data.total;
+    const pages = data.pages;
+    const currentPage = data.current_page;
+
+    if (despachos.length === 0) {
+      $("#hits").html(`
+                <div class="no-results">
+                    <p>No se encontraron resultados${
+                      currentFilters.search
+                        ? " para <q>" + currentFilters.search + "</q>"
+                        : ""
+                    }.</p>
+                    <p>Intenta con otros términos de búsqueda o elimina los filtros.</p>
+                </div>
+            `);
+      $("#pagination").empty();
       return;
     }
 
-    let html = '<div class="despachos-grid">';
-    results.forEach(function (despacho) {
-      html += `
-                <div class="despacho-card">
-                    <h3>${despacho.nombre}</h3>
-                    <p class="direccion">${despacho.direccion}</p>
-                    <p class="localidad">${despacho.localidad}, ${
-        despacho.provincia
-      }</p>
-                    <p class="areas">${despacho.areas.join(", ")}</p>
-                    <a href="${despacho.link}" class="ver-mas">Ver más</a>
-                </div>
-            `;
+    // Optimizar renderizado con DocumentFragment
+    const fragment = document.createDocumentFragment();
+    const container = document.createElement("div");
+    container.className = "despachos-grid";
+
+    despachos.forEach(function (despacho) {
+      const card = document.createElement("div");
+      card.className = "despacho-card hit-card";
+
+      let cardHTML = "";
+      if (despacho.isVerified) {
+        cardHTML += `
+                    <div class="verification-badge">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Verificado</span>
+                    </div>
+                `;
+      }
+
+      cardHTML += `
+                    <div class="despacho-name">${despacho.nombre}</div>
+                    <div class="despacho-location">${despacho.localidad}, ${despacho.provincia}</div>
+                    <div class="despacho-areas"><strong>Áreas:</strong> ${despacho.areas_practica}</div>
+                    <a href="${despacho.link}" class="despacho-link">Ver más</a>
+                `;
+
+      card.innerHTML = cardHTML;
+      container.appendChild(card);
     });
+
+    fragment.appendChild(container);
+
+    // Limpiar y agregar contenido de una vez
+    $("#hits").empty().append(fragment);
+    displayPagination(currentPage, pages, total);
+  }
+
+  function displayPagination(currentPage, totalPages, totalResults) {
+    if (totalPages <= 1) {
+      $("#pagination").empty();
+      return;
+    }
+
+    let html = '<div class="pagination">';
+
+    // Botón anterior
+    if (currentPage > 1) {
+      html += `<a href="#" class="pagination-link" data-page="${
+        currentPage - 1
+      }">← Anterior</a>`;
+    }
+
+    // Números de página
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+
+    for (let i = startPage; i <= endPage; i++) {
+      if (i === currentPage) {
+        html += `<span class="pagination-current">${i}</span>`;
+      } else {
+        html += `<a href="#" class="pagination-link" data-page="${i}">${i}</a>`;
+      }
+    }
+
+    // Botón siguiente
+    if (currentPage < totalPages) {
+      html += `<a href="#" class="pagination-link" data-page="${
+        currentPage + 1
+      }">Siguiente →</a>`;
+    }
+
     html += "</div>";
 
-    resultsContainer.html(html);
+    $("#pagination").html(html);
+
+    // Event listeners para paginación
+    $(".pagination-link").on("click", function (e) {
+      e.preventDefault();
+      if (isLoading) return; // Evitar clics durante carga
+
+      currentPage = parseInt($(this).data("page"));
+      loadDespachos();
+    });
+  }
+
+  function updateCurrentRefinements() {
+    let html = "";
+    let hasRefinements = false;
+
+    // Provincias
+    if (currentFilters.provincia.length > 0) {
+      hasRefinements = true;
+      html += '<div class="refinement-group">';
+      html += "<strong>Provincias:</strong>";
+      currentFilters.provincia.forEach(function (provincia) {
+        html += `<span class="refinement-item">
+                    ${provincia}
+                    <button class="refinement-remove" data-filter="provincia" data-value="${provincia}">×</button>
+                </span>`;
+      });
+      html += "</div>";
+    }
+
+    // Localidades
+    if (currentFilters.localidad.length > 0) {
+      hasRefinements = true;
+      html += '<div class="refinement-group">';
+      html += "<strong>Localidades:</strong>";
+      currentFilters.localidad.forEach(function (localidad) {
+        html += `<span class="refinement-item">
+                    ${localidad}
+                    <button class="refinement-remove" data-filter="localidad" data-value="${localidad}">×</button>
+                </span>`;
+      });
+      html += "</div>";
+    }
+
+    // Áreas
+    if (currentFilters.area.length > 0) {
+      hasRefinements = true;
+      html += '<div class="refinement-group">';
+      html += "<strong>Áreas:</strong>";
+      currentFilters.area.forEach(function (area) {
+        html += `<span class="refinement-item">
+                    ${area}
+                    <button class="refinement-remove" data-filter="area" data-value="${area}">×</button>
+                </span>`;
+      });
+      html += "</div>";
+    }
+
+    if (hasRefinements) {
+      $("#current-refinements").html(html);
+    } else {
+      $("#current-refinements").empty();
+    }
+  }
+
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
   }
 });
-
-// Función para inicializar la búsqueda
-function initializeSearch() {
-  try {
-    console.log("Inicializando búsqueda...");
-    const searchClient = algoliasearch(
-      lexhoyDespachosData.appId,
-      lexhoyDespachosData.searchApiKey
-    );
-
-    const search = instantsearch({
-      indexName: lexhoyDespachosData.indexName,
-      searchClient,
-      routing: true,
-    });
-
-    // Widget de búsqueda
-    search.addWidgets([
-      instantsearch.widgets.searchBox({
-        container: "#searchbox",
-        placeholder: "Buscar...",
-        showReset: false,
-        showSubmit: true,
-        submitTitle: "Buscar",
-        resetTitle: "Limpiar",
-      }),
-    ]);
-
-    // Widget de refinamientos activos
-    search.addWidgets([
-      instantsearch.widgets.currentRefinements({
-        container: "#current-refinements",
-      }),
-    ]);
-
-    // Widget de refinamientos por provincia
-    search.addWidgets([
-      instantsearch.widgets.refinementList({
-        container: "#province-list",
-        attribute: "provincia",
-        searchable: true,
-        searchablePlaceholder: "Buscar provincia...",
-        limit: 10,
-        showMore: true,
-        showMoreLimit: 20,
-        templates: {
-          showMoreText: "Ver más",
-          showLessText: "Ver menos",
-        },
-      }),
-    ]);
-
-    // Widget de refinamientos por localidad
-    search.addWidgets([
-      instantsearch.widgets.refinementList({
-        container: "#location-list",
-        attribute: "localidad",
-        searchable: true,
-        searchablePlaceholder: "Buscar localidad...",
-        limit: 10,
-        showMore: true,
-        showMoreLimit: 20,
-        templates: {
-          showMoreText: "Ver más",
-          showLessText: "Ver menos",
-        },
-      }),
-    ]);
-
-    // Widget de refinamientos por área de práctica
-    search.addWidgets([
-      instantsearch.widgets.refinementList({
-        container: "#practice-list",
-        attribute: "areas_practica",
-        searchable: true,
-        searchablePlaceholder: "Buscar área...",
-        limit: 10,
-        showMore: true,
-        showMoreLimit: 20,
-        templates: {
-          showMoreText: "Ver más",
-          showLessText: "Ver menos",
-        },
-      }),
-    ]);
-
-    // Widget de resultados
-    search.addWidgets([
-      instantsearch.widgets.hits({
-        container: "#hits",
-        templates: {
-          item: document.getElementById("hit-template").innerHTML,
-          empty: document.getElementById("no-results-template").innerHTML,
-        },
-      }),
-    ]);
-
-    // Widget de paginación
-    search.addWidgets([
-      instantsearch.widgets.pagination({
-        container: "#pagination",
-        padding: 2,
-        showFirst: false,
-        showLast: false,
-      }),
-    ]);
-
-    // Iniciar la búsqueda
-    search.start();
-
-    // Manejar clics en letras del alfabeto
-    document.querySelectorAll(".alphabet-letter").forEach((letter) => {
-      letter.addEventListener("click", () => {
-        const searchInput = document.querySelector(".ais-SearchBox-input");
-        if (searchInput) {
-          searchInput.value = letter.textContent;
-          searchInput.dispatchEvent(new Event("input"));
-        }
-      });
-    });
-
-    // Manejar clics en pestañas de filtros
-    document.querySelectorAll(".filter-tab-btn").forEach((button) => {
-      button.addEventListener("click", () => {
-        // Remover clase active de todos los botones y paneles
-        document
-          .querySelectorAll(".filter-tab-btn")
-          .forEach((btn) => btn.classList.remove("active"));
-        document
-          .querySelectorAll(".filter-tab-pane")
-          .forEach((pane) => pane.classList.remove("active"));
-
-        // Agregar clase active al botón clickeado
-        button.classList.add("active");
-
-        // Mostrar el panel correspondiente
-        const tabId = button.getAttribute("data-tab");
-        document.getElementById(`${tabId}-list`).classList.add("active");
-      });
-    });
-  } catch (error) {
-    console.error("Error al inicializar la búsqueda:", error);
-    showNotification(
-      "error",
-      "Error al inicializar la búsqueda. Por favor, recarga la página."
-    );
-  }
-}
-
-// Función para mostrar notificaciones
-function showNotification(type, message) {
-  const notification = document.createElement("div");
-  notification.className = `despacho-notification ${type}`;
-  notification.innerHTML = `
-        <div class="notification-content">
-            <i class="fas ${
-              type === "success" ? "fa-check-circle" : "fa-exclamation-circle"
-            }"></i>
-            <span>${message}</span>
-        </div>
-        <button class="notification-close">
-            <i class="fas fa-times"></i>
-        </button>
-    `;
-
-  document.body.appendChild(notification);
-
-  setTimeout(() => {
-    notification.classList.add("show");
-  }, 100);
-
-  const closeButton = notification.querySelector(".notification-close");
-  closeButton.addEventListener("click", () => {
-    notification.classList.remove("show");
-    setTimeout(() => {
-      notification.remove();
-    }, 300);
-  });
-
-  setTimeout(() => {
-    if (notification.classList.contains("show")) {
-      notification.classList.remove("show");
-      setTimeout(() => {
-        notification.remove();
-      }, 300);
-    }
-  }, 5000);
-}
-
-// Función para navegar a la página del despacho
-window.navigateToDespacho = function (slug) {
-  window.location.href = `/despacho/${slug}`;
-};
-
-// Inicializar cuando el DOM esté listo
-document.addEventListener("DOMContentLoaded", initializeSearch);

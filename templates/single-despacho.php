@@ -59,7 +59,7 @@ get_header(); ?>
                         $experiencia = get_post_meta(get_the_ID(), '_despacho_experiencia', true);
                         $tamaño_despacho = get_post_meta(get_the_ID(), '_despacho_tamaño', true);
                         $año_fundacion = get_post_meta(get_the_ID(), '_despacho_año_fundacion', true);
-                        $is_verified = get_post_meta(get_the_ID(), '_despacho_is_verified', true);
+                        $is_verified = get_post_meta(get_the_ID(), '_despacho_is_verified', true) === '1';
                         $redes_sociales = get_post_meta(get_the_ID(), '_despacho_redes_sociales', true);
                         // Obtener áreas de práctica (taxonomía)
                         $areas_practica = wp_get_post_terms(get_the_ID(), 'area_practica');
