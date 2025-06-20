@@ -197,7 +197,29 @@ class LexhoyDespachosShortcode {
 
         // Búsqueda por texto
         if (!empty($search)) {
-            $args['s'] = $search;
+            // Verificar si es una búsqueda por letra del alfabeto (una sola letra)
+            if (strlen($search) === 1 && ctype_alpha($search)) {
+                // Búsqueda por letra inicial usando consulta SQL personalizada
+                global $wpdb;
+                $letter = strtoupper($search);
+                $post_ids = $wpdb->get_col($wpdb->prepare(
+                    "SELECT ID FROM {$wpdb->posts} 
+                    WHERE post_type = 'despacho' 
+                    AND post_status = 'publish' 
+                    AND UPPER(post_title) LIKE %s",
+                    $letter . '%'
+                ));
+                
+                if (!empty($post_ids)) {
+                    $args['post__in'] = $post_ids;
+                } else {
+                    // Si no hay resultados, forzar que no devuelva nada
+                    $args['post__in'] = array(0);
+                }
+            } else {
+                // Búsqueda normal por texto
+                $args['s'] = $search;
+            }
         }
 
         // Filtro por provincia

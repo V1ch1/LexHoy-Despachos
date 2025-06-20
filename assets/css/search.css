@@ -223,7 +223,7 @@
 
 /* Barra lateral de filtros */
 .filters-sidebar {
-  width: 300px;
+  width: 380px;
   flex-shrink: 0;
   background: #f8f9fa;
   padding: 20px;
@@ -237,6 +237,9 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* Contenedor de filtros */
