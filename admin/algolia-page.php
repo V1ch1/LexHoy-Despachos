@@ -187,24 +187,145 @@ function lexhoy_despachos_algolia_page() {
     
     if ($is_deleting) {
         try {
-            $cpt = new LexhoyDespachosCPT();
-            $result = $cpt->delete_all_posts();
+            echo '<div class="wrap">';
+            echo '<h1>Eliminando Todos los Despachos</h1>';
             
-            if ($result['success']) {
-                $message = sprintf(
-                    'Borrado completado. Total: %d, Borrados: %d, Errores: %d',
-                    $result['total'],
-                    $result['deleted'],
-                    count($result['errors'])
-                );
-                if (!empty($result['errors'])) {
-                    $message .= '<br>Errores detallados:<br>';
-                    foreach ($result['errors'] as $error) {
-                        $message .= sprintf('- Post %s: %s<br>', $error['post_id'], $error['error']);
+            // Aumentar límites de tiempo y memoria
+            set_time_limit(300); // 5 minutos
+            ini_set('memory_limit', '512M');
+            
+            $cpt = new LexhoyDespachosCPT();
+            
+            // Obtener total de despachos primero
+            $despachos = get_posts(array(
+                'post_type' => 'despacho',
+                'post_status' => 'any',
+                'numberposts' => -1,
+                'fields' => 'ids'
+            ));
+            
+            $total = count($despachos);
+            echo '<p>Total de despachos a eliminar: <strong>' . $total . '</strong></p>';
+            
+            if ($total === 0) {
+                echo '<p style="color: green;">✅ No hay despachos para eliminar.</p>';
+                echo '</div>';
+                return;
+            }
+            
+            echo '<div id="delete-progress">';
+            echo '<div class="progress-bar" style="width: 100%; height: 20px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden; margin: 10px 0;">';
+            echo '<div class="progress-fill" style="width: 0%; height: 100%; background-color: #0073aa; transition: width 0.3s;"></div>';
+            echo '</div>';
+            echo '<p class="progress-text">Eliminando despachos... <span class="progress-count">0</span> de <span class="progress-total">' . $total . '</span></p>';
+            echo '</div>';
+            
+            $deleted = 0;
+            $errors = 0;
+            $skipped = 0;
+            $batch_size = 25; // Reducir tamaño de lote
+            $batches = array_chunk($despachos, $batch_size);
+            
+            foreach ($batches as $batch_num => $batch) {
+                echo '<h3>Procesando lote ' . ($batch_num + 1) . ' de ' . count($batches) . '</h3>';
+                
+                foreach ($batch as $post_id) {
+                    try {
+                        // Verificar si el post aún existe
+                        if (!get_post($post_id)) {
+                            $skipped++;
+                            echo '<p style="color: orange;">⚠️ Saltado: ID ' . $post_id . ' (ya no existe)</p>';
+                            continue;
+                        }
+                        
+                        $post_title = get_the_title($post_id);
+                        
+                        // Intentar eliminar con diferentes métodos
+                        $delete_result = false;
+                        
+                        // Método 1: wp_delete_post normal
+                        $delete_result = wp_delete_post($post_id, true);
+                        
+                        // Método 2: Si falla, intentar forzar eliminación
+                        if (!$delete_result) {
+                            echo '<p style="color: orange;">⚠️ Reintentando eliminación forzada para ID ' . $post_id . '</p>';
+                            
+                            // Eliminar meta datos primero
+                            delete_post_meta($post_id, '_despacho_nombre');
+                            delete_post_meta($post_id, '_despacho_localidad');
+                            delete_post_meta($post_id, '_despacho_provincia');
+                            delete_post_meta($post_id, '_despacho_direccion');
+                            delete_post_meta($post_id, '_despacho_telefono');
+                            delete_post_meta($post_id, '_despacho_email');
+                            delete_post_meta($post_id, '_despacho_web');
+                            delete_post_meta($post_id, '_despacho_descripcion');
+                            
+                            // Intentar eliminar de nuevo
+                            $delete_result = wp_delete_post($post_id, true);
+                        }
+                        
+                        if ($delete_result) {
+                            $deleted++;
+                            echo '<p style="color: green;">✅ Eliminado: ID ' . $post_id . ' (' . $post_title . ')</p>';
+                        } else {
+                            $errors++;
+                            echo '<p style="color: red;">❌ Error eliminando: ID ' . $post_id . ' (' . $post_title . ')</p>';
+                        }
+                        
+                        // Actualizar progreso
+                        $progress = round(($deleted + $errors + $skipped) / $total * 100);
+                        echo '<script>
+                            document.querySelector(".progress-fill").style.width = "' . $progress . '%";
+                            document.querySelector(".progress-count").textContent = "' . ($deleted + $errors + $skipped) . '";
+                        </script>';
+                        
+                        // Flush output para mostrar progreso en tiempo real
+                        if (ob_get_level()) {
+                            ob_flush();
+                        }
+                        flush();
+                        
+                        // Pausa más larga para evitar timeouts
+                        usleep(50000); // 50ms
+                        
+                    } catch (Exception $e) {
+                        $errors++;
+                        echo '<p style="color: red;">❌ Error eliminando ID ' . $post_id . ': ' . $e->getMessage() . '</p>';
                     }
                 }
-                echo '<div class="notice notice-success"><p>' . $message . '</p></div>';
+                
+                // Pausa más larga entre lotes
+                if ($batch_num < count($batches) - 1) {
+                    echo '<p>Pausa entre lotes (2 segundos)...</p>';
+                    sleep(2);
+                    
+                    // Flush después de la pausa
+                    if (ob_get_level()) {
+                        ob_flush();
+                    }
+                    flush();
+                }
             }
+            
+            echo '<h3>Resumen de eliminación:</h3>';
+            echo '<ul>';
+            echo '<li>Total de despachos: <strong>' . $total . '</strong></li>';
+            echo '<li>Eliminados exitosamente: <strong style="color: green;">' . $deleted . '</strong></li>';
+            echo '<li>Saltados (ya no existían): <strong style="color: orange;">' . $skipped . '</strong></li>';
+            echo '<li>Errores: <strong style="color: red;">' . $errors . '</strong></li>';
+            echo '</ul>';
+            
+            if ($errors === 0) {
+                echo '<p style="color: green; font-size: 18px;">✅ Eliminación completada exitosamente. WordPress ahora tiene 0 despachos.</p>';
+            } else {
+                echo '<p style="color: orange; font-size: 18px;">⚠️ Eliminación completada con ' . $errors . ' errores.</p>';
+                echo '<p>Los despachos con errores pueden tener dependencias. Puedes intentar eliminarlos manualmente desde el admin de WordPress.</p>';
+            }
+            
+            echo '<hr>';
+            echo '<p><a href="' . admin_url('admin.php?page=lexhoy_despachos_algolia') . '" class="button button-primary">← Volver a la configuración</a></p>';
+            echo '</div>';
+            
         } catch (Exception $e) {
             echo '<div class="notice notice-error"><p>Error durante el borrado: ' . esc_html($e->getMessage()) . '</p></div>';
         }

@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 class LexhoyDespachosCPT {
     
     private $algolia_client;
+    private $import_in_progress = false; // Variable para controlar si hay importación en progreso
 
     /**
      * Constructor
@@ -39,10 +40,6 @@ class LexhoyDespachosCPT {
         // Acción para sincronización programada
         add_action('lexhoy_despachos_sync_from_algolia', array($this, 'sync_all_from_algolia'));
 
-        // NUEVO: menú y acción de importación manual de un despacho
-        add_action('admin_menu', array($this, 'register_import_submenu'));
-        add_action('admin_post_lexhoy_import_one_despacho', array($this, 'handle_import_one_despacho'));
-
         // NUEVO: Handlers AJAX para importación masiva
         add_action('wp_ajax_lexhoy_get_algolia_count', array($this, 'ajax_get_algolia_count'));
         add_action('wp_ajax_lexhoy_bulk_import_block', array($this, 'ajax_bulk_import_block'));
@@ -69,6 +66,9 @@ class LexhoyDespachosCPT {
 
         // Evitar bucle infinito entre /despacho/slug y /slug
         add_filter('redirect_canonical', array($this, 'prevent_canonical_redirect_for_despachos'), 10, 2);
+
+        // Registrar submenú para importación masiva desde Algolia
+        add_action('admin_menu', array($this, 'register_import_submenu'));
     }
 
     /**
@@ -530,6 +530,12 @@ class LexhoyDespachosCPT {
      * Sincronizar un post a Algolia
      */
     public function sync_to_algolia($post_id, $post, $update) {
+        // No hacer nada si hay una importación en progreso
+        if ($this->import_in_progress) {
+            $this->custom_log("SYNC: Sincronización omitida durante importación masiva para post {$post_id}");
+            return;
+        }
+
         // No hacer nada si es una revisión o autoguardado
         if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
             return;
@@ -900,98 +906,783 @@ class LexhoyDespachosCPT {
     }
 
     /**
-     * Registrar submenú para importar un despacho desde Algolia
+     * Manejar AJAX para obtener el conteo de registros en Algolia
      */
-    public function register_import_submenu() {
-        add_submenu_page(
-            'edit.php?post_type=despacho',
-            'Importar un Despacho',
-            'Importar un Despacho',
-            'manage_options',
-            'lexhoy-despachos-import-one',
-            array($this, 'render_import_page')
-        );
-
-        // NUEVO: Página de importación masiva
-        add_submenu_page(
-            'edit.php?post_type=despacho',
-            'Importación Masiva desde Algolia',
-            'Importación Masiva',
-            'manage_options',
-            'lexhoy-despachos-import-bulk',
-            array($this, 'render_bulk_import_page')
-        );
-    }
-
-    /**
-     * Renderizar la página de importación
-     */
-    public function render_import_page() {
+    public function ajax_get_algolia_count() {
         if (!current_user_can('manage_options')) {
-            wp_die(__('No tienes permisos suficientes para acceder a esta página.'));
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
         }
 
-        // Comprobar mensajes
-        $mensaje = isset($_GET['mensaje']) ? sanitize_text_field($_GET['mensaje']) : '';
-
-        echo '<div class="wrap">';
-        echo '<h1>Importar un Despacho desde Algolia</h1>';
-
-        if ($mensaje === 'ok') {
-            echo '<div class="notice notice-success is-dismissible"><p>Despacho importado correctamente.</p></div>';
-        } elseif ($mensaje === 'error') {
-            echo '<div class="notice notice-error is-dismissible"><p>No se pudo importar el despacho. Revisa los registros de error para más detalles.</p></div>';
-        }
-
-        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
-        wp_nonce_field('lexhoy_import_one_despacho');
-        echo '<input type="hidden" name="action" value="lexhoy_import_one_despacho" />';
-        submit_button('Importar primer despacho');
-        echo '</form>';
-        echo '</div>';
-    }
-
-    /**
-     * Manejar la importación de un despacho desde Algolia
-     */
-    public function handle_import_one_despacho() {
-        if (!current_user_can('manage_options')) {
-            wp_die(__('No tienes permisos suficientes para realizar esta acción.'));
-        }
-
-        check_admin_referer('lexhoy_import_one_despacho');
-
-        $redirect_url = admin_url('edit.php?post_type=despacho&page=lexhoy-despachos-import-one');
+        check_ajax_referer('lexhoy_get_count', 'nonce');
 
         try {
             if (!$this->algolia_client) {
                 throw new Exception('Cliente de Algolia no inicializado.');
             }
 
-            // Obtener el primer registro de Algolia
-            $index_name = $this->algolia_client->get_index_name();
-            $search_result = $this->algolia_client->search($index_name, '', array('hitsPerPage' => 1));
-
-            if (!$search_result || empty($search_result['hits'])) {
-                throw new Exception('No se encontró ningún registro en Algolia.');
+            $this->custom_log('AJAX: Obteniendo conteo de registros de Algolia...');
+            
+            // Intentar primero con el método simple
+            $total_algolia = $this->algolia_client->get_total_count_simple();
+            
+            // Si falla, intentar con el método sin filtrar
+            if ($total_algolia === 0) {
+                $this->custom_log('AJAX: Método simple falló, intentando con browse_all_unfiltered...');
+                $result = $this->algolia_client->browse_all_unfiltered();
+                
+                if (!$result['success']) {
+                    throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
+                }
+                
+                $all_hits = $result['hits'];
+                $total_algolia = count($all_hits);
             }
+            
+            $this->custom_log("AJAX: Total encontrado: {$total_algolia} registros");
 
-            $first_record = $search_result['hits'][0];
-            if (!isset($first_record['objectID'])) {
-                throw new Exception('El registro no tiene un objectID.');
-            }
-
-            // Sincronizar usando el método existente
-            $this->sync_from_algolia($first_record['objectID']);
-
-            // Redirigir con éxito
-            wp_redirect(add_query_arg('mensaje', 'ok', $redirect_url));
-            exit;
+            wp_send_json_success(array('total' => $total_algolia));
         } catch (Exception $e) {
-            error_log('Error al importar un despacho: ' . $e->getMessage());
-            wp_redirect(add_query_arg('mensaje', 'error', $redirect_url));
-            exit;
+            $this->custom_log('AJAX Error: ' . $e->getMessage());
+            wp_send_json_error('Error al obtener el conteo: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Manejar AJAX para importar bloques de registros desde Algolia
+     */
+    public function ajax_bulk_import_block() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_bulk_import_block', 'nonce');
+
+        $block = isset($_POST['block']) ? intval($_POST['block']) : 1;
+        $overwrite = isset($_POST['overwrite']) ? boolval($_POST['overwrite']) : false;
+        $block_size = 1000; // Cambiado a 1000 para coincidir con el límite de Algolia
+
+        $this->custom_log("AJAX: Iniciando importación del bloque {$block} (overwrite: " . ($overwrite ? 'SI' : 'NO') . ")");
+
+        try {
+            if (!$this->algolia_client) {
+                throw new Exception('Cliente de Algolia no inicializado.');
+            }
+
+            // Activar control de importación para deshabilitar sincronización
+            $this->import_in_progress = true;
+            $this->custom_log("AJAX: Control de importación activado - Sincronización deshabilitada");
+
+            // Calcular qué página necesitamos obtener (cada página = 1000 registros)
+            $page = $block - 1; // Página 0 = bloque 1, Página 1 = bloque 2, etc.
+            
+            $this->custom_log("AJAX: Obteniendo todos los registros de Algolia para procesar bloque {$block}");
+            
+            // Obtener todos los registros usando browse_all sin filtrar
+            $result = $this->algolia_client->browse_all_unfiltered();
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
+            }
+
+            $all_hits = $result['hits'];
+            $total_hits = count($all_hits);
+            $this->custom_log("AJAX: Obtenidos {$total_hits} registros totales de Algolia");
+
+            // Extraer solo los registros para este bloque (1000 registros por bloque)
+            $start_index = ($block - 1) * 1000;
+            $hits_to_process = array_slice($all_hits, $start_index, 1000);
+            $total_to_process = count($hits_to_process);
+            
+            $this->custom_log("AJAX: Procesando {$total_to_process} registros del bloque {$block} (inicio en posición {$start_index})");
+
+            if ($total_to_process === 0) {
+                $this->custom_log("AJAX: No hay registros para procesar en este bloque");
+                // Desactivar control de importación
+                $this->import_in_progress = false;
+                $this->custom_log("AJAX: Control de importación desactivado");
+                
+                wp_send_json_success(array(
+                    'processed' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'error_details' => [],
+                    'finished' => true,
+                    'total_records' => $total_hits,
+                    'processed_so_far' => $start_index,
+                    'current_block' => $block,
+                    'total_blocks' => ceil($total_hits / 1000)
+                ));
+            }
+
+            $imported_records = 0;
+            $created_records = 0;
+            $updated_records = 0;
+            $skipped_records = 0;
+            $error_details = array();
+
+            foreach ($hits_to_process as $index => $record) {
+                try {
+                    if (!isset($record['objectID'])) {
+                        $error_details[] = "Registro sin objectID en posición " . $index;
+                        continue;
+                    }
+
+                    $objectID = $record['objectID'];
+                    
+                    // Filtrar registros vacíos o generados automáticamente sin datos
+                    $nombre = trim($record['nombre'] ?? '');
+                    $localidad = trim($record['localidad'] ?? '');
+                    $provincia = trim($record['provincia'] ?? '');
+                    $is_generated = strpos($objectID, '_dashboard_generated_id') !== false;
+                    $has_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
+                    
+                    // Saltar registros generados automáticamente sin datos
+                    if ($is_generated && !$has_data) {
+                        $skipped_records++;
+                        $this->custom_log("AJAX: Registro {$objectID} es generado automáticamente sin datos, saltando");
+                        continue;
+                    }
+                    
+                    $this->custom_log("AJAX: Procesando registro {$objectID}...");
+
+                    // Verificar si el despacho ya existe
+                    $existing_post = get_posts(array(
+                        'post_type' => 'despacho',
+                        'meta_key' => 'algolia_object_id',
+                        'meta_value' => $objectID,
+                        'post_status' => 'any',
+                        'numberposts' => 1,
+                        'fields' => 'ids'
+                    ));
+
+                    if ($existing_post && !$overwrite) {
+                        // Ya existe y no queremos sobrescribir
+                        $skipped_records++;
+                        $this->custom_log("AJAX: Registro {$objectID} ya existe, saltando");
+                        continue;
+                    } elseif ($existing_post) {
+                        $updated_records++;
+                        $this->custom_log("AJAX: Actualizando registro existente {$objectID}");
+                    } else {
+                        $created_records++;
+                        $this->custom_log("AJAX: Creando nuevo registro {$objectID}");
+                    }
+
+                    // Procesar el registro directamente sin usar get_object
+                    $this->process_algolia_record($record);
+                    
+                    $imported_records++;
+                    $this->custom_log("AJAX: Registro {$objectID} procesado exitosamente");
+
+                } catch (Exception $e) {
+                    $error_msg = "Error en registro " . $index . " (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
+                    $error_details[] = $error_msg;
+                    $this->custom_log("AJAX ERROR: {$error_msg}");
+                }
+            }
+
+            // Desactivar control de importación
+            $this->import_in_progress = false;
+            $this->custom_log("AJAX: Control de importación desactivado");
+
+            $this->custom_log("AJAX: Bloque {$block} completado - Procesados: {$imported_records}, Creados: {$created_records}, Actualizados: {$updated_records}, Saltados: {$skipped_records}, Errores: " . count($error_details));
+
+            // Calcular información de paginación
+            $total_records_estimate = $total_hits;
+            $total_blocks = ceil($total_hits / 1000);
+            $processed_so_far = ($block * 1000);
+            $is_last_block = $block >= $total_blocks || $total_to_process < 1000;
+
+            wp_send_json_success(array(
+                'processed' => $imported_records,
+                'created' => $created_records,
+                'updated' => $updated_records,
+                'skipped' => $skipped_records,
+                'errors' => count($error_details),
+                'error_details' => $error_details,
+                'finished' => $is_last_block,
+                'total_records' => $total_records_estimate,
+                'processed_so_far' => $processed_so_far,
+                'current_block' => $block,
+                'total_blocks' => $total_blocks,
+                'block_size' => 1000
+            ));
+
+        } catch (Exception $e) {
+            // Asegurar que se desactive el control de importación incluso si hay error
+            $this->import_in_progress = false;
+            $this->custom_log("AJAX: Control de importación desactivado por error");
+            
+            $error_msg = 'Error al importar bloque: ' . $e->getMessage();
+            $this->custom_log("AJAX FATAL ERROR: {$error_msg}");
+            wp_send_json_error($error_msg);
+        }
+    }
+
+    /**
+     * Procesar un registro de Algolia directamente (sin usar get_object)
+     */
+    private function process_algolia_record($record) {
+        try {
+            $object_id = $record['objectID'];
+            
+            // Verificar si el registro tiene datos mínimos
+            $nombre = trim($record['nombre'] ?? '');
+            $localidad = trim($record['localidad'] ?? '');
+            $provincia = trim($record['provincia'] ?? '');
+            $has_minimal_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
+            
+            // Si no tiene datos mínimos, usar un título más descriptivo
+            if (!$has_minimal_data) {
+                $nombre = 'Despacho sin datos - ' . $object_id;
+            }
+            
+            // Determinar slug único
+            $slug = sanitize_title($record['slug'] ?? $nombre);
+            if (empty($slug)) {
+                $slug = 'despacho-' . sanitize_title($object_id);
+            }
+
+            // ¿Existe ya un despacho con este slug?
+            $existing = get_posts(array(
+                'post_type'   => 'despacho',
+                'name'        => $slug,
+                'post_status' => 'any',
+                'numberposts' => 1,
+                'fields'      => 'ids'
+            ));
+
+            if ($existing) {
+                $post_id = (int) $existing[0];
+            } else {
+                // Crear nuevo post
+                $post_id = wp_insert_post(array(
+                    'post_type'   => 'despacho',
+                    'post_title'  => $nombre,
+                    'post_content'=> $record['descripcion'] ?? '',
+                    'post_status' => 'publish',
+                    'post_name'   => $slug
+                ));
+            }
+
+            // Verificar que se obtuvo un ID válido
+            if (is_wp_error($post_id) || $post_id <= 0) {
+                throw new Exception('No se pudo crear/obtener el post de WordPress.');
+            }
+
+            // Guardar meta para mapear con Algolia
+            update_post_meta($post_id, '_algolia_object_id', $object_id);
+
+            // Actualizar post si ya existía (título, contenido, etc.)
+            wp_update_post(array(
+                'ID'          => $post_id,
+                'post_title'  => $nombre,
+                'post_content'=> $record['descripcion'] ?? ''
+            ));
+
+            // Actualizar meta datos restantes
+            update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
+            update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
+            update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
+            update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
+            update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
+            update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
+            update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
+            update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
+            update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
+            update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
+            update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? 0);
+            // NUEVOS CAMPOS
+            update_post_meta($post_id, '_despacho_especialidades', isset($record['especialidades']) && is_array($record['especialidades']) ? implode(',', $record['especialidades']) : '');
+            update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
+            update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
+            update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
+            update_post_meta($post_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
+            update_post_meta($post_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
+            update_post_meta($post_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
+
+            // Sincronizar áreas de práctica (crear términos si no existen)
+            if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
+                $term_ids = array();
+                foreach ($record['areas_practica'] as $area_name) {
+                    $term = term_exists($area_name, 'area_practica');
+                    if (!$term) {
+                        $term = wp_insert_term($area_name, 'area_practica');
+                    }
+                    if (!is_wp_error($term)) {
+                        $term_ids[] = intval($term['term_id']);
+                    }
+                }
+                if ($term_ids) {
+                    wp_set_post_terms($post_id, $term_ids, 'area_practica', false);
+                }
+            }
+
+        } catch (Exception $e) {
+            $this->custom_log("ERROR en process_algolia_record: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Eliminar todos los posts del CPT despacho
+     */
+    public function delete_all_posts() {
+        $result = array(
+            'success' => false,
+            'total' => 0,
+            'deleted' => 0,
+            'errors' => array()
+        );
+
+        try {
+            // Obtener todos los despachos
+            $despachos = get_posts(array(
+                'post_type' => 'despacho',
+                'post_status' => 'any',
+                'numberposts' => -1,
+                'fields' => 'ids'
+            ));
+
+            $result['total'] = count($despachos);
+
+            if ($result['total'] === 0) {
+                $result['success'] = true;
+                $result['message'] = 'No hay despachos para eliminar.';
+                return $result;
+            }
+
+            // Eliminar cada despacho
+            foreach ($despachos as $post_id) {
+                try {
+                    $delete_result = wp_delete_post($post_id, true); // true = eliminar permanentemente
+                    
+                    if ($delete_result) {
+                        $result['deleted']++;
+                    } else {
+                        $result['errors'][] = array(
+                            'post_id' => $post_id,
+                            'error' => 'No se pudo eliminar el post'
+                        );
+                    }
+                } catch (Exception $e) {
+                    $result['errors'][] = array(
+                        'post_id' => $post_id,
+                        'error' => $e->getMessage()
+                    );
+                }
+            }
+
+            $result['success'] = true;
+            $result['message'] = sprintf(
+                'Eliminación completada. Total: %d, Eliminados: %d, Errores: %d',
+                $result['total'],
+                $result['deleted'],
+                count($result['errors'])
+            );
+
+        } catch (Exception $e) {
+            $result['message'] = 'Error general: ' . $e->getMessage();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Renderizar página de migración desde Algolia
+     */
+    public function render_migrate_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('No tienes permisos suficientes para acceder a esta página.'));
+        }
+
+        echo '<div class="wrap">';
+        echo '<h1>🚀 Migración COMPLETA: Algolia → WordPress</h1>';
+        echo '<p><strong>⚠️ ATENCIÓN:</strong> Este proceso migrará TODOS los registros de Algolia a WordPress.</p>';
+        echo '<p><strong>📋 INCLUYE:</strong> Registros válidos, vacíos y generados automáticamente.</p>';
+        
+        // Verificar configuración de Algolia
+        $app_id = get_option('lexhoy_despachos_algolia_app_id');
+        $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+        $search_api_key = get_option('lexhoy_despachos_algolia_search_api_key');
+        $index_name = get_option('lexhoy_despachos_algolia_index_name');
+
+        if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+            echo '<div class="notice notice-error">';
+            echo '<p><strong>❌ Configuración de Algolia incompleta.</strong></p>';
+            echo '<p>Completa la configuración en <a href="' . admin_url('edit.php?post_type=despacho&page=lexhoy-despachos-algolia') . '">Configuración de Algolia</a> antes de continuar.</p>';
+            echo '</div>';
+            echo '</div>';
+            return;
+        }
+
+        // Verificar si se está ejecutando la migración
+        if (isset($_POST['action']) && $_POST['action'] === 'start_migration') {
+            $this->execute_migration_from_algolia();
+        } else {
+            $this->show_migration_form();
+        }
+
+        echo '</div>';
+    }
+
+    private function show_migration_form() {
+        try {
+            require_once('class-lexhoy-algolia-client.php');
+            $client = new LexhoyAlgoliaClient(
+                get_option('lexhoy_despachos_algolia_app_id'),
+                get_option('lexhoy_despachos_algolia_admin_api_key'),
+                get_option('lexhoy_despachos_algolia_search_api_key'),
+                get_option('lexhoy_despachos_algolia_index_name')
+            );
+
+            echo '<h2>📊 Análisis Preliminar</h2>';
+            
+            // Obtener estadísticas de Algolia
+            echo '<h3>1. Analizando registros en Algolia...</h3>';
+            $result = $client->browse_all_unfiltered();
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros: ' . $result['message']);
+            }
+
+            $all_hits = $result['hits'];
+            $total_algolia = count($all_hits);
+            
+            echo '<p>Total de registros en Algolia: <strong>' . $total_algolia . '</strong></p>';
+
+            // Analizar registros por tipo (solo para información)
+            $valid_records = [];
+            $empty_records = [];
+            $generated_records = [];
+            
+            foreach ($all_hits as $hit) {
+                $object_id = $hit['objectID'] ?? '';
+                $nombre = trim($hit['nombre'] ?? '');
+                $localidad = trim($hit['localidad'] ?? '');
+                $provincia = trim($hit['provincia'] ?? '');
+                $direccion = trim($hit['direccion'] ?? '');
+                $telefono = trim($hit['telefono'] ?? '');
+                $email = trim($hit['email'] ?? '');
+                $web = trim($hit['web'] ?? '');
+                $descripcion = trim($hit['descripcion'] ?? '');
+                
+                // Verificar si el registro está vacío
+                $is_empty = empty($nombre) && 
+                           empty($localidad) && 
+                           empty($provincia) && 
+                           empty($direccion) && 
+                           empty($telefono) && 
+                           empty($email) && 
+                           empty($web) && 
+                           empty($descripcion);
+                
+                // Verificar si es un registro generado automáticamente
+                $is_generated = strpos($object_id, '_dashboard_generated_id') !== false;
+                
+                // Verificar si tiene datos mínimos válidos
+                $has_minimal_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
+                
+                if ($is_generated) {
+                    $generated_records[] = $hit;
+                } elseif ($is_empty) {
+                    $empty_records[] = $hit;
+                } elseif ($has_minimal_data) {
+                    $valid_records[] = $hit;
+                }
+            }
+            
+            echo '<h3>2. Análisis de Registros (solo informativo):</h3>';
+            echo '<ul>';
+            echo '<li>✅ <strong>Registros válidos:</strong> <span style="color: green; font-weight: bold;">' . count($valid_records) . '</span></li>';
+            echo '<li>❌ <strong>Registros vacíos:</strong> <span style="color: red;">' . count($empty_records) . '</span></li>';
+            echo '<li>⚠️ <strong>Registros generados automáticamente:</strong> <span style="color: orange;">' . count($generated_records) . '</span></li>';
+            echo '</ul>';
+            echo '<p><strong>🎯 IMPORTANTE:</strong> Se migrarán TODOS los ' . $total_algolia . ' registros, sin importar su estado.</p>';
+
+            // Obtener estadísticas de WordPress
+            echo '<h3>3. Estado actual de WordPress:</h3>';
+            $wp_despachos = get_posts(array(
+                'post_type' => 'despacho',
+                'post_status' => 'any',
+                'numberposts' => -1,
+                'fields' => 'ids'
+            ));
+            $total_wp = count($wp_despachos);
+            echo '<p>Despachos actuales en WordPress: <strong>' . $total_wp . '</strong></p>';
+
+            // Mostrar ejemplos de registros
+            echo '<h3>4. Ejemplos de registros que se migrarán:</h3>';
+            echo '<div style="max-height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; background: #f9f9f9;">';
+            for ($i = 0; $i < min(5, count($all_hits)); $i++) {
+                $record = $all_hits[$i];
+                $is_generated = strpos($record['objectID'] ?? '', '_dashboard_generated_id') !== false;
+                $border_color = $is_generated ? 'orange' : (empty($record['nombre']) ? 'red' : 'green');
+                
+                echo '<div style="margin-bottom: 10px; padding: 10px; background: white; border-left: 4px solid ' . $border_color . ';">';
+                echo '<strong>ID:</strong> ' . ($record['objectID'] ?? 'N/A') . '<br>';
+                echo '<strong>Nombre:</strong> ' . ($record['nombre'] ?? 'N/A') . '<br>';
+                echo '<strong>Localidad:</strong> ' . ($record['localidad'] ?? 'N/A') . '<br>';
+                echo '<strong>Provincia:</strong> ' . ($record['provincia'] ?? 'N/A') . '<br>';
+                echo '<strong>Teléfono:</strong> ' . ($record['telefono'] ?? 'N/A') . '<br>';
+                echo '</div>';
+            }
+            echo '</div>';
+
+            // Formulario de migración
+            echo '<h2>🚀 Iniciar Migración COMPLETA</h2>';
+            echo '<p><strong>Configuración de la migración:</strong></p>';
+            echo '<ul>';
+            echo '<li>📦 <strong>Tamaño de bloque:</strong> 50 registros por lote</li>';
+            echo '<li>⏱️ <strong>Pausa entre bloques:</strong> 2 segundos</li>';
+            echo '<li>🔄 <strong>Migración:</strong> TODOS los registros sin filtrado</li>';
+            echo '<li>📝 <strong>Log detallado:</strong> Se muestra el progreso en tiempo real</li>';
+            echo '</ul>';
+            
+            echo '<form method="post" style="margin-top: 20px;">';
+            echo '<input type="hidden" name="action" value="start_migration">';
+            echo '<button type="submit" class="button button-primary" style="background: #d63638; color: white; padding: 15px 30px; border: none; cursor: pointer; font-size: 16px; font-weight: bold;">';
+            echo '🚀 MIGRAR TODOS LOS ' . $total_algolia . ' REGISTROS DE ALGOLIA';
+            echo '</button>';
+            echo '</form>';
+
+        } catch (Exception $e) {
+            echo '<div class="notice notice-error">';
+            echo '<p><strong>Error:</strong> ' . $e->getMessage() . '</p>';
+            echo '</div>';
+        }
+    }
+
+    private function execute_migration_from_algolia() {
+        echo '<h2>🚀 Ejecutando Migración COMPLETA</h2>';
+        
+        try {
+            require_once('class-lexhoy-algolia-client.php');
+            $client = new LexhoyAlgoliaClient(
+                get_option('lexhoy_despachos_algolia_app_id'),
+                get_option('lexhoy_despachos_algolia_admin_api_key'),
+                get_option('lexhoy_despachos_algolia_search_api_key'),
+                get_option('lexhoy_despachos_algolia_index_name')
+            );
+
+            // Obtener TODOS los registros de Algolia
+            echo '<h3>1. Obteniendo TODOS los registros de Algolia...</h3>';
+            $result = $client->browse_all_unfiltered();
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros: ' . $result['message']);
+            }
+
+            $all_hits = $result['hits'];
+            $total_records = count($all_hits);
+            
+            echo '<p>Total de registros a migrar: <strong>' . $total_records . '</strong></p>';
+
+            if ($total_records === 0) {
+                echo '<p style="color: orange;">⚠️ No hay registros para migrar.</p>';
+                return;
+            }
+
+            // Configuración de la migración
+            $block_size = 50;
+            $total_blocks = ceil($total_records / $block_size);
+            $total_created = 0;
+            $total_errors = 0;
+            $total_skipped = 0;
+
+            echo '<h3>2. Iniciando migración por bloques...</h3>';
+            echo '<p>Total de bloques a procesar: <strong>' . $total_blocks . '</strong></p>';
+            echo '<p>Tamaño de cada bloque: <strong>' . $block_size . '</strong> registros</p>';
+
+            // Procesar por bloques
+            for ($block = 0; $block < $total_blocks; $block++) {
+                $start_index = $block * $block_size;
+                $end_index = min($start_index + $block_size, $total_records);
+                $block_records = array_slice($all_hits, $start_index, $block_size);
+                
+                echo '<h4>📦 Procesando Bloque ' . ($block + 1) . ' de ' . $total_blocks . '</h4>';
+                echo '<p>Registros en este bloque: <strong>' . count($block_records) . '</strong></p>';
+                
+                $block_created = 0;
+                $block_errors = 0;
+                $block_skipped = 0;
+                
+                foreach ($block_records as $index => $record) {
+                    $record_number = $start_index + $index + 1;
+                    $object_id = $record['objectID'] ?? '';
+                    $nombre = trim($record['nombre'] ?? '');
+                    
+                    // Determinar el color del borde según el tipo de registro
+                    $is_generated = strpos($object_id, '_dashboard_generated_id') !== false;
+                    $border_color = $is_generated ? '#ff8c00' : (empty($nombre) ? '#dc3545' : '#28a745');
+                    
+                    echo '<div style="margin: 5px 0; padding: 5px; background: #f0f0f0; border-left: 3px solid ' . $border_color . ';">';
+                    echo '<strong>Registro ' . $record_number . '/' . $total_records . ':</strong> ' . ($nombre ?: 'Sin nombre') . ' (ID: ' . $object_id . ')';
+                    
+                    try {
+                        // Verificar si ya existe en WordPress
+                        $existing_posts = get_posts(array(
+                            'post_type' => 'despacho',
+                            'meta_query' => array(
+                                array(
+                                    'key' => 'algolia_object_id',
+                                    'value' => $object_id,
+                                    'compare' => '='
+                                )
+                            ),
+                            'post_status' => 'any',
+                            'numberposts' => 1
+                        ));
+                        
+                        if (!empty($existing_posts)) {
+                            echo ' → <span style="color: orange;">⚠️ Ya existe en WordPress (se omite)</span>';
+                            $block_skipped++;
+                            $total_skipped++;
+                        } else {
+                            // Crear el despacho en WordPress
+                            $post_data = array(
+                                'post_title' => $nombre ?: 'Despacho sin nombre',
+                                'post_content' => $record['descripcion'] ?? '',
+                                'post_status' => 'publish',
+                                'post_type' => 'despacho'
+                            );
+                            
+                            $post_id = wp_insert_post($post_data);
+                            
+                            if ($post_id && !is_wp_error($post_id)) {
+                                // Guardar metadatos
+                                $meta_fields = array(
+                                    'localidad' => trim($record['localidad'] ?? ''),
+                                    'provincia' => trim($record['provincia'] ?? ''),
+                                    'codigo_postal' => trim($record['codigo_postal'] ?? ''),
+                                    'direccion' => trim($record['direccion'] ?? ''),
+                                    'telefono' => trim($record['telefono'] ?? ''),
+                                    'email' => trim($record['email'] ?? ''),
+                                    'web' => trim($record['web'] ?? ''),
+                                    'estado_verificacion' => trim($record['estado_verificacion'] ?? ''),
+                                    'isVerified' => trim($record['isVerified'] ?? ''),
+                                    'experiencia' => trim($record['experiencia'] ?? ''),
+                                    'tamaño_despacho' => trim($record['tamaño_despacho'] ?? ''),
+                                    'año_fundacion' => trim($record['año_fundacion'] ?? ''),
+                                    'estado_registro' => trim($record['estado_registro'] ?? ''),
+                                    'ultima_actualizacion' => trim($record['ultima_actualizacion'] ?? ''),
+                                    'algolia_object_id' => $object_id,
+                                    'algolia_slug' => trim($record['slug'] ?? '')
+                                );
+                                
+                                foreach ($meta_fields as $key => $value) {
+                                    update_post_meta($post_id, $key, $value);
+                                }
+
+                                // Guardar arrays como JSON
+                                if (!empty($record['areas_practica'])) {
+                                    update_post_meta($post_id, 'areas_practica', json_encode($record['areas_practica']));
+                                }
+                                if (!empty($record['especialidades'])) {
+                                    update_post_meta($post_id, 'especialidades', json_encode($record['especialidades']));
+                                }
+                                if (!empty($record['horario'])) {
+                                    update_post_meta($post_id, 'horario', json_encode($record['horario']));
+                                }
+                                if (!empty($record['redes_sociales'])) {
+                                    update_post_meta($post_id, 'redes_sociales', json_encode($record['redes_sociales']));
+                                }
+                                
+                                echo ' → <span style="color: green;">✅ Creado exitosamente (ID: ' . $post_id . ')</span>';
+                                $block_created++;
+                                $total_created++;
+                            } else {
+                                echo ' → <span style="color: red;">❌ Error al crear: ' . (is_wp_error($post_id) ? $post_id->get_error_message() : 'Error desconocido') . '</span>';
+                                $block_errors++;
+                                $total_errors++;
+                            }
+                        }
+                    } catch (Exception $e) {
+                        echo ' → <span style="color: red;">❌ Error: ' . $e->getMessage() . '</span>';
+                        $block_errors++;
+                        $total_errors++;
+                    }
+                    
+                    echo '</div>';
+                    
+                    // Flush output para mostrar progreso en tiempo real
+                    if (ob_get_level()) {
+                        ob_flush();
+                    }
+                    flush();
+                }
+                
+                echo '<p><strong>Resumen del bloque ' . ($block + 1) . ':</strong></p>';
+                echo '<ul>';
+                echo '<li>✅ Creados: <strong>' . $block_created . '</strong></li>';
+                echo '<li>⚠️ Omitidos: <strong>' . $block_skipped . '</strong></li>';
+                echo '<li>❌ Errores: <strong>' . $block_errors . '</strong></li>';
+                echo '</ul>';
+                
+                // Pausa entre bloques (excepto el último)
+                if ($block < $total_blocks - 1) {
+                    echo '<p>⏱️ Pausa de 2 segundos antes del siguiente bloque...</p>';
+                    sleep(2);
+                }
+            }
+            
+            // Resumen final
+            echo '<h3>3. Resumen Final de la Migración COMPLETA</h3>';
+            echo '<div style="background: #f0f8ff; padding: 20px; border-left: 4px solid #0073aa;">';
+            echo '<h4>📊 Estadísticas Totales:</h4>';
+            echo '<ul>';
+            echo '<li>✅ <strong>Despachos creados:</strong> <span style="color: green; font-size: 18px;">' . $total_created . '</span></li>';
+            echo '<li>⚠️ <strong>Despachos omitidos (ya existían):</strong> <span style="color: orange;">' . $total_skipped . '</span></li>';
+            echo '<li>❌ <strong>Errores:</strong> <span style="color: red;">' . $total_errors . '</span></li>';
+            echo '<li>📦 <strong>Bloques procesados:</strong> ' . $total_blocks . '</li>';
+            echo '<li>📈 <strong>Total procesados:</strong> ' . $total_records . '</li>';
+            echo '</ul>';
+            echo '</div>';
+            
+            // Verificar estado final
+            $final_wp_count = get_posts(array(
+                'post_type' => 'despacho',
+                'post_status' => 'any',
+                'numberposts' => -1,
+                'fields' => 'ids'
+            ));
+            $final_count = count($final_wp_count);
+            
+            echo '<p><strong>Estado final de WordPress:</strong> <span style="color: green; font-size: 18px;">' . $final_count . ' despachos</span></p>';
+            
+            if ($total_created > 0) {
+                echo '<p style="color: green; font-size: 18px;">🎉 ¡Migración COMPLETA completada exitosamente!</p>';
+            }
+
+        } catch (Exception $e) {
+            echo '<h3>Error durante la migración:</h3>';
+            echo '<p style="color: red;">' . $e->getMessage() . '</p>';
+        }
+    }
+
+    /**
+     * Registrar submenú para importación masiva desde Algolia
+     */
+    public function register_import_submenu() {
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Importación Masiva desde Algolia',
+            'Importación Masiva',
+            'manage_options',
+            'lexhoy-bulk-import',
+            array($this, 'render_bulk_import_page')
+        );
+        
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Limpieza de Registros Generados',
+            'Limpieza Algolia',
+            'manage_options',
+            'lexhoy-clean-generated',
+            array($this, 'render_clean_generated_page')
+        );
     }
 
     /**
@@ -1027,8 +1718,15 @@ class LexhoyDespachosCPT {
         
         try {
             $algolia_client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
-            $result = $algolia_client->browse_all();
-            $total_algolia = $result['success'] ? $result['total_records'] : 0;
+            
+            // Intentar primero con el método simple
+            $total_algolia = $algolia_client->get_total_count_simple();
+            
+            // Si falla, intentar con el método sin filtrar
+            if ($total_algolia === 0) {
+                $result = $algolia_client->browse_all_unfiltered();
+                $total_algolia = $result['success'] ? count($result['hits']) : 0;
+            }
         } catch (Exception $e) {
             $total_algolia = 'Error: ' . $e->getMessage();
         }
@@ -1050,7 +1748,14 @@ class LexhoyDespachosCPT {
 
         <div class="card" style="max-width: 600px; margin-top: 20px;">
             <h2>🚀 Iniciar Importación por Bloques</h2>
-            <p>La importación se realizará en bloques de <strong>200 registros</strong> para evitar timeouts.</p>
+            <p>La importación se realizará en <strong>bloques de 1000 registros</strong> para optimizar el rendimiento y evitar timeouts.</p>
+            <p><strong>📋 Proceso:</strong></p>
+            <ul>
+                <li>Cada bloque procesa hasta 1000 registros de Algolia</li>
+                <li>Se filtran automáticamente los registros vacíos</li>
+                <li>La sincronización con Algolia se deshabilita durante la importación</li>
+                <li>Progreso en tiempo real con estadísticas detalladas</li>
+            </ul>
             
             <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" id="bulk-import-form">
                 <input type="hidden" name="action" value="lexhoy_bulk_import_start" />
@@ -1105,7 +1810,7 @@ class LexhoyDespachosCPT {
             document.querySelector('#bulk-import-form button').disabled = true;
             document.querySelector('#bulk-import-form button').textContent = '⏳ Importando...';
 
-            logMessage('🚀 Iniciando importación masiva...');
+            logMessage('🚀 Iniciando importación masiva por bloques de 1000...');
             
             // Primero obtener el total de registros
             jQuery.ajax({
@@ -1118,9 +1823,10 @@ class LexhoyDespachosCPT {
                 success: function(response) {
                     if (response.success) {
                         totalRecords = response.data.total;
-                        totalBlocks = Math.ceil(totalRecords / 200);
-                        logMessage(`📊 Total de registros en Algolia: ${totalRecords}`);
-                        logMessage(`📦 Se procesarán ${totalBlocks} bloques de 200 registros`);
+                        totalBlocks = Math.ceil(totalRecords / 1000);
+                        logMessage(`📊 Total de registros en Algolia: ${totalRecords.toLocaleString()}`);
+                        logMessage(`📦 Se procesarán ${totalBlocks} bloques de 1000 registros`);
+                        logMessage(`📋 Cada bloque procesará hasta 1000 registros de Algolia`);
                         
                         // Iniciar el primer bloque
                         processNextBlock();
@@ -1144,9 +1850,10 @@ class LexhoyDespachosCPT {
             }
 
             currentBlock++;
-            const startRecord = (currentBlock - 1) * 200;
+            const startRecord = (currentBlock - 1) * 1000 + 1;
+            const endRecord = Math.min(currentBlock * 1000, totalRecords);
             
-            logMessage(`\n🔄 Procesando bloque ${currentBlock}/${totalBlocks} (registros ${startRecord + 1}-${Math.min(startRecord + 200, totalRecords)})`);
+            logMessage(`\n🔄 Procesando bloque ${currentBlock}/${totalBlocks} (registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()})`);
             
             jQuery.ajax({
                 url: ajaxurl,
@@ -1162,11 +1869,11 @@ class LexhoyDespachosCPT {
                         const data = response.data;
                         processedRecords += data.processed;
                         
-                        logMessage(`✅ Bloque ${currentBlock} completado:`);
-                        logMessage(`   • Procesados: ${data.processed}`);
-                        logMessage(`   • Creados: ${data.created}`);
-                        logMessage(`   • Actualizados: ${data.updated}`);
-                        logMessage(`   • Saltados: ${data.skipped || 0}`);
+                        logMessage(`✅ Bloque ${currentBlock}/${data.total_blocks || totalBlocks} completado:`);
+                        logMessage(`   • Procesados: ${data.processed.toLocaleString()}`);
+                        logMessage(`   • Creados: ${data.created.toLocaleString()}`);
+                        logMessage(`   • Actualizados: ${data.updated.toLocaleString()}`);
+                        logMessage(`   • Saltados: ${(data.skipped || 0).toLocaleString()}`);
                         logMessage(`   • Errores: ${data.errors}`);
                         
                         if (data.error_details && data.error_details.length > 0) {
@@ -1175,11 +1882,22 @@ class LexhoyDespachosCPT {
                             });
                         }
                         
-                        // Actualizar barra de progreso
-                        const progress = (processedRecords / totalRecords) * 100;
+                        // Actualizar barra de progreso con información más precisa
+                        const progress = data.finished ? 100 : (data.processed_so_far / data.total_records) * 100;
                         document.getElementById('progress-bar').style.width = progress + '%';
                         document.getElementById('progress-text').textContent = 
-                            `Progreso: ${processedRecords}/${totalRecords} (${Math.round(progress)}%)`;
+                            `Progreso: ${data.processed_so_far.toLocaleString()}/${data.total_records.toLocaleString()} (${Math.round(progress)}%) - Bloque ${data.current_block}/${data.total_blocks}`;
+                        
+                        // Verificar si la importación ha terminado
+                        if (data.finished) {
+                            logMessage('✅ ¡Importación completada!');
+                            logMessage(`📊 Resumen final:`);
+                            logMessage(`   • Total de registros procesados: ${data.processed_so_far.toLocaleString()}`);
+                            logMessage(`   • Último bloque procesado: ${data.current_block}/${data.total_blocks}`);
+                            logMessage(`   • Tamaño de bloque: ${data.block_size} registros`);
+                            finishImport();
+                            return;
+                        }
                         
                         // Procesar siguiente bloque después de una pausa corta
                         setTimeout(processNextBlock, 1000);
@@ -1220,158 +1938,221 @@ class LexhoyDespachosCPT {
         echo '</div>';
     }
 
-    public function prevent_canonical_redirect_for_despachos($redirect_url, $requested_url) {
-        // Si ya estamos en un despacho singular => no redirigir
-        if (is_singular('despacho')) {
-            return false;
+    /**
+     * Renderizar página de limpieza de registros generados automáticamente
+     */
+    public function render_clean_generated_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('No tienes permisos suficientes para acceder a esta página.'));
         }
 
-        // Si la URL solicitada es del tipo /slug/ sin "despacho/"
-        $path = trim(parse_url($requested_url, PHP_URL_PATH), '/');
-        if ( $path && strpos( $path, 'despacho/' ) === false ) {
-            $despacho = get_posts(array(
-                'post_type'   => 'despacho',
-                'name'        => $path,
-                'post_status' => 'publish',
-                'numberposts' => 1,
-                'fields'      => 'ids',
-            ));
+        echo '<div class="wrap">';
+        echo '<h1>🧹 Limpieza de Registros Generados Automáticamente</h1>';
+        echo '<p><strong>⚠️ ATENCIÓN:</strong> Este proceso eliminará registros generados automáticamente sin datos de Algolia.</p>';
+        
+        // Verificar configuración de Algolia
+        $app_id = get_option('lexhoy_despachos_algolia_app_id');
+        $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+        $index_name = get_option('lexhoy_despachos_algolia_index_name');
 
-            if ( $despacho ) {
-                // Evitamos que WordPress redirija a /despacho/slug/
-                return false;
-            }
+        if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+            echo '<div class="notice notice-error">';
+            echo '<p><strong>❌ Configuración de Algolia incompleta.</strong></p>';
+            echo '<p>Completa la configuración en <a href="' . admin_url('edit.php?post_type=despacho&page=lexhoy-despachos-algolia') . '">Configuración de Algolia</a> antes de continuar.</p>';
+            echo '</div>';
+            echo '</div>';
+            return;
         }
 
-        return $redirect_url; // para el resto de casos, comportamiento normal
+        // Verificar si se está ejecutando la limpieza
+        if (isset($_POST['action']) && $_POST['action'] === 'clean_generated') {
+            $this->execute_clean_generated_records();
+        } else {
+            $this->show_clean_generated_form();
+        }
+
+        echo '</div>';
     }
 
-    /**
-     * Manejar AJAX para obtener el conteo de registros en Algolia
-     */
-    public function ajax_get_algolia_count() {
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
-        }
-
-        check_ajax_referer('lexhoy_get_count', 'nonce');
-
+    private function show_clean_generated_form() {
         try {
-            if (!$this->algolia_client) {
-                throw new Exception('Cliente de Algolia no inicializado.');
+            require_once(plugin_dir_path(__FILE__) . 'class-lexhoy-algolia-client.php');
+            $client = new LexhoyAlgoliaClient(
+                get_option('lexhoy_despachos_algolia_app_id'),
+                get_option('lexhoy_despachos_algolia_admin_api_key'),
+                get_option('lexhoy_despachos_algolia_search_api_key'),
+                get_option('lexhoy_despachos_algolia_index_name')
+            );
+
+            echo '<h2>📊 Análisis Preliminar</h2>';
+            
+            // Obtener conteo total
+            $total_count = $client->get_total_count_simple();
+            echo '<p><strong>Total de registros en Algolia:</strong> ' . number_format($total_count) . '</p>';
+
+            // Obtener algunos registros para análisis
+            $sample_records = $client->browse_page_unfiltered(0, 100);
+            
+            if (empty($sample_records)) {
+                echo '<p>No se encontraron registros para analizar.</p>';
+                return;
             }
 
-            $this->custom_log('AJAX: Obteniendo conteo de registros de Algolia...');
+            $generated_count = 0;
+            $valid_count = 0;
             
-            // Usar browse_all() temporalmente para obtener el conteo
-            $result = $this->algolia_client->browse_all();
-            $total_algolia = $result['success'] ? $result['total_records'] : 0;
-            
-            $this->custom_log("AJAX: Total encontrado: {$total_algolia}");
-
-            wp_send_json_success(array('total' => $total_algolia));
-        } catch (Exception $e) {
-            $this->custom_log('AJAX Error: ' . $e->getMessage());
-            wp_send_json_error('Error al obtener el conteo: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Manejar AJAX para importar bloques de registros desde Algolia
-     */
-    public function ajax_bulk_import_block() {
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
-        }
-
-        check_ajax_referer('lexhoy_bulk_import_block', 'nonce');
-
-        $block = isset($_POST['block']) ? intval($_POST['block']) : 1;
-        $overwrite = isset($_POST['overwrite']) ? boolval($_POST['overwrite']) : false;
-
-        $this->custom_log("AJAX: Iniciando importación del bloque {$block} (overwrite: " . ($overwrite ? 'SI' : 'NO') . ")");
-
-        try {
-            if (!$this->algolia_client) {
-                throw new Exception('Cliente de Algolia no inicializado.');
-            }
-
-            // Obtener solo los registros de este bloque específico
-            $this->custom_log("AJAX: Obteniendo página {$block} de Algolia...");
-            $result = $this->algolia_client->browse_page($block - 1, 200);
-            
-            if (!$result['success']) {
-                throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
-            }
-
-            $hits = $result['hits'];
-            $this->custom_log("AJAX: Obtenidos " . count($hits) . " registros de Algolia");
-
-            $imported_records = 0;
-            $created_records = 0;
-            $updated_records = 0;
-            $skipped_records = 0;
-            $error_details = array();
-
-            foreach ($hits as $index => $record) {
-                try {
-                    if (!isset($record['objectID'])) {
-                        $error_details[] = "Registro sin objectID en posición {$index}";
-                        continue;
-                    }
-
-                    $objectID = $record['objectID'];
-                    $this->custom_log("AJAX: Procesando registro {$objectID}...");
-
-                    // Verificar si el despacho ya existe
-                    $existing_post = get_posts(array(
-                        'post_type' => 'despacho',
-                        'meta_key' => '_algolia_object_id',
-                        'meta_value' => $objectID,
-                        'post_status' => 'any',
-                        'numberposts' => 1,
-                        'fields' => 'ids'
-                    ));
-
-                    if ($existing_post && !$overwrite) {
-                        // Ya existe y no queremos sobrescribir
-                        $skipped_records++;
-                        $this->custom_log("AJAX: Registro {$objectID} ya existe, saltando");
-                        continue;
-                    } elseif ($existing_post) {
-                        $updated_records++;
-                        $this->custom_log("AJAX: Actualizando registro existente {$objectID}");
-                    } else {
-                        $created_records++;
-                        $this->custom_log("AJAX: Creando nuevo registro {$objectID}");
-                    }
-
-                    $this->sync_from_algolia($objectID);
-                    $imported_records++;
-                    $this->custom_log("AJAX: Registro {$objectID} procesado exitosamente");
-
-                } catch (Exception $e) {
-                    $error_msg = "Error en registro {$index} (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
-                    $error_details[] = $error_msg;
-                    $this->custom_log("AJAX ERROR: {$error_msg}");
+            foreach ($sample_records as $record) {
+                $object_id = $record['objectID'] ?? '';
+                $nombre = trim($record['nombre'] ?? '');
+                $localidad = trim($record['localidad'] ?? '');
+                $provincia = trim($record['provincia'] ?? '');
+                
+                $is_generated = strpos($object_id, '_dashboard_generated_id') !== false;
+                $has_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
+                
+                if ($is_generated && !$has_data) {
+                    $generated_count++;
+                } else {
+                    $valid_count++;
                 }
             }
 
-            $this->custom_log("AJAX: Bloque {$block} completado - Procesados: {$imported_records}, Creados: {$created_records}, Actualizados: {$updated_records}, Saltados: {$skipped_records}, Errores: " . count($error_details));
+            // Estimar totales basado en la muestra
+            $estimated_generated = round(($generated_count / count($sample_records)) * $total_count);
+            $estimated_valid = $total_count - $estimated_generated;
 
-            wp_send_json_success(array(
-                'processed' => $imported_records,
-                'created' => $created_records,
-                'updated' => $updated_records,
-                'skipped' => $skipped_records,
-                'errors' => count($error_details),
-                'error_details' => $error_details
-            ));
+            echo '<div class="notice notice-info">';
+            echo '<p><strong>📋 Análisis de muestra (primeros 100 registros):</strong></p>';
+            echo '<ul>';
+            echo '<li>Registros válidos: ' . $valid_count . '</li>';
+            echo '<li>Registros generados automáticamente sin datos: ' . $generated_count . '</li>';
+            echo '</ul>';
+            echo '<p><strong>📊 Estimación total:</strong></p>';
+            echo '<ul>';
+            echo '<li>Registros válidos estimados: ~' . number_format($estimated_valid) . '</li>';
+            echo '<li>Registros generados automáticamente estimados: ~' . number_format($estimated_generated) . '</li>';
+            echo '</ul>';
+            echo '</div>';
+
+            if ($estimated_generated > 0) {
+                echo '<form method="post" style="margin-top: 20px;">';
+                echo '<input type="hidden" name="action" value="clean_generated">';
+                echo '<p><strong>¿Deseas proceder con la limpieza?</strong></p>';
+                echo '<p>Esto eliminará aproximadamente ' . number_format($estimated_generated) . ' registros generados automáticamente sin datos.</p>';
+                echo '<input type="submit" class="button button-primary" value="🧹 Ejecutar Limpieza" onclick="return confirm(\'¿Estás seguro? Esta acción no se puede deshacer.\')">';
+                echo '</form>';
+            } else {
+                echo '<div class="notice notice-success">';
+                echo '<p>✅ No se detectaron registros generados automáticamente para limpiar.</p>';
+                echo '</div>';
+            }
 
         } catch (Exception $e) {
-            $error_msg = 'Error al importar bloque: ' . $e->getMessage();
-            $this->custom_log("AJAX FATAL ERROR: {$error_msg}");
-            wp_send_json_error($error_msg);
+            echo '<div class="notice notice-error">';
+            echo '<p><strong>❌ Error al conectar con Algolia:</strong> ' . $e->getMessage() . '</p>';
+            echo '</div>';
+        }
+    }
+
+    private function execute_clean_generated_records() {
+        try {
+            require_once(plugin_dir_path(__FILE__) . 'class-lexhoy-algolia-client.php');
+            $client = new LexhoyAlgoliaClient(
+                get_option('lexhoy_despachos_algolia_app_id'),
+                get_option('lexhoy_despachos_algolia_admin_api_key'),
+                get_option('lexhoy_despachos_algolia_search_api_key'),
+                get_option('lexhoy_despachos_algolia_index_name')
+            );
+
+            echo '<h2>🧹 Ejecutando Limpieza</h2>';
+            echo '<p>Eliminando registros generados automáticamente sin datos...</p>';
+
+            // Obtener todos los registros
+            $result = $client->browse_all_unfiltered();
+            
+            if (!$result['success']) {
+                echo '<div class="notice notice-error">';
+                echo '<p><strong>❌ Error al obtener registros:</strong> ' . $result['message'] . '</p>';
+                echo '</div>';
+                return;
+            }
+            
+            $all_records = $result['hits'];
+            
+            if (empty($all_records)) {
+                echo '<p>No se encontraron registros para procesar.</p>';
+                return;
+            }
+            
+            echo '<p>Total de registros encontrados: ' . count($all_records) . '</p>';
+            
+            $generated_records = array();
+            $valid_records = array();
+            
+            // Filtrar registros generados automáticamente
+            foreach ($all_records as $record) {
+                $object_id = $record['objectID'] ?? '';
+                $nombre = trim($record['nombre'] ?? '');
+                $localidad = trim($record['localidad'] ?? '');
+                $provincia = trim($record['provincia'] ?? '');
+                
+                $is_generated = strpos($object_id, '_dashboard_generated_id') !== false;
+                $has_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
+                
+                if ($is_generated && !$has_data) {
+                    $generated_records[] = $object_id;
+                } else {
+                    $valid_records[] = $record;
+                }
+            }
+            
+            echo '<p>Registros generados automáticamente sin datos: ' . count($generated_records) . '</p>';
+            echo '<p>Registros válidos: ' . count($valid_records) . '</p>';
+            
+            if (empty($generated_records)) {
+                echo '<div class="notice notice-success">';
+                echo '<p>✅ No hay registros generados automáticamente para eliminar.</p>';
+                echo '</div>';
+                return;
+            }
+            
+            // Eliminar registros generados automáticamente
+            echo '<p>Eliminando registros generados automáticamente...</p>';
+            
+            $deleted_count = 0;
+            $error_count = 0;
+            
+            foreach ($generated_records as $object_id) {
+                try {
+                    $result = $client->delete_object($client->get_index_name(), $object_id);
+                    if ($result) {
+                        $deleted_count++;
+                        echo '<p>✅ Eliminado: ' . $object_id . '</p>';
+                    } else {
+                        $error_count++;
+                        echo '<p>❌ Error al eliminar: ' . $object_id . '</p>';
+                    }
+                } catch (Exception $e) {
+                    $error_count++;
+                    echo '<p>❌ Excepción al eliminar ' . $object_id . ': ' . $e->getMessage() . '</p>';
+                }
+            }
+            
+            echo '<h3>📊 Resumen de Limpieza</h3>';
+            echo '<p>✅ Registros eliminados: ' . $deleted_count . '</p>';
+            echo '<p>❌ Errores: ' . $error_count . '</p>';
+            echo '<p>📋 Registros válidos restantes: ' . count($valid_records) . '</p>';
+            
+            if ($deleted_count > 0) {
+                echo '<div class="notice notice-success">';
+                echo '<p>🎉 Limpieza completada exitosamente.</p>';
+                echo '</div>';
+            }
+            
+        } catch (Exception $e) {
+            echo '<div class="notice notice-error">';
+            echo '<p><strong>❌ Error general:</strong> ' . $e->getMessage() . '</p>';
+            echo '</div>';
         }
     }
 } 
