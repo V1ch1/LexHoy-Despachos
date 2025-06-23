@@ -1,9 +1,7 @@
 <?php
 /**
- * Plantilla para mostrar despachos individuales
- * 
- * Esta plantilla se usa cuando se accede a una URL limpia como:
- * lexhoy.com/nombre-de-despacho
+ * Plantilla personalizada para mostrar despachos individuales
+ * Diseño IDÉNTICO al buscador de despachos
  */
 
 // Evitar acceso directo
@@ -11,359 +9,376 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * Función helper para obtener la URL de la página del buscador
+ */
+function get_search_page_url() {
+    // Usar caché para evitar consultas repetidas
+    $cache_key = 'lexhoy_search_page_url';
+    $search_url = wp_cache_get($cache_key);
+    
+    if (false !== $search_url) {
+        return $search_url;
+    }
+    
+    // Buscar páginas que contengan el shortcode del buscador
+    $pages = get_posts(array(
+        'post_type' => 'page',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+        'fields' => 'ids' // Solo obtener IDs para optimizar
+    ));
+    
+    foreach ($pages as $page_id) {
+        $page = get_post($page_id);
+        if ($page && strpos($page->post_content, '[lexhoy_despachos_search]') !== false) {
+            $search_url = get_permalink($page_id);
+            wp_cache_set($cache_key, $search_url, '', 3600); // Cache por 1 hora
+            return $search_url;
+        }
+    }
+    
+    // Si no se encuentra, buscar en posts también
+    $posts = get_posts(array(
+        'post_type' => 'post',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+        'fields' => 'ids' // Solo obtener IDs para optimizar
+    ));
+    
+    foreach ($posts as $post_id) {
+        $post = get_post($post_id);
+        if ($post && strpos($post->post_content, '[lexhoy_despachos_search]') !== false) {
+            $search_url = get_permalink($post_id);
+            wp_cache_set($cache_key, $search_url, '', 3600); // Cache por 1 hora
+            return $search_url;
+        }
+    }
+    
+    // Si no se encuentra ninguna página con el shortcode, devolver la home
+    $search_url = home_url('/');
+    wp_cache_set($cache_key, $search_url, '', 3600); // Cache por 1 hora
+    return $search_url;
+}
+
+// Cargar estilos personalizados
+wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+wp_enqueue_style('google-fonts-inter', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+wp_enqueue_style('lexhoy-despacho-single', LEXHOY_DESPACHOS_PLUGIN_URL . 'assets/css/single-despacho.css', array(), LEXHOY_DESPACHOS_VERSION);
+
 get_header(); ?>
 
-<div class="container despacho-single">
-    <div class="row">
-        <div class="col-md-8">
-            <?php if (have_posts()) : while (have_posts()) : the_post(); ?>
-                
-                <article id="post-<?php the_ID(); ?>" <?php post_class('despacho-article'); ?>>
-                    
-                    <!-- Encabezado del despacho -->
-                    <header class="despacho-header">
-                        <?php
-                        // Forzar limpieza de caché para asegurar datos frescos
-                        wp_cache_flush();
-                        
-                        // Obtener nombre desde meta (preferencia) o título del post
-                        $nombre_despacho = get_post_meta(get_the_ID(), '_despacho_nombre', true);
-                        if (empty($nombre_despacho)) {
-                            $nombre_despacho = get_the_title();
-                        }
-                        ?>
-                        <h1 class="despacho-title"><?php echo esc_html($nombre_despacho); ?></h1>
-                        
-                        <?php if (has_post_thumbnail()) : ?>
-                            <div class="despacho-image">
-                                <?php the_post_thumbnail('large', array('class' => 'img-fluid')); ?>
-                            </div>
-                        <?php endif; ?>
-                    </header>
-
-                    <!-- Información del despacho -->
-                    <div class="despacho-info">
-                        <?php
-                        // Obtener metadatos del despacho
-                        $localidad = get_post_meta(get_the_ID(), '_despacho_localidad', true);
-                        $provincia = get_post_meta(get_the_ID(), '_despacho_provincia', true);
-                        $direccion = get_post_meta(get_the_ID(), '_despacho_direccion', true);
-                        $codigo_postal = get_post_meta(get_the_ID(), '_despacho_codigo_postal', true);
-                        $telefono = get_post_meta(get_the_ID(), '_despacho_telefono', true);
-                        $email = get_post_meta(get_the_ID(), '_despacho_email', true);
-                        $web = get_post_meta(get_the_ID(), '_despacho_web', true);
-                        $descripcion = get_post_meta(get_the_ID(), '_despacho_descripcion', true);
-                        $especialidades = get_post_meta(get_the_ID(), '_despacho_especialidades', true);
-                        $especialidades_array = array_filter(array_map('trim', explode(',', $especialidades)));
-                        $horario = get_post_meta(get_the_ID(), '_despacho_horario', true);
-                        $experiencia = get_post_meta(get_the_ID(), '_despacho_experiencia', true);
-                        $tamaño_despacho = get_post_meta(get_the_ID(), '_despacho_tamaño', true);
-                        $año_fundacion = get_post_meta(get_the_ID(), '_despacho_año_fundacion', true);
-                        $is_verified = get_post_meta(get_the_ID(), '_despacho_is_verified', true) === '1';
-                        $redes_sociales = get_post_meta(get_the_ID(), '_despacho_redes_sociales', true);
-                        // Obtener áreas de práctica (taxonomía)
-                        $areas_practica = wp_get_post_terms(get_the_ID(), 'area_practica');
-                        ?>
-                        
-                        <!-- Información de contacto -->
-                        <div class="despacho-contact">
-                            <h3>Información de Contacto</h3>
-                            <div class="contact-details definition-grid">
-                                <?php if ($localidad && $provincia) : ?>
-                                    <span class="def-label">Ubicación:</span><span class="def-value"><?php echo esc_html($localidad . ', ' . $provincia); ?></span>
-                                <?php endif; ?>
-                                <?php if ($direccion) : ?>
-                                    <span class="def-label">Dirección:</span><span class="def-value"><?php echo esc_html($direccion); ?></span>
-                                <?php endif; ?>
-                                <?php if ($codigo_postal) : ?>
-                                    <span class="def-label">Código Postal:</span><span class="def-value"><?php echo esc_html($codigo_postal); ?></span>
-                                <?php endif; ?>
-                                <?php if ($telefono) : ?>
-                                    <span class="def-label">Teléfono:</span><span class="def-value"><a href="tel:<?php echo esc_attr($telefono); ?>"><?php echo esc_html($telefono); ?></a></span>
-                                <?php endif; ?>
-                                <?php if ($email) : ?>
-                                    <span class="def-label">Email:</span><span class="def-value"><a href="mailto:<?php echo esc_attr($email); ?>"><?php echo esc_html($email); ?></a></span>
-                                <?php endif; ?>
-                                <?php if ($web) : ?>
-                                    <span class="def-label">Sitio Web:</span><span class="def-value"><a href="<?php echo esc_url($web); ?>" target="_blank" rel="noopener"><?php echo esc_html($web); ?></a></span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <!-- Descripción -->
-                        <?php if ($descripcion) : ?>
-                            <div class="despacho-description">
-                                <h3>Descripción</h3>
-                                <p><?php echo esc_html($descripcion); ?></p>
-                            </div>
-                        <?php endif; ?>
-
-                        <!-- Áreas de práctica -->
-                        <?php if ($areas_practica) : ?>
-                            <div class="despacho-areas">
-                                <h3>Áreas de Práctica</h3>
-                                <ul class="two-col-grid">
-                                    <?php foreach ($areas_practica as $area) : ?>
-                                        <li><a href="<?php echo get_term_link($area); ?>"><?php echo esc_html($area->name); ?></a></li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            </div>
-                        <?php endif; ?>
-
-                        <!-- Especialidades -->
-                        <?php if (!empty($especialidades_array)) : ?>
-                            <div class="despacho-specialties">
-                                <h3>Especialidades</h3>
-                                <ul class="two-col-grid">
-                                    <?php foreach ($especialidades_array as $esp) : ?>
-                                        <li><?php echo esc_html($esp); ?></li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            </div>
-                        <?php endif; ?>
-
-                        <!-- Horario -->
-                        <?php if ($horario && is_array($horario)) : ?>
-                            <div class="despacho-horario">
-                                <h3>Horario de Atención</h3>
-                                <div class="definition-grid">
-                                    <?php foreach ($horario as $dia => $valor) : ?>
-                                        <?php if ($valor) : ?>
-                                            <span class="def-label"><?php echo ucfirst($dia); ?>:</span><span class="def-value"><?php echo esc_html($valor); ?></span>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <!-- Redes sociales -->
-                        <?php if ($redes_sociales && is_array($redes_sociales)) : ?>
-                            <div class="despacho-redes">
-                                <h3>Redes Sociales</h3>
-                                <div class="definition-grid">
-                                    <?php foreach ($redes_sociales as $red => $url) : ?>
-                                        <?php if ($url) : ?>
-                                            <span class="def-label"><?php echo ucfirst($red); ?>:</span><span class="def-value"><a href="<?php echo esc_url($url); ?>" target="_blank" rel="noopener"><span class="dashicons dashicons-<?php echo esc_attr($red); ?>"></span> <?php echo ucfirst($red); ?></a></span>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <!-- Información adicional -->
-                        <div class="despacho-details">
-                            <h3>Información Adicional</h3>
-                            <div class="definition-grid">
-                                <?php if ($experiencia) : ?>
-                                    <span class="def-label">Experiencia:</span><span class="def-value"><?php echo esc_html($experiencia); ?></span>
-                                <?php endif; ?>
-                                
-                                <?php if ($tamaño_despacho) : ?>
-                                    <span class="def-label">Tamaño del Despacho:</span><span class="def-value"><?php echo esc_html($tamaño_despacho); ?></span>
-                                <?php endif; ?>
-                                
-                                <?php if ($año_fundacion) : ?>
-                                    <span class="def-label">Año de Fundación:</span><span class="def-value"><?php echo esc_html($año_fundacion); ?></span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <!-- Estado de verificación -->
-                        <?php if ($is_verified) : ?>
-                            <div class="despacho-verification">
-                                <div class="verification-badge">
-                                    <span class="badge badge-success">✓ Despacho Verificado</span>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- Contenido del post -->
-                    <div class="despacho-content">
-                        <?php the_content(); ?>
-                    </div>
-
-                </article>
-
-            <?php endwhile; endif; ?>
+<div class="lexhoy-despacho-single">
+    <?php if (have_posts()) : while (have_posts()) : the_post(); ?>
+        
+        <?php
+        // Obtener todos los metadatos del despacho
+        $post_id = get_the_ID();
+        
+        // Información básica
+        $nombre = get_post_meta($post_id, '_despacho_nombre', true);
+        $localidad = get_post_meta($post_id, '_despacho_localidad', true);
+        $provincia = get_post_meta($post_id, '_despacho_provincia', true);
+        $codigo_postal = get_post_meta($post_id, '_despacho_codigo_postal', true);
+        $direccion = get_post_meta($post_id, '_despacho_direccion', true);
+        $telefono = get_post_meta($post_id, '_despacho_telefono', true);
+        $email = get_post_meta($post_id, '_despacho_email', true);
+        $web = get_post_meta($post_id, '_despacho_web', true);
+        $descripcion = get_post_meta($post_id, '_despacho_descripcion', true);
+        $estado_verificacion = get_post_meta($post_id, '_despacho_estado_verificacion', true);
+        $is_verified = get_post_meta($post_id, '_despacho_is_verified', true);
+        
+        // Información adicional
+        $especialidades = get_post_meta($post_id, '_despacho_especialidades', true);
+        $horario = get_post_meta($post_id, '_despacho_horario', true);
+        $redes_sociales = get_post_meta($post_id, '_despacho_redes_sociales', true);
+        $experiencia = get_post_meta($post_id, '_despacho_experiencia', true);
+        $tamano_despacho = get_post_meta($post_id, '_despacho_tamaño', true);
+        $ano_fundacion = get_post_meta($post_id, '_despacho_año_fundacion', true);
+        $estado_registro = get_post_meta($post_id, '_despacho_estado_registro', true);
+        
+        // Áreas de práctica
+        $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+        ?>
+        
+        <!-- Cabecera del despacho - IDÉNTICA al header del buscador -->
+        <div class="despacho-header">
+            <!-- Botón de regreso -->
+            <a href="<?php echo esc_url(get_search_page_url()); ?>" class="despacho-back-button">
+                <i class="fas fa-arrow-left"></i>
+                Volver al buscador
+            </a>
+            
+            <!-- Badge de verificación - IDÉNTICO al del buscador -->
+            <?php if ($is_verified == '1'): ?>
+                <div class="verification-badge verified">
+                    <i class="fas fa-check-circle"></i>
+                    Verificado
+                </div>
+            <?php elseif ($estado_verificacion == 'pendiente'): ?>
+                <div class="verification-badge pending">
+                    <i class="fas fa-clock"></i>
+                    Pendiente
+                </div>
+            <?php elseif ($estado_verificacion == 'rechazado'): ?>
+                <div class="verification-badge rejected">
+                    <i class="fas fa-times-circle"></i>
+                    Rechazado
+                </div>
+            <?php endif; ?>
+            
+            <!-- Título y subtítulo - IDÉNTICO al buscador -->
+            <h1 class="despacho-title"><?php echo esc_html($nombre ?: get_the_title()); ?></h1>
+            <p class="despacho-subtitle">
+                <?php 
+                $location_parts = array_filter(array($localidad, $provincia));
+                echo esc_html(implode(', ', $location_parts));
+                ?>
+            </p>
         </div>
         
-        <div class="col-md-4">
-            <!-- Sidebar o información adicional -->
-            <div class="despacho-sidebar">
-                <h3>Otros Despachos</h3>
-                <?php
-                $otros_despachos = get_posts(array(
-                    'post_type' => 'despacho',
-                    'posts_per_page' => 5,
-                    'post__not_in' => array(get_the_ID()),
-                    'post_status' => 'publish'
-                ));
+        <!-- Contenido principal - IDÉNTICO al layout del buscador -->
+        <div class="despacho-content">
+            <!-- Columna principal - IDÉNTICA a results-sidebar -->
+            <div class="despacho-main">
                 
-                if ($otros_despachos) : ?>
-                    <ul class="otros-despachos">
-                        <?php foreach ($otros_despachos as $despacho) : ?>
-                            <li>
-                                <a href="<?php echo get_permalink($despacho->ID); ?>">
-                                    <?php echo esc_html($despacho->post_title); ?>
-                                </a>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                <?php else : ?>
-                    <p>No hay otros despachos disponibles.</p>
+                <!-- Información de contacto - IDÉNTICO a las tarjetas del buscador -->
+                <div class="despacho-section">
+                    <h3><i class="fas fa-address-book"></i> Información de Contacto</h3>
+                    <div class="contact-info">
+                        <?php if ($telefono): ?>
+                            <div class="contact-item">
+                                <i class="fas fa-phone"></i>
+                                <a href="tel:<?php echo esc_attr($telefono); ?>"><?php echo esc_html($telefono); ?></a>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($email): ?>
+                            <div class="contact-item">
+                                <i class="fas fa-envelope"></i>
+                                <a href="mailto:<?php echo esc_attr($email); ?>"><?php echo esc_html($email); ?></a>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($web): ?>
+                            <div class="contact-item">
+                                <i class="fas fa-globe"></i>
+                                <a href="<?php echo esc_url($web); ?>" target="_blank"><?php echo esc_html($web); ?></a>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($direccion): ?>
+                            <div class="contact-item">
+                                <i class="fas fa-map-marker-alt"></i>
+                                <span><?php echo esc_html($direccion); ?></span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($codigo_postal): ?>
+                            <div class="contact-item">
+                                <i class="fas fa-mail-bulk"></i>
+                                <span><?php echo esc_html($codigo_postal); ?></span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                
+                <!-- Descripción - IDÉNTICO a las tarjetas del buscador -->
+                <?php if ($descripcion): ?>
+                    <div class="despacho-section">
+                        <h3><i class="fas fa-info-circle"></i> Descripción</h3>
+                        <p><?php echo esc_html($descripcion); ?></p>
+                    </div>
                 <?php endif; ?>
+                
+                <!-- Experiencia - IDÉNTICO a las tarjetas del buscador -->
+                <?php if ($experiencia): ?>
+                    <div class="despacho-section">
+                        <h3><i class="fas fa-briefcase"></i> Experiencia</h3>
+                        <p><?php echo esc_html($experiencia); ?></p>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Horario - IDÉNTICO a las tarjetas del buscador -->
+                <?php if ($horario && is_array($horario)): ?>
+                    <div class="despacho-section">
+                        <h3><i class="fas fa-clock"></i> Horario de Atención</h3>
+                        <div class="schedule-grid">
+                            <?php
+                            $dias = array(
+                                'lunes' => 'Lunes',
+                                'martes' => 'Martes', 
+                                'miercoles' => 'Miércoles',
+                                'jueves' => 'Jueves',
+                                'viernes' => 'Viernes',
+                                'sabado' => 'Sábado',
+                                'domingo' => 'Domingo'
+                            );
+                            
+                            foreach ($dias as $dia_key => $dia_nombre):
+                                $horario_dia = isset($horario[$dia_key]) ? $horario[$dia_key] : '';
+                                if ($horario_dia):
+                            ?>
+                                <div class="schedule-item">
+                                    <span class="schedule-day"><?php echo esc_html($dia_nombre); ?></span>
+                                    <span class="schedule-time"><?php echo esc_html($horario_dia); ?></span>
+                                </div>
+                            <?php 
+                                endif;
+                            endforeach; 
+                            ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
+            </div>
+            
+            <!-- Columna lateral - IDÉNTICA a filters-sidebar -->
+            <div class="despacho-sidebar">
+                
+                <!-- Áreas de práctica - IDÉNTICO al estilo del buscador -->
+                <?php if (!empty($areas_practica)): ?>
+                    <div class="despacho-section">
+                        <h3><i class="fas fa-gavel"></i> Áreas de Práctica</h3>
+                        <div class="specialties-list">
+                            <?php foreach ($areas_practica as $area): ?>
+                                <span class="specialty-tag"><?php echo esc_html($area); ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Especialidades - IDÉNTICO al estilo del buscador -->
+                <?php if ($especialidades): ?>
+                    <div class="despacho-section">
+                        <h3><i class="fas fa-star"></i> Especialidades</h3>
+                        <div class="specialties-list">
+                            <?php 
+                            $especialidades_array = array_filter(array_map('trim', explode(',', $especialidades)));
+                            foreach ($especialidades_array as $especialidad): 
+                            ?>
+                                <span class="specialty-tag"><?php echo esc_html($especialidad); ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Información adicional - IDÉNTICO al estilo del buscador -->
+                <div class="despacho-section">
+                    <h3><i class="fas fa-building"></i> Información del Despacho</h3>
+                    
+                    <?php if ($tamano_despacho): ?>
+                        <p><strong>Tamaño:</strong> <?php echo esc_html($tamano_despacho); ?></p>
+                    <?php endif; ?>
+                    
+                    <?php if ($ano_fundacion): ?>
+                        <p><strong>Año de fundación:</strong> <?php echo esc_html($ano_fundacion); ?></p>
+                    <?php endif; ?>
+                    
+                    <?php if ($estado_registro): ?>
+                        <p>
+                            <span class="registration-status <?php echo esc_attr($estado_registro); ?>">
+                                <?php echo esc_html(ucfirst($estado_registro)); ?>
+                            </span>
+                        </p>
+                    <?php endif; ?>
+                </div>
+                
+                <!-- Redes sociales - IDÉNTICO al estilo del buscador -->
+                <?php if ($redes_sociales && is_array($redes_sociales)): ?>
+                    <div class="despacho-section">
+                        <h3><i class="fas fa-share-alt"></i> Redes Sociales</h3>
+                        <div class="social-links">
+                            <?php
+                            $redes_iconos = array(
+                                'facebook' => 'fab fa-facebook-f',
+                                'twitter' => 'fab fa-twitter',
+                                'linkedin' => 'fab fa-linkedin-in',
+                                'instagram' => 'fab fa-instagram'
+                            );
+                            
+                            foreach ($redes_sociales as $red => $url):
+                                if ($url && isset($redes_iconos[$red])):
+                            ?>
+                                <a href="<?php echo esc_url($url); ?>" class="social-link" target="_blank" rel="noopener">
+                                    <i class="<?php echo esc_attr($redes_iconos[$red]); ?>"></i>
+                                </a>
+                            <?php 
+                                endif;
+                            endforeach; 
+                            ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Botón para actualizar datos del despacho -->
+                <div class="despacho-section">
+                    <h3><i class="fas fa-edit"></i> Actualizar Información</h3>
+                    <p>¿Eres la persona responsable de este despacho? ¿Quieres actualizar los datos? Ponte en contacto con nosotros.</p>
+                    <button class="update-despacho-btn" onclick="openUpdatePopup()">
+                        <i class="fas fa-pen-to-square"></i>
+                        Actualizar Datos del Despacho
+                    </button>
+                </div>
+                
             </div>
         </div>
-    </div>
+        
+        <!-- Popup para actualizar datos -->
+        <div id="update-despacho-popup" class="update-popup-overlay">
+            <div class="update-popup-content">
+                <div class="update-popup-header">
+                    <h3><i class="fas fa-edit"></i> Actualizar Datos del Despacho</h3>
+                    <button class="close-popup-btn" onclick="closeUpdatePopup()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="update-popup-body">
+                    <p><strong>Despacho:</strong> <?php echo esc_html($nombre ?: get_the_title()); ?></p>
+                    <p>Para actualizar la información de este despacho, por favor completa el formulario de contacto. Nos pondremos en contacto contigo lo antes posible.</p>
+                    
+                    <!-- Aquí se agregará el Contact Form 7 -->
+                    <div class="contact-form-placeholder">
+                        <p style="text-align: center; padding: 40px; background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 8px; color: #6c757d;">
+                            <i class="fas fa-plus-circle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                            <strong>Formulario de Contacto</strong><br>
+                            Aquí se agregará el shortcode de Contact Form 7
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    <?php endwhile; endif; ?>
 </div>
 
-<style>
-.despacho-single {
-    padding: 2rem 0;
+<script>
+function openUpdatePopup() {
+    document.getElementById('update-despacho-popup').style.display = 'flex';
+    document.body.style.overflow = 'hidden'; // Prevenir scroll del body
 }
 
-.despacho-header {
-    margin-bottom: 2rem;
+function closeUpdatePopup() {
+    document.getElementById('update-despacho-popup').style.display = 'none';
+    document.body.style.overflow = 'auto'; // Restaurar scroll del body
 }
 
-.despacho-title {
-    color: #333;
-    margin-bottom: 1rem;
-}
-
-.despacho-image {
-    margin-bottom: 1rem;
-}
-
-.despacho-info {
-    background: #f8f9fa;
-    padding: 2rem;
-    border-radius: 8px;
-    margin-bottom: 2rem;
-}
-
-.despacho-contact h3,
-.despacho-description h3,
-.despacho-specialties h3,
-.despacho-details h3 {
-    color: #007cba;
-    border-bottom: 2px solid #007cba;
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
-}
-
-.contact-details p {
-    margin-bottom: 0.5rem;
-}
-
-.contact-details a {
-    color: #007cba;
-    text-decoration: none;
-}
-
-.contact-details a:hover {
-    text-decoration: underline;
-}
-
-.details-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-}
-
-.detail-item {
-    background: white;
-    padding: 1rem;
-    border-radius: 4px;
-    border-left: 4px solid #007cba;
-}
-
-.verification-badge {
-    margin-top: 1rem;
-}
-
-.badge-success {
-    background-color: #28a745;
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    font-size: 0.9rem;
-}
-
-.despacho-sidebar {
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 8px;
-}
-
-.otros-despachos {
-    list-style: none;
-    padding: 0;
-}
-
-.otros-despachos li {
-    margin-bottom: 0.5rem;
-    padding: 0.5rem;
-    background: white;
-    border-radius: 4px;
-}
-
-.otros-despachos a {
-    color: #007cba;
-    text-decoration: none;
-}
-
-.otros-despachos a:hover {
-    text-decoration: underline;
-}
-
-@media (max-width: 768px) {
-    .details-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-.despacho-info ul.two-col-grid {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem 1rem;
-}
-
-.despacho-info ul.two-col-grid li {
-    margin: 0;
-}
-
-@media (max-width: 768px) {
-    .despacho-info ul.two-col-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Nueva definición grid label/valor */
-.definition-grid {
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    row-gap: 0.4rem;
-    column-gap: 1rem;
-    margin: 0;
-}
-
-.definition-grid .def-label {
-    font-weight: 600;
-}
-
-.definition-grid .def-value a {
-    color: #007cba;
-    text-decoration: none;
-}
-
-.definition-grid .def-value a:hover {
-    text-decoration: underline;
-}
-</style>
+// Cerrar popup al hacer clic fuera del contenido
+document.addEventListener('DOMContentLoaded', function() {
+    const popup = document.getElementById('update-despacho-popup');
+    popup.addEventListener('click', function(e) {
+        if (e.target === popup) {
+            closeUpdatePopup();
+        }
+    });
+    
+    // Cerrar popup con la tecla Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && popup.style.display === 'flex') {
+            closeUpdatePopup();
+        }
+    });
+});
+</script>
 
 <?php get_footer(); ?> 

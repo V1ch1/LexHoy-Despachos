@@ -69,6 +69,9 @@ class LexhoyDespachosCPT {
 
         // Registrar submenú para importación masiva desde Algolia
         add_action('admin_menu', array($this, 'register_import_submenu'));
+        
+        // Cargar plantilla personalizada para despachos individuales
+        add_filter('single_template', array($this, 'load_single_despacho_template'));
     }
 
     /**
@@ -2154,5 +2157,15 @@ class LexhoyDespachosCPT {
             echo '<p><strong>❌ Error general:</strong> ' . $e->getMessage() . '</p>';
             echo '</div>';
         }
+    }
+
+    /**
+     * Cargar plantilla personalizada para despachos individuales
+     */
+    public function load_single_despacho_template($template) {
+        if (is_singular('despacho')) {
+            return LEXHOY_DESPACHOS_PLUGIN_DIR . 'templates/single-despacho.php';
+        }
+        return $template;
     }
 } 

@@ -31,6 +31,7 @@ class LexhoyDespachosShortcode {
         // Enqueue scripts y estilos necesarios
         wp_enqueue_style('bootstrap', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css');
         wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+        wp_enqueue_style('google-fonts-inter', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         wp_enqueue_style('lexhoy-despachos-search', LEXHOY_DESPACHOS_PLUGIN_URL . 'assets/css/search.css', array(), LEXHOY_DESPACHOS_VERSION);
         
         wp_enqueue_script('jquery');
