@@ -404,13 +404,14 @@
 .lexhoy-despachos-search {
   width: 100% !important;
   max-width: 100% !important;
-  background-color: #ffffff;
+  background-color: #ffffff !important;
   font-family: "Inter", Helvetica, Arial, sans-serif;
-  padding: 0;
-  box-sizing: border-box;
+  padding: 0 !important;
+  box-sizing: border-box !important;
   display: flex;
   flex-direction: column;
   align-items: center;
+  margin: 0 !important;
 }
 
 /* Reglas base para desktop */
@@ -428,6 +429,7 @@
   box-sizing: border-box;
   margin-left: auto;
   margin-right: auto;
+  background-color: #ffffff !important;
 }
 
 /* Título */
@@ -453,6 +455,7 @@
   box-sizing: border-box;
   flex-wrap: nowrap;
   gap: 0;
+  background-color: #ffffff !important;
 }
 
 /* Letras del alfabeto */
@@ -538,14 +541,15 @@
   box-sizing: border-box;
 }
 
-/* Barra lateral de filtros */
+/* Barra lateral de filtros - ELIMINAR FONDO GRIS */
 .filters-sidebar {
   width: 380px;
   flex-shrink: 0;
-  background: #f8f9fa;
+  background: #ffffff !important; /* Cambiado de #f8f9fa a #ffffff */
   padding: 20px;
   border-radius: 8px;
   height: fit-content;
+  border: 1px solid #e0e0e0; /* Añadir borde sutil en lugar de fondo gris */
 }
 
 /* Barra lateral de resultados */
@@ -557,6 +561,7 @@
   max-width: 900px;
   margin-left: auto;
   margin-right: auto;
+  background-color: #ffffff !important;
 }
 
 /* Contenedor de filtros */
@@ -569,6 +574,7 @@
   background: white;
   border-radius: 8px;
   overflow: hidden;
+  border: 1px solid #e0e0e0; /* Añadir borde sutil */
 }
 
 .filters-tab-header {
@@ -1016,4 +1022,97 @@
   .filters-sidebar {
     width: 450px;
   }
+}
+
+/* REGLAS ESPECÍFICAS PARA PRODUCCIÓN - Forzar ancho completo */
+@media screen and (min-width: 1200px) {
+  .lexhoy-despachos-search {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .lexhoy-despachos-search > * {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .search-header {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 20px 40px !important;
+  }
+
+  .search-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 40px !important;
+  }
+
+  .filters-sidebar {
+    background: #ffffff !important;
+    border: 1px solid #e0e0e0 !important;
+  }
+
+  .results-sidebar {
+    background: #ffffff !important;
+  }
+}
+
+/* REGLAS PARA ELIMINAR CUALQUIER FONDO GRIS */
+.lexhoy-despachos-search * {
+  background-color: inherit !important;
+}
+
+.lexhoy-despachos-search .filters-sidebar,
+.lexhoy-despachos-search .filters-tabs,
+.lexhoy-despachos-search .filter-tab-content,
+.lexhoy-despachos-search .filter-tab-pane {
+  background-color: #ffffff !important;
+}
+
+/* FORZAR ANCHO COMPLETO EN TODAS LAS RESOLUCIONES */
+.lexhoy-despachos-search {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  overflow-x: hidden !important;
+}
+
+.lexhoy-despachos-search > * {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.search-header {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.search-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 20px !important;
+}
+
+/* ELIMINAR CUALQUIER MARGEN O PADDING DEL TEMA */
+.lexhoy-despachos-search {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.lexhoy-despachos-search * {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Asegurar que no hay fondos grises */
+.lexhoy-despachos-search .filters-sidebar,
+.lexhoy-despachos-search .filters-tabs,
+.lexhoy-despachos-search .filter-tab-content,
+.lexhoy-despachos-search .filter-tab-pane,
+.lexhoy-despachos-search .filter-list,
+.lexhoy-despachos-search .filter-item {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
 }
