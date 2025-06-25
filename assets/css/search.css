@@ -702,3 +702,37 @@
     font-size: 12px;
   }
 }
+
+/* OCULTAR ELEMENTOS DEL TEMA QUE INTERFIEREN */
+/* Ocultar párrafo vacío con código */
+.td-page-content.tagdiv-type p:has(code:empty),
+.td-page-content.tagdiv-type p:empty,
+.td-page-content.tagdiv-type p:has(code:only-child:empty) {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Ocultar breadcrumb */
+.td-crumb-container {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Reglas adicionales para elementos vacíos */
+.td-page-content.tagdiv-type p:has(code:empty) {
+  display: none !important;
+}
+
+/* Ocultar cualquier párrafo que solo contenga espacios o código vacío */
+.td-page-content.tagdiv-type p:has(code:only-child),
+.td-page-content.tagdiv-type p:has(code:first-child:last-child) {
+  display: none !important;
+}
