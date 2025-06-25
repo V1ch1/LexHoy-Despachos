@@ -28,6 +28,7 @@ require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-areas-cpt.php'
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/algolia-page.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/shortcode-page.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'auto-update.php';
+require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'auto-deploy.php';
 
 // Inicializar el plugin
 function lexhoy_despachos_init() {
