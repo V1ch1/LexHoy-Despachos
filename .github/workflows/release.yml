@@ -1,0 +1,29 @@
+name: Create Release
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Create Release ZIP
+        run: |
+          # Crear ZIP del plugin excluyendo archivos innecesarios
+          zip -r lexhoy-despachos.zip . -x "*.git*" "*.github*" "README.md" "*.md" "clean-*.php" "diagnose-*.php" "create-*.php" "clear-*.php" "migrate-*.php" "re-export-*.php" "restore-*.php"
+          echo "Plugin ZIP creado exitosamente"
+          ls -la lexhoy-despachos.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: lexhoy-despachos.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

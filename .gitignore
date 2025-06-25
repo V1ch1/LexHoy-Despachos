@@ -1,0 +1,53 @@
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos temporales
+*.tmp
+*.temp
+*.log
+
+# Archivos de WordPress
+wp-config.php
+wp-content/uploads/
+wp-content/cache/
+wp-content/backup-db/
+wp-content/backups/
+wp-content/blogs.dir/
+wp-content/upgrade/
+wp-content/uploads/
+wp-content/mu-plugins/
+wp-content/wp-cache-config.php
+wp-content/plugins/hello.php
+
+# Archivos de desarrollo
+node_modules/
+vendor/
+composer.lock
+package-lock.json
+
+# Archivos de backup
+*.bak
+*.backup
+*.old
+
+# Archivos de configuración local
+.env
+.env.local
+.env.production
+
+# Archivos de logs
+*.log
+logs/
+debug.log
+
+# Archivos de cache
+cache/
+tmp/
+temp/ 

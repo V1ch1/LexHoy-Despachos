@@ -78,4 +78,56 @@ function lexhoy_despachos_uninstall() {
     delete_option('lexhoy_despachos_algolia_search_api_key');
     delete_option('lexhoy_despachos_algolia_index_name');
 }
-register_uninstall_hook(__FILE__, 'lexhoy_despachos_uninstall'); 
+register_uninstall_hook(__FILE__, 'lexhoy_despachos_uninstall');
+
+// Sistema de actualizaciones automáticas desde GitHub
+add_filter('pre_set_site_transient_update_plugins', 'lexhoy_check_github_updates');
+
+function lexhoy_check_github_updates($transient) {
+    if (empty($transient->checked)) {
+        return $transient;
+    }
+
+    $plugin_slug = basename(dirname(__FILE__)) . '/' . basename(__FILE__);
+    
+    // Verificar cada 6 horas para no sobrecargar GitHub
+    $last_check = get_option('lexhoy_last_update_check', 0);
+    if (time() - $last_check < 21600) {
+        return $transient;
+    }
+    
+    update_option('lexhoy_last_update_check', time());
+    
+    // URL específica de tu repositorio
+    $github_url = 'https://api.github.com/repos/V1ch1/LexHoy-Despachos/releases/latest';
+    
+    $response = wp_remote_get($github_url, array(
+        'timeout' => 15,
+        'headers' => array(
+            'User-Agent' => 'WordPress/' . get_bloginfo('version')
+        )
+    ));
+    
+    if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+        $release = json_decode(wp_remote_retrieve_body($response));
+        
+        if ($release && isset($release->tag_name)) {
+            // Comparar versiones
+            $current_version = defined('LEXHOY_DESPACHOS_VERSION') ? LEXHOY_DESPACHOS_VERSION : '1.0.0';
+            
+            if (version_compare($current_version, $release->tag_name, '<')) {
+                $transient->response[$plugin_slug] = (object) array(
+                    'slug' => basename(dirname(__FILE__)),
+                    'new_version' => $release->tag_name,
+                    'url' => 'https://github.com/V1ch1/LexHoy-Despachos',
+                    'package' => $release->zipball_url,
+                    'requires' => '5.0',
+                    'tested' => '6.4',
+                    'last_updated' => $release->published_at
+                );
+            }
+        }
+    }
+    
+    return $transient;
+} 
