@@ -178,11 +178,13 @@ class LexhoyAreasCPT {
         // Inicializar cliente Algolia
         $client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
 
-        // Obtener todos los despachos
-        $result = $client->browse_all();
+        // Obtener TODOS los despachos sin filtrar
+        $result = $client->browse_all_unfiltered();
         
         // Log para depuración
-        error_log('Respuesta de Algolia: ' . print_r($result, true));
+        error_log('=== SYNC AREAS: Respuesta de Algolia ===');
+        error_log('Success: ' . ($result['success'] ? 'true' : 'false'));
+        error_log('Total hits: ' . (isset($result['hits']) ? count($result['hits']) : 'no hits'));
 
         if (!$result['success']) {
             throw new Exception('Error al obtener datos de Algolia: ' . $result['message']);
@@ -195,18 +197,38 @@ class LexhoyAreasCPT {
 
         // Extraer áreas únicas
         $areas = array();
-        foreach ($result['hits'] as $hit) {
-            if (isset($hit['areas_practica']) && is_array($hit['areas_practica'])) {
-                foreach ($hit['areas_practica'] as $area) {
-                    if (!empty($area)) {
-                        $areas[$area] = true;
+        $records_with_areas = 0;
+        $total_records = count($result['hits']);
+        
+        error_log("SYNC AREAS: Procesando {$total_records} registros...");
+        
+        foreach ($result['hits'] as $index => $hit) {
+            error_log("SYNC AREAS: Procesando registro {$index} - ID: " . ($hit['objectID'] ?? 'N/A'));
+            
+            if (isset($hit['areas_practica'])) {
+                error_log("SYNC AREAS: Registro {$index} tiene areas_practica: " . print_r($hit['areas_practica'], true));
+                
+                if (is_array($hit['areas_practica'])) {
+                    $records_with_areas++;
+                    foreach ($hit['areas_practica'] as $area) {
+                        if (!empty($area)) {
+                            $areas[$area] = true;
+                            error_log("SYNC AREAS: Área encontrada: {$area}");
+                        }
                     }
+                } else {
+                    error_log("SYNC AREAS: areas_practica no es array: " . gettype($hit['areas_practica']));
                 }
+            } else {
+                error_log("SYNC AREAS: Registro {$index} NO tiene areas_practica");
             }
         }
 
+        error_log("SYNC AREAS: Registros con áreas: {$records_with_areas} de {$total_records}");
+        error_log("SYNC AREAS: Áreas únicas encontradas: " . count($areas));
+
         if (empty($areas)) {
-            throw new Exception('No se encontraron áreas de práctica en los despachos');
+            throw new Exception('No se encontraron áreas de práctica en los despachos. Total registros procesados: ' . $total_records);
         }
 
         // Crear o actualizar áreas en WordPress
@@ -214,6 +236,8 @@ class LexhoyAreasCPT {
         $areas_updated = 0;
 
         foreach (array_keys($areas) as $area_name) {
+            error_log("SYNC AREAS: Procesando área: {$area_name}");
+            
             // Buscar si ya existe el término
             $term = term_exists($area_name, 'area_practica');
             
@@ -225,6 +249,7 @@ class LexhoyAreasCPT {
                     continue;
                 }
                 $areas_created++;
+                error_log("SYNC AREAS: Área creada: {$area_name} (ID: {$term['term_id']})");
             } else {
                 // Actualizar slug si es necesario
                 $term_id = is_array($term) ? $term['term_id'] : $term;
@@ -235,15 +260,22 @@ class LexhoyAreasCPT {
                         'slug' => sanitize_title($area_name)
                     ));
                     $areas_updated++;
+                    error_log("SYNC AREAS: Área actualizada: {$area_name}");
+                } else {
+                    error_log("SYNC AREAS: Área ya existe: {$area_name}");
                 }
             }
         }
+
+        error_log("SYNC AREAS: Resumen - Creadas: {$areas_created}, Actualizadas: {$areas_updated}, Total: " . count($areas));
 
         return array(
             'success' => true,
             'created' => $areas_created,
             'updated' => $areas_updated,
-            'total' => count($areas)
+            'total' => count($areas),
+            'records_processed' => $total_records,
+            'records_with_areas' => $records_with_areas
         );
     }
 
@@ -262,12 +294,23 @@ class LexhoyAreasCPT {
         try {
             $result = $this->sync_areas_from_algolia();
             add_action('admin_notices', function() use ($result) {
-                echo '<div class="notice notice-success is-dismissible"><p>Áreas sincronizadas exitosamente. Se crearon ' . 
-                     $result['created'] . ' áreas nuevas y se actualizaron ' . $result['updated'] . ' áreas existentes.</p></div>';
+                echo '<div class="notice notice-success is-dismissible">';
+                echo '<p><strong>✅ Áreas sincronizadas exitosamente</strong></p>';
+                echo '<ul>';
+                echo '<li><strong>Áreas creadas:</strong> ' . $result['created'] . '</li>';
+                echo '<li><strong>Áreas actualizadas:</strong> ' . $result['updated'] . '</li>';
+                echo '<li><strong>Total de áreas:</strong> ' . $result['total'] . '</li>';
+                echo '<li><strong>Registros procesados:</strong> ' . $result['records_processed'] . '</li>';
+                echo '<li><strong>Registros con áreas:</strong> ' . $result['records_with_areas'] . '</li>';
+                echo '</ul>';
+                echo '</div>';
             });
         } catch (Exception $e) {
             add_action('admin_notices', function() use ($e) {
-                echo '<div class="notice notice-error is-dismissible"><p>Error al sincronizar áreas: ' . esc_html($e->getMessage()) . '</p></div>';
+                echo '<div class="notice notice-error is-dismissible">';
+                echo '<p><strong>❌ Error al sincronizar áreas:</strong> ' . esc_html($e->getMessage()) . '</p>';
+                echo '<p>Revisa los logs de WordPress para más detalles.</p>';
+                echo '</div>';
             });
         }
     }
