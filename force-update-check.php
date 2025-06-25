@@ -1,30 +1,68 @@
 <?php
 /**
- * Script para forzar la verificación de actualizaciones
+ * Script para forzar la verificación de actualizaciones del plugin LexHoy Despachos
+ * Uso: https://tudominio.com/wp-content/plugins/LexHoy-Despachos/force-update-check.php
  */
 
 // Cargar WordPress
 require_once('../../../wp-load.php');
 
-// Verificar permisos
+// Verificar que el usuario sea administrador
 if (!current_user_can('manage_options')) {
-    die('Se requieren permisos de administrador');
+    wp_die('Acceso denegado. Solo administradores pueden ejecutar este script.');
 }
 
-echo "<h1>🔄 Forzando Verificación de Actualizaciones</h1>";
+echo "<h1>Forzar Verificación de Actualizaciones - LexHoy Despachos</h1>";
 
-// 1. Limpiar cache de actualizaciones
+// Limpiar la caché de actualizaciones
 delete_option('lexhoy_last_update_check');
 delete_site_transient('update_plugins');
 
-echo "<p>✅ Cache de actualizaciones limpiado</p>";
+echo "<p>✅ Caché de actualizaciones limpiada</p>";
 
-// 2. Forzar verificación manual
-$plugin_slug = 'lexhoy-despachos/lexhoy-despachos.php';
+// Forzar verificación de actualizaciones
+$update_plugins = get_site_transient('update_plugins');
+if ($update_plugins === false) {
+    $update_plugins = new stdClass();
+}
+
+// Llamar a nuestra función de verificación
+$update_plugins = lexhoy_check_github_updates($update_plugins);
+
+// Guardar el resultado
+set_site_transient('update_plugins', $update_plugins, 12 * HOUR_IN_SECONDS);
+
+echo "<p>✅ Verificación de actualizaciones completada</p>";
+
+// Mostrar información del plugin actual
+$plugin_file = 'LexHoy-Despachos/lexhoy-despachos.php';
+$plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
+
+echo "<h2>Información del Plugin Actual:</h2>";
+echo "<ul>";
+echo "<li><strong>Versión actual:</strong> " . $plugin_data['Version'] . "</li>";
+echo "<li><strong>Nombre:</strong> " . $plugin_data['Plugin Name'] . "</li>";
+echo "<li><strong>Descripción:</strong> " . $plugin_data['Description'] . "</li>";
+echo "</ul>";
+
+// Verificar si hay actualizaciones disponibles
+if (isset($update_plugins->response[$plugin_file])) {
+    $update_info = $update_plugins->response[$plugin_file];
+    echo "<h2>🎉 ¡Actualización Disponible!</h2>";
+    echo "<ul>";
+    echo "<li><strong>Nueva versión:</strong> " . $update_info->new_version . "</li>";
+    echo "<li><strong>URL:</strong> <a href='" . $update_info->url . "' target='_blank'>" . $update_info->url . "</a></li>";
+    echo "<li><strong>Última actualización:</strong> " . $update_info->last_updated . "</li>";
+    echo "</ul>";
+    echo "<p><a href='" . admin_url('plugins.php') . "' class='button button-primary'>Ir a Plugins para actualizar</a></p>";
+} else {
+    echo "<h2>✅ No hay actualizaciones disponibles</h2>";
+    echo "<p>El plugin está actualizado a la última versión.</p>";
+}
+
+// Mostrar información de GitHub
+echo "<h2>Información de GitHub:</h2>";
 $github_url = 'https://api.github.com/repos/V1ch1/LexHoy-Despachos/releases/latest';
-
-echo "<p>🔍 Verificando actualizaciones en GitHub...</p>";
-
 $response = wp_remote_get($github_url, array(
     'timeout' => 15,
     'headers' => array(
@@ -32,65 +70,17 @@ $response = wp_remote_get($github_url, array(
     )
 ));
 
-if (is_wp_error($response)) {
-    echo "<p style='color: red;'>❌ Error al conectar con GitHub: " . $response->get_error_message() . "</p>";
-} else {
+if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
     $release = json_decode(wp_remote_retrieve_body($response));
-    
-    if ($release && isset($release->tag_name)) {
-        echo "<p>✅ Última versión en GitHub: <strong>" . $release->tag_name . "</strong></p>";
-        echo "<p>📅 Fecha: " . $release->published_at . "</p>";
-        
-        // Buscar el ZIP del plugin
-        $download_url = '';
-        if (isset($release->assets) && is_array($release->assets)) {
-            foreach ($release->assets as $asset) {
-                if (strpos($asset->name, 'lexhoy-despachos.zip') !== false) {
-                    $download_url = $asset->browser_download_url;
-                    echo "<p>✅ ZIP encontrado: " . $asset->name . "</p>";
-                    break;
-                }
-            }
-        }
-        
-        if (empty($download_url)) {
-            echo "<p style='color: orange;'>⚠️ No se encontró el ZIP del plugin</p>";
-        } else {
-            echo "<p>🔗 URL de descarga: " . $download_url . "</p>";
-        }
-        
-        // Comparar versiones
-        $current_version = '1.0.0'; // Versión actual
-        if (version_compare($current_version, $release->tag_name, '<')) {
-            echo "<p style='color: green; font-size: 18px;'>🎉 ¡Hay una nueva versión disponible!</p>";
-            echo "<p><strong>Versión actual:</strong> " . $current_version . "</p>";
-            echo "<p><strong>Nueva versión:</strong> " . $release->tag_name . "</p>";
-        } else {
-            echo "<p style='color: blue;'>✅ Ya tienes la versión más reciente</p>";
-        }
-    } else {
-        echo "<p style='color: red;'>❌ No se pudo obtener información del release</p>";
-    }
-}
-
-// 3. Forzar verificación de WordPress
-echo "<h2>🔄 Forzando verificación de WordPress...</h2>";
-
-// Simular la verificación de WordPress
-$transient = new stdClass();
-$transient->checked = array($plugin_slug => '1.0.0');
-
-// Llamar a nuestra función de verificación
-$updated_transient = lexhoy_check_github_updates($transient);
-
-if (isset($updated_transient->response[$plugin_slug])) {
-    echo "<p style='color: green;'>✅ WordPress detectó la actualización</p>";
-    echo "<p><strong>Nueva versión:</strong> " . $updated_transient->response[$plugin_slug]->new_version . "</p>";
+    echo "<ul>";
+    echo "<li><strong>Último release:</strong> " . $release->tag_name . "</li>";
+    echo "<li><strong>Fecha:</strong> " . $release->published_at . "</li>";
+    echo "<li><strong>Descripción:</strong> " . $release->body . "</li>";
+    echo "</ul>";
 } else {
-    echo "<p style='color: orange;'>⚠️ WordPress no detectó actualización</p>";
+    echo "<p>❌ No se pudo obtener información de GitHub</p>";
 }
 
 echo "<hr>";
-echo "<p><a href='/wp-admin/plugins.php'>🔙 Volver a Plugins</a></p>";
-echo "<p><a href='javascript:location.reload()'>🔄 Actualizar</a></p>";
+echo "<p><a href='" . admin_url() . "'>← Volver al Panel de Administración</a></p>";
 ?> 

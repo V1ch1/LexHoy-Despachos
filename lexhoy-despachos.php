@@ -90,9 +90,9 @@ function lexhoy_check_github_updates($transient) {
 
     $plugin_slug = basename(dirname(__FILE__)) . '/' . basename(__FILE__);
     
-    // Verificar cada 6 horas para no sobrecargar GitHub
+    // Verificar cada 1 hora para detectar actualizaciones más rápido
     $last_check = get_option('lexhoy_last_update_check', 0);
-    if (time() - $last_check < 21600) {
+    if (time() - $last_check < 3600) {
         return $transient;
     }
     
