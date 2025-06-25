@@ -116,15 +116,33 @@ function lexhoy_check_github_updates($transient) {
             $current_version = defined('LEXHOY_DESPACHOS_VERSION') ? LEXHOY_DESPACHOS_VERSION : '1.0.0';
             
             if (version_compare($current_version, $release->tag_name, '<')) {
-                $transient->response[$plugin_slug] = (object) array(
-                    'slug' => basename(dirname(__FILE__)),
-                    'new_version' => $release->tag_name,
-                    'url' => 'https://github.com/V1ch1/LexHoy-Despachos',
-                    'package' => $release->zipball_url,
-                    'requires' => '5.0',
-                    'tested' => '6.4',
-                    'last_updated' => $release->published_at
-                );
+                // Buscar el ZIP del plugin en los assets
+                $download_url = '';
+                if (isset($release->assets) && is_array($release->assets)) {
+                    foreach ($release->assets as $asset) {
+                        if (strpos($asset->name, 'lexhoy-despachos.zip') !== false) {
+                            $download_url = $asset->browser_download_url;
+                            break;
+                        }
+                    }
+                }
+                
+                // Si no encontramos el ZIP específico, usar el primer asset
+                if (empty($download_url) && isset($release->assets[0])) {
+                    $download_url = $release->assets[0]->browser_download_url;
+                }
+                
+                if (!empty($download_url)) {
+                    $transient->response[$plugin_slug] = (object) array(
+                        'slug' => basename(dirname(__FILE__)),
+                        'new_version' => $release->tag_name,
+                        'url' => 'https://github.com/V1ch1/LexHoy-Despachos',
+                        'package' => $download_url,
+                        'requires' => '5.0',
+                        'tested' => '6.4',
+                        'last_updated' => $release->published_at
+                    );
+                }
             }
         }
     }
