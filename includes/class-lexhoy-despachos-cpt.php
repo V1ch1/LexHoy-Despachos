@@ -2213,14 +2213,3 @@ function lexhoy_check_github_updates($transient) {
                     'slug' => basename(dirname(__FILE__)),
                     'new_version' => $release->tag_name,
                     'url' => 'https://github.com/V1ch1/LexHoy-Despachos',
-                    'package' => $release->zipball_url,
-                    'requires' => '5.0',
-                    'tested' => '6.4',
-                    'last_updated' => $release->published_at
-                );
-            }
-        }
-    }
-    
-    return $transient;
-}
