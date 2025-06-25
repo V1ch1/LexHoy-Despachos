@@ -9,9 +9,6 @@
   padding: 0 !important;
   margin: 0 auto !important;
   box-sizing: border-box !important;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   overflow-x: hidden !important;
 }
 
