@@ -591,6 +591,13 @@
   font-weight: bold;
 }
 
+/* Puntos suspensivos de paginación */
+.pagination-ellipsis {
+  padding: 8px 12px;
+  color: #666;
+  font-weight: bold;
+}
+
 /* Responsive */
 @media screen and (max-width: 1200px) {
   .lexhoy-despachos-search > * {

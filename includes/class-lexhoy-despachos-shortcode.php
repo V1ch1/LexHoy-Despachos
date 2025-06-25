@@ -180,7 +180,7 @@ class LexhoyDespachosShortcode {
         $localidad = sanitize_text_field($_POST['localidad'] ?? '');
         $area = sanitize_text_field($_POST['area'] ?? '');
         $page = intval($_POST['page'] ?? 1);
-        $per_page = 20;
+        $per_page = 10;
 
         // Optimizar consulta con índices específicos
         $args = array(
@@ -190,10 +190,7 @@ class LexhoyDespachosShortcode {
             'paged' => $page,
             'meta_query' => array(),
             'tax_query' => array(),
-            'no_found_rows' => false, // Necesario para paginación
-            'update_post_meta_cache' => false, // Optimización
-            'update_post_term_cache' => false, // Optimización
-            'fields' => 'ids' // Solo obtener IDs para optimizar
+            'no_found_rows' => false // Necesario para paginación
         );
 
         // Búsqueda por texto
@@ -259,43 +256,65 @@ class LexhoyDespachosShortcode {
         $despachos = array();
 
         if ($query->have_posts()) {
-            // Obtener solo los IDs primero
-            $post_ids = $query->posts;
-            
-            // Cargar todos los posts de una vez
-            $posts = get_posts(array(
-                'post_type' => 'despacho',
-                'post_status' => 'publish',
-                'post__in' => $post_ids,
-                'orderby' => 'post__in', // Mantener orden original
-                'posts_per_page' => -1,
-                'update_post_meta_cache' => true,
-                'update_post_term_cache' => true
-            ));
-
-            foreach ($posts as $post) {
-                $post_id = $post->ID;
+            // Cargar los posts directamente sin optimización adicional
+            while ($query->have_posts()) {
+                $query->the_post();
+                $post_id = get_the_ID();
                 
                 $despachos[] = array(
                     'id' => $post_id,
-                    'nombre' => get_post_meta($post_id, '_despacho_nombre', true) ?: $post->post_title,
+                    'nombre' => get_post_meta($post_id, '_despacho_nombre', true) ?: get_the_title(),
                     'localidad' => get_post_meta($post_id, '_despacho_localidad', true),
                     'provincia' => get_post_meta($post_id, '_despacho_provincia', true),
                     'areas_practica' => $this->get_areas_for_post($post_id),
                     'isVerified' => get_post_meta($post_id, '_despacho_is_verified', true) === '1',
                     'link' => get_permalink($post_id),
-                    'slug' => $post->post_name
+                    'slug' => get_post_field('post_name', $post_id)
                 );
             }
         }
 
         wp_reset_postdata();
 
+        // Generar HTML de los despachos
+        $html = '';
+        if (empty($despachos)) {
+            $html = '<div class="no-results">
+                        <p>No se encontraron resultados' . 
+                        (!empty($search) ? ' para <q>' . esc_html($search) . '</q>' : '') . 
+                        '.</p>
+                        <p>Intenta con otros términos de búsqueda o elimina los filtros.</p>
+                    </div>';
+        } else {
+            $html = '<div class="despachos-grid">';
+            foreach ($despachos as $despacho) {
+                $html .= '<div class="despacho-card hit-card">';
+                if ($despacho['isVerified']) {
+                    $html .= '<div class="verification-badge">
+                                <i class="fas fa-check-circle"></i>
+                                <span>Verificado</span>
+                            </div>';
+                }
+                $html .= '<div class="despacho-name">' . esc_html($despacho['nombre']) . '</div>';
+                $html .= '<div class="despacho-location">' . esc_html($despacho['localidad']) . ', ' . esc_html($despacho['provincia']) . '</div>';
+                $html .= '<div class="despacho-areas"><strong>Áreas:</strong> ' . esc_html($despacho['areas_practica']) . '</div>';
+                $html .= '<a href="' . esc_url($despacho['link']) . '" class="despacho-link">Ver más</a>';
+                $html .= '</div>';
+            }
+            $html .= '</div>';
+        }
+
+        // Generar datos de paginación
+        $pagination = array(
+            'total_pages' => $query->max_num_pages,
+            'current_page' => $page,
+            'total_results' => $query->found_posts
+        );
+
         wp_send_json_success(array(
-            'despachos' => $despachos,
-            'total' => $query->found_posts,
-            'pages' => $query->max_num_pages,
-            'current_page' => $page
+            'html' => $html,
+            'pagination' => $pagination,
+            'total' => $query->found_posts
         ));
     }
 

@@ -1,5 +1,7 @@
+// Variable global para la página actual
+var currentPage = 1;
+
 jQuery(document).ready(function ($) {
-  let currentPage = 1;
   let currentFilters = {
     search: "",
     provincia: [],
@@ -13,10 +15,8 @@ jQuery(document).ready(function ($) {
   initializeSearch();
 
   function initializeSearch() {
-    // Cargar despachos iniciales con delay para mejorar UX
-    setTimeout(function () {
-      loadDespachos();
-    }, 100);
+    // Cargar despachos iniciales
+    loadDespachos();
 
     // Event listeners
     setupEventListeners();
@@ -172,13 +172,63 @@ jQuery(document).ready(function ($) {
       updateCurrentRefinements();
     });
 
-    // Event listeners para paginación
-    $(".pagination-link").on("click", function (e) {
+    // Event delegation para paginación
+    $(document).on("click", ".pagination-link", function (e) {
       e.preventDefault();
-      if (isLoading) return; // Evitar clics durante carga
+      const newPage = parseInt($(this).data("page"));
+      if (newPage !== currentPage) {
+        currentPage = newPage;
+        loadDespachos();
+      }
+    });
 
-      // Usar la variable global currentPage
-      currentPage = parseInt($(this).data("page"));
+    // Event listeners para filtros
+    $(document).on("change", ".filter-select", function () {
+      currentPage = 1; // Reset a primera página
+      updateFilters();
+      loadDespachos();
+    });
+
+    // Event listener para búsqueda
+    $(document).on("input", "#search-input", function () {
+      clearTimeout(searchTimeout);
+      currentPage = 1; // Reset a primera página
+      currentFilters.search = $(this).val();
+      searchTimeout = setTimeout(function () {
+        loadDespachos();
+      }, 500);
+    });
+
+    // Event listener para botón de búsqueda
+    $(document).on("click", "#search-button", function (e) {
+      e.preventDefault();
+      currentPage = 1; // Reset a primera página
+      currentFilters.search = $("#search-input").val();
+      loadDespachos();
+    });
+
+    // Event listener para Enter en búsqueda
+    $(document).on("keypress", "#search-input", function (e) {
+      if (e.which === 13) {
+        e.preventDefault();
+        currentPage = 1; // Reset a primera página
+        currentFilters.search = $(this).val();
+        loadDespachos();
+      }
+    });
+
+    // Event listener para limpiar filtros
+    $(document).on("click", "#clear-filters", function (e) {
+      e.preventDefault();
+      currentPage = 1; // Reset a primera página
+      currentFilters = {
+        search: "",
+        provincia: [],
+        localidad: [],
+        area: [],
+      };
+      $("#search-input").val("");
+      $(".filter-select").val("").trigger("change");
       loadDespachos();
     });
   }
@@ -210,16 +260,14 @@ jQuery(document).ready(function ($) {
       data: data,
       timeout: 30000, // 30 segundos de timeout
       success: function (response) {
-        isLoading = false;
         if (response.success) {
-          displayResults(response.data);
+          $("#hits").html(response.data.html);
+          displayPagination(response.data.pagination);
+          updateResultsCount(response.data.total);
         } else {
-          $("#hits").html(
-            '<div class="error-message">Error en la búsqueda: ' +
-              response.data +
-              "</div>"
-          );
+          $("#hits").html('<p class="error">Error al cargar los despachos</p>');
         }
+        isLoading = false;
       },
       error: function (xhr, status, error) {
         isLoading = false;
@@ -239,101 +287,94 @@ jQuery(document).ready(function ($) {
     });
   }
 
-  function displayResults(data) {
-    const despachos = data.despachos;
-    const total = data.total;
-    const pages = data.pages;
-    const currentPage = data.current_page;
-
-    if (despachos.length === 0) {
-      $("#hits").html(`
-                <div class="no-results">
-                    <p>No se encontraron resultados${
-                      currentFilters.search
-                        ? " para <q>" + currentFilters.search + "</q>"
-                        : ""
-                    }.</p>
-                    <p>Intenta con otros términos de búsqueda o elimina los filtros.</p>
-                </div>
-            `);
-      $("#pagination").empty();
+  function displayPagination(pagination) {
+    const paginationContainer = $("#pagination");
+    if (!pagination || pagination.total_pages <= 1) {
+      paginationContainer.html("");
       return;
     }
 
-    // Optimizar renderizado con DocumentFragment
-    const fragment = document.createDocumentFragment();
-    const container = document.createElement("div");
-    container.className = "despachos-grid";
-
-    despachos.forEach(function (despacho) {
-      const card = document.createElement("div");
-      card.className = "despacho-card hit-card";
-
-      let cardHTML = "";
-      if (despacho.isVerified) {
-        cardHTML += `
-                    <div class="verification-badge">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Verificado</span>
-                    </div>
-                `;
-      }
-
-      cardHTML += `
-                    <div class="despacho-name">${despacho.nombre}</div>
-                    <div class="despacho-location">${despacho.localidad}, ${despacho.provincia}</div>
-                    <div class="despacho-areas"><strong>Áreas:</strong> ${despacho.areas_practica}</div>
-                    <a href="${despacho.link}" class="despacho-link">Ver más</a>
-                `;
-
-      card.innerHTML = cardHTML;
-      container.appendChild(card);
-    });
-
-    fragment.appendChild(container);
-
-    // Limpiar y agregar contenido de una vez
-    $("#hits").empty().append(fragment);
-    displayPagination(currentPage, pages, total);
-  }
-
-  function displayPagination(currentPage, totalPages, totalResults) {
-    if (totalPages <= 1) {
-      $("#pagination").empty();
-      return;
-    }
-
-    let html = '<div class="pagination">';
+    let paginationHTML = '<div class="pagination">';
+    const totalPages = pagination.total_pages;
+    const currentPageNum = pagination.current_page;
 
     // Botón anterior
-    if (currentPage > 1) {
-      html += `<a href="#" class="pagination-link" data-page="${
-        currentPage - 1
+    if (currentPageNum > 1) {
+      paginationHTML += `<a href="#" class="pagination-link" data-page="${
+        currentPageNum - 1
       }">← Anterior</a>`;
     }
 
-    // Números de página
-    const startPage = Math.max(1, currentPage - 2);
-    const endPage = Math.min(totalPages, currentPage + 2);
+    // Números de página - Mejorado para muchas páginas
+    if (totalPages <= 10) {
+      // Si hay 10 páginas o menos, mostrar todas
+      for (let i = 1; i <= totalPages; i++) {
+        if (i === currentPageNum) {
+          paginationHTML += `<span class="pagination-current">${i}</span>`;
+        } else {
+          paginationHTML += `<a href="#" class="pagination-link" data-page="${i}">${i}</a>`;
+        }
+      }
+    } else {
+      // Si hay más de 10 páginas, mostrar estrategia inteligente
 
-    for (let i = startPage; i <= endPage; i++) {
-      if (i === currentPage) {
-        html += `<span class="pagination-current">${i}</span>`;
+      // Siempre mostrar primera página
+      if (currentPageNum === 1) {
+        paginationHTML += `<span class="pagination-current">1</span>`;
       } else {
-        html += `<a href="#" class="pagination-link" data-page="${i}">${i}</a>`;
+        paginationHTML += `<a href="#" class="pagination-link" data-page="1">1</a>`;
+      }
+
+      // Calcular rango de páginas a mostrar
+      let startPage = Math.max(2, currentPageNum - 2);
+      let endPage = Math.min(totalPages - 1, currentPageNum + 2);
+
+      // Ajustar si estamos cerca del inicio
+      if (currentPageNum <= 4) {
+        endPage = Math.min(totalPages - 1, 6);
+      }
+      // Ajustar si estamos cerca del final
+      if (currentPageNum >= totalPages - 3) {
+        startPage = Math.max(2, totalPages - 5);
+      }
+
+      // Mostrar "..." si hay gap al inicio
+      if (startPage > 2) {
+        paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+      }
+
+      // Mostrar páginas del rango
+      for (let i = startPage; i <= endPage; i++) {
+        if (i === currentPageNum) {
+          paginationHTML += `<span class="pagination-current">${i}</span>`;
+        } else {
+          paginationHTML += `<a href="#" class="pagination-link" data-page="${i}">${i}</a>`;
+        }
+      }
+
+      // Mostrar "..." si hay gap al final
+      if (endPage < totalPages - 1) {
+        paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+      }
+
+      // Siempre mostrar última página
+      if (currentPageNum === totalPages) {
+        paginationHTML += `<span class="pagination-current">${totalPages}</span>`;
+      } else {
+        paginationHTML += `<a href="#" class="pagination-link" data-page="${totalPages}">${totalPages}</a>`;
       }
     }
 
     // Botón siguiente
-    if (currentPage < totalPages) {
-      html += `<a href="#" class="pagination-link" data-page="${
-        currentPage + 1
+    if (currentPageNum < totalPages) {
+      paginationHTML += `<a href="#" class="pagination-link" data-page="${
+        currentPageNum + 1
       }">Siguiente →</a>`;
     }
 
-    html += "</div>";
+    paginationHTML += "</div>";
 
-    $("#pagination").html(html);
+    paginationContainer.html(paginationHTML);
   }
 
   function updateCurrentRefinements() {
@@ -400,5 +441,21 @@ jQuery(document).ready(function ($) {
       clearTimeout(timeout);
       timeout = setTimeout(later, wait);
     };
+  }
+
+  function updateFilters() {
+    currentFilters.provincia = $("#provincia-filter").val() || [];
+    currentFilters.localidad = $("#localidad-filter").val() || [];
+    currentFilters.area = $("#area-filter").val() || [];
+  }
+
+  function updateResultsCount(total) {
+    if (total === 0) {
+      $("#results-count").text("No se encontraron despachos");
+    } else if (total === 1) {
+      $("#results-count").text("1 despacho encontrado");
+    } else {
+      $("#results-count").text(`${total} despachos encontrados`);
+    }
   }
 });

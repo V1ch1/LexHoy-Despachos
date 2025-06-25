@@ -535,20 +535,20 @@ class LexhoyDespachosCPT {
     /**
      * Sincronizar un post a Algolia
      */
-    public function sync_to_algolia($post_id, $post, $update) {
+    public function sync_to_algolia($post_id) {
+        // Verificar que no sea una revisión automática
+        if (wp_is_post_revision($post_id)) {
+            return;
+        }
+
+        // Verificar que sea un despacho
+        if (get_post_type($post_id) !== 'despacho') {
+            return;
+        }
+
         // No hacer nada si hay una importación en progreso
         if ($this->import_in_progress) {
             $this->custom_log("SYNC: Sincronización omitida durante importación masiva para post {$post_id}");
-            return;
-        }
-
-        // No hacer nada si es una revisión o autoguardado
-        if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
-            return;
-        }
-
-        // No hacer nada si no es un despacho
-        if ($post->post_type !== 'despacho') {
             return;
         }
 
@@ -577,18 +577,12 @@ class LexhoyDespachosCPT {
             // Obtener áreas de práctica como taxonomía
             $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
             
-            // Helper para preferir el dato recién enviado sobre el almacenado
-            $posted_or_meta = function($post_field, $meta_key, $sanitize_cb = 'sanitize_text_field') use ($post_id) {
-                if (isset($_POST[$post_field])) {
-                    return is_callable($sanitize_cb) ? $sanitize_cb($_POST[$post_field]) : $_POST[$post_field];
-                }
+            // Función helper para obtener datos de POST o meta
+            $posted_or_meta = function($post_key, $meta_key, $sanitize_func = 'sanitize_text_field') use ($post_id) {
                 // Limpiar caché de metadatos para este post antes de leer
                 wp_cache_delete($post_id, 'post_meta');
                 return get_post_meta($post_id, $meta_key, true);
             };
-
-            error_log("LexHoy DEBUG: sync_to_algolia ejecutándose para post {$post_id}");
-            error_log("LexHoy DEBUG: Datos POST disponibles: " . print_r(array_keys($_POST), true));
 
             $record = array(
                 'objectID'         => get_post_meta($post_id, '_algolia_object_id', true) ?: $post_id,
