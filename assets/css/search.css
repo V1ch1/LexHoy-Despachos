@@ -167,7 +167,7 @@
   top: 0;
   height: 45px;
   width: 45px;
-  background: #e10000;
+  background: #0073aa;
   border: none;
   color: white;
   cursor: pointer;
@@ -177,7 +177,7 @@
 }
 
 .search-button:hover {
-  background: #c10000;
+  background: #005a87;
 }
 
 /* Contenedor de contenido de búsqueda */
