@@ -12,7 +12,7 @@
   overflow-x: hidden !important;
 }
 
-/* Aplicar tipografía Inter */
+/* Aplicar tipografía Inter SOLO a elementos dentro del buscador */
 .lexhoy-despachos-search h1,
 .lexhoy-despachos-search h2,
 .lexhoy-despachos-search h3,
@@ -22,13 +22,22 @@
 .lexhoy-despachos-search p,
 .lexhoy-despachos-search span,
 .lexhoy-despachos-search div,
-.lexhoy-despachos-search a,
 .lexhoy-despachos-search label,
 .lexhoy-despachos-search input,
 .lexhoy-despachos-search textarea,
 .lexhoy-despachos-search select,
 .lexhoy-despachos-search button {
   font-family: "Inter", Helvetica, Arial, sans-serif !important;
+}
+
+/* Enlaces específicos del buscador - NO afectar logos del sitio */
+.lexhoy-despachos-search .despacho-link,
+.lexhoy-despachos-search .pagination-link,
+.lexhoy-despachos-search .refinement-remove,
+.lexhoy-despachos-search .filter-tab-btn,
+.lexhoy-despachos-search .alphabet-letter {
+  font-family: "Inter", Helvetica, Arial, sans-serif !important;
+  text-decoration: none !important;
 }
 
 /* Reset dentro del contenedor */
@@ -742,4 +751,63 @@
 .td-page-content.tagdiv-type p:has(code:only-child),
 .td-page-content.tagdiv-type p:has(code:first-child:last-child) {
   display: none !important;
+}
+
+/* Proteger logos del sitio del CSS del buscador */
+body:not(.lexhoy-despachos-search) .td-header-logo a,
+body:not(.lexhoy-despachos-search) .td-header-logo img,
+body:not(.lexhoy-despachos-search) .td-logo a,
+body:not(.lexhoy-despachos-search) .td-logo img,
+body:not(.lexhoy-despachos-search) .logo a,
+body:not(.lexhoy-despachos-search) .logo img,
+body:not(.lexhoy-despachos-search) .site-logo a,
+body:not(.lexhoy-despachos-search) .site-logo img {
+  text-decoration: none !important;
+  border: none !important;
+  background: none !important;
+}
+
+/* Proteger header y navegación del sitio */
+.td-header,
+.td-header-wrap,
+.td-header-top-menu,
+.td-header-menu,
+.td-header-main-menu,
+.td-main-menu,
+.td-header-menu-wrap,
+.td-header-menu-full,
+.td-header-menu-wrap-full,
+.td-header-menu-wrap-full .td-header-menu,
+.td-header-menu-wrap-full .td-header-menu .td-main-menu,
+.td-header-menu-wrap-full .td-header-menu .td-main-menu li,
+.td-header-menu-wrap-full .td-header-menu .td-main-menu li a {
+  font-family: inherit !important;
+  text-decoration: inherit !important;
+  border: inherit !important;
+  background: inherit !important;
+  color: inherit !important;
+}
+
+/* Proteger elementos específicos del tema */
+.td-header-logo,
+.td-header-logo a,
+.td-header-logo img,
+.td-logo,
+.td-logo a,
+.td-logo img {
+  text-decoration: none !important;
+  border: none !important;
+  background: none !important;
+  font-family: inherit !important;
+}
+
+/* Sobrescribir reglas de Bootstrap */
+.lexhoy-despachos-search .container,
+.lexhoy-despachos-search .container-fluid,
+.lexhoy-despachos-search .row,
+.lexhoy-despachos-search .col,
+.lexhoy-despachos-search .col-* {
+  margin: 0 !important;
+  padding: 0 !important;
+  max-width: none !important;
 }
