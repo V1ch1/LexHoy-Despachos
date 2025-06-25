@@ -171,6 +171,16 @@ jQuery(document).ready(function ($) {
       loadDespachos();
       updateCurrentRefinements();
     });
+
+    // Event listeners para paginación
+    $(".pagination-link").on("click", function (e) {
+      e.preventDefault();
+      if (isLoading) return; // Evitar clics durante carga
+
+      // Usar la variable global currentPage
+      currentPage = parseInt($(this).data("page"));
+      loadDespachos();
+    });
   }
 
   function loadDespachos() {
@@ -324,15 +334,6 @@ jQuery(document).ready(function ($) {
     html += "</div>";
 
     $("#pagination").html(html);
-
-    // Event listeners para paginación
-    $(".pagination-link").on("click", function (e) {
-      e.preventDefault();
-      if (isLoading) return; // Evitar clics durante carga
-
-      currentPage = parseInt($(this).data("page"));
-      loadDespachos();
-    });
   }
 
   function updateCurrentRefinements() {
