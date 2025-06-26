@@ -73,8 +73,7 @@ class LexhoyDespachosCPT {
         // Cargar plantilla personalizada para despachos individuales
         add_filter('single_template', array($this, 'load_single_despacho_template'));
 
-        // Sistema de actualizaciones automáticas desde GitHub
-        add_filter('pre_set_site_transient_update_plugins', 'lexhoy_check_github_updates');
+
     }
 
     /**

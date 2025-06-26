@@ -9,7 +9,7 @@
  * Text Domain: lexhoy-despachos
  * Domain Path: /languages
  * 
- * Sistema de deploy directo configurado - Test funcional
+
  */
 
 // Evitar acceso directo
@@ -29,8 +29,7 @@ require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-shor
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-areas-cpt.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/algolia-page.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/shortcode-page.php';
-require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'auto-update.php';
-require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'auto-deploy.php';
+
 
 // Inicializar el plugin
 function lexhoy_despachos_init() {
@@ -84,72 +83,4 @@ function lexhoy_despachos_uninstall() {
 }
 register_uninstall_hook(__FILE__, 'lexhoy_despachos_uninstall');
 
-// Sistema de actualizaciones automáticas desde GitHub
-add_filter('pre_set_site_transient_update_plugins', 'lexhoy_check_github_updates');
-
-function lexhoy_check_github_updates($transient) {
-    if (empty($transient->checked)) {
-        return $transient;
-    }
-
-    $plugin_slug = basename(dirname(__FILE__)) . '/' . basename(__FILE__);
-    
-    // Verificar cada 1 hora para detectar actualizaciones más rápido
-    $last_check = get_option('lexhoy_last_update_check', 0);
-    if (time() - $last_check < 3600) {
-        return $transient;
-    }
-    
-    update_option('lexhoy_last_update_check', time());
-    
-    // URL específica de tu repositorio
-    $github_url = 'https://api.github.com/repos/V1ch1/LexHoy-Despachos/releases/latest';
-    
-    $response = wp_remote_get($github_url, array(
-        'timeout' => 15,
-        'headers' => array(
-            'User-Agent' => 'WordPress/' . get_bloginfo('version')
-        )
-    ));
-    
-    if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
-        $release = json_decode(wp_remote_retrieve_body($response));
-        
-        if ($release && isset($release->tag_name)) {
-            // Comparar versiones
-            $current_version = defined('LEXHOY_DESPACHOS_VERSION') ? LEXHOY_DESPACHOS_VERSION : '1.0.0';
-            
-            if (version_compare($current_version, $release->tag_name, '<')) {
-                // Buscar el ZIP del plugin en los assets
-                $download_url = '';
-                if (isset($release->assets) && is_array($release->assets)) {
-                    foreach ($release->assets as $asset) {
-                        if (strpos($asset->name, 'lexhoy-despachos.zip') !== false) {
-                            $download_url = $asset->browser_download_url;
-                            break;
-                        }
-                    }
-                }
-                
-                // Si no encontramos el ZIP específico, usar el primer asset
-                if (empty($download_url) && isset($release->assets[0])) {
-                    $download_url = $release->assets[0]->browser_download_url;
-                }
-                
-                if (!empty($download_url)) {
-                    $transient->response[$plugin_slug] = (object) array(
-                        'slug' => basename(dirname(__FILE__)),
-                        'new_version' => $release->tag_name,
-                        'url' => 'https://github.com/V1ch1/LexHoy-Despachos',
-                        'package' => $download_url,
-                        'requires' => '5.0',
-                        'tested' => '6.4',
-                        'last_updated' => $release->published_at
-                    );
-                }
-            }
-        }
-    }
-    
-    return $transient;
-} 
+ 
