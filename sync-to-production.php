@@ -10,6 +10,8 @@ $PRODUCTION_URL = 'https://lexhoy.com'; // Cambiar por tu URL de producción
 $PRODUCTION_PATH = '/wp-content/plugins/LexHoy-Despachos/'; // Ruta en producción
 $GITHUB_REPO = 'V1ch1/LexHoy-Despachos';
 
+// FTP eliminado - solo método GitHub
+
 // Función para logs
 function log_message($message) {
     $timestamp = date('Y-m-d H:i:s');
@@ -37,6 +39,9 @@ function show_help() {
     echo "  php sync-to-production.php full\n";
     echo "  php sync-to-production.php custom \"Arreglo scroll paginación\"\n";
     echo "  deploy-custom.bat \"Mejora UX navegación\"\n\n";
+    echo "📋 MÉTODO ALTERNATIVO (si FTP no funciona):\n";
+    echo "1. Subir download-from-github.php al servidor (una vez)\n";
+    echo "2. Visitar: https://lexhoy.com/wp-content/plugins/LexHoy-Despachos-main/download-from-github.php?key=lexhoy2024\n\n";
 }
 
 // Función para verificar si estamos en WordPress
@@ -55,6 +60,16 @@ function load_wordpress() {
     }
     return true;
 }
+
+// Esta función ya no es necesaria - usando método GitHub
+function upload_to_ftp() {
+    log_message("⚠️  FTP no disponible - Usar método GitHub:");
+    log_message("📋 1. Subir download-from-github.php al servidor");
+    log_message("🌐 2. Visitar: https://lexhoy.com/wp-content/plugins/LexHoy-Despachos-main/download-from-github.php?key=lexhoy2024");
+    return false;
+}
+
+// Función auxiliar eliminada (ya no se usa FTP)
 
 // Función para generar mensaje de commit descriptivo
 function generate_commit_message($new_version) {
@@ -408,18 +423,17 @@ switch ($command) {
         break;
         
     case 'full':
-        log_message("🚀 Iniciando deploy completo...");
-        if (push_to_github($custom_message)) {
-            sleep(2); // Esperar un poco para que GitHub procese
-            deploy_to_production();
-        }
+        log_message("🚀 Iniciando push a GitHub...");
+        push_to_github($custom_message);
+        log_message("📋 Para actualizar producción:");
+        log_message("🌐 Visita: https://lexhoy.com/wp-content/plugins/LexHoy-Despachos-main/download-from-github.php?key=lexhoy2024");
         break;
         
     case 'custom':
         log_message("🚀 Iniciando deploy con mensaje personalizado...");
         if (push_to_github($custom_message)) {
             sleep(2);
-            deploy_to_production();
+            upload_to_ftp();
         }
         break;
         

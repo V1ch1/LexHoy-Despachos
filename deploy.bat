@@ -27,6 +27,7 @@ if "%command%"=="setup" goto :setup
 if "%command%"=="status" goto :status
 if "%command%"=="push" goto :push
 if "%command%"=="deploy" goto :deploy
+if "%command%"=="ftp" goto :ftp
 if "%command%"=="full" goto :full
 if "%command%"=="help" goto :help
 
@@ -36,7 +37,8 @@ echo   deploy.bat setup   - Configurar Git por primera vez
 echo   deploy.bat status  - Ver estado actual
 echo   deploy.bat push    - Subir cambios a GitHub
 echo   deploy.bat deploy  - Actualizar producción desde GitHub
-echo   deploy.bat full    - Push + Deploy completo
+echo   deploy.bat ftp     - Subir archivos por FTP
+echo   deploy.bat full    - Push + Upload FTP completo
 echo   deploy.bat help    - Mostrar esta ayuda
 echo.
 echo Para mensajes personalizados:
@@ -67,6 +69,11 @@ goto :end
 :deploy
 echo 🎯 Actualizando producción...
 php sync-to-production.php deploy
+goto :end
+
+:ftp
+echo 📤 Subiendo archivos por FTP...
+php sync-to-production.php ftp
 goto :end
 
 :full
