@@ -179,6 +179,9 @@ jQuery(document).ready(function ($) {
       if (newPage !== currentPage) {
         currentPage = newPage;
         loadDespachos();
+
+        // Scroll suave hacia arriba a los resultados
+        scrollToResults();
       }
     });
 
@@ -456,6 +459,30 @@ jQuery(document).ready(function ($) {
       $("#results-count").text("1 despacho encontrado");
     } else {
       $("#results-count").text(`${total} despachos encontrados`);
+    }
+  }
+
+  // Función para hacer scroll suave hacia los resultados
+  function scrollToResults() {
+    // Buscar el contenedor de resultados
+    const resultsContainer = $("#hits");
+
+    if (resultsContainer.length) {
+      // Scroll suave con animación
+      $("html, body").animate(
+        {
+          scrollTop: resultsContainer.offset().top - 100, // 100px de margen superior
+        },
+        600
+      ); // 600ms de duración para un scroll suave
+    } else {
+      // Fallback: scroll al inicio de la página si no encuentra el contenedor
+      $("html, body").animate(
+        {
+          scrollTop: 0,
+        },
+        600
+      );
     }
   }
 });
