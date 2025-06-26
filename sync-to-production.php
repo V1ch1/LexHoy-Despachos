@@ -29,11 +29,14 @@ function show_help() {
     echo "  push       - Subir cambios a GitHub\n";
     echo "  deploy     - Descargar desde GitHub a producción\n";
     echo "  full       - Push + Deploy completo\n";
+    echo "  custom     - Deploy con mensaje personalizado\n";
     echo "  status     - Ver estado actual\n";
     echo "  help       - Mostrar esta ayuda\n\n";
     echo "Ejemplos:\n";
     echo "  php sync-to-production.php push\n";
-    echo "  php sync-to-production.php full\n\n";
+    echo "  php sync-to-production.php full\n";
+    echo "  php sync-to-production.php custom \"Arreglo scroll paginación\"\n";
+    echo "  deploy-custom.bat \"Mejora UX navegación\"\n\n";
 }
 
 // Función para verificar si estamos en WordPress
@@ -53,8 +56,62 @@ function load_wordpress() {
     return true;
 }
 
+// Función para generar mensaje de commit descriptivo
+function generate_commit_message($new_version) {
+    // Detectar cambios en archivos para generar mensaje automático
+    $changed_files = [];
+    $git_status = shell_exec('git status --porcelain 2>/dev/null');
+    
+    if (!empty($git_status)) {
+        $lines = explode("\n", trim($git_status));
+        foreach ($lines as $line) {
+            if (!empty(trim($line))) {
+                $file = trim(substr($line, 2)); // Quitar los primeros 2 caracteres (M, A, etc.)
+                $changed_files[] = $file;
+            }
+        }
+    }
+    
+    // Generar mensaje basado en archivos modificados
+    $changes = [];
+    
+    foreach ($changed_files as $file) {
+        if (strpos($file, 'assets/js/') !== false) {
+            $changes[] = "JavaScript mejorado";
+        } elseif (strpos($file, 'assets/css/') !== false) {
+            $changes[] = "Estilos actualizados";
+        } elseif (strpos($file, 'includes/') !== false) {
+            $changes[] = "Funcionalidad backend";
+        } elseif (strpos($file, 'templates/') !== false) {
+            $changes[] = "Templates actualizados";
+        } elseif (strpos($file, 'admin/') !== false) {
+            $changes[] = "Panel admin mejorado";
+        } elseif ($file === 'lexhoy-despachos.php') {
+            // No agregar nada para el archivo principal (solo versión)
+        } elseif (strpos($file, '.php') !== false) {
+            $changes[] = "Lógica PHP mejorada";
+        } elseif (strpos($file, '.md') !== false) {
+            $changes[] = "Documentación";
+        } elseif (strpos($file, '.bat') !== false || strpos($file, 'sync-') !== false) {
+            $changes[] = "Scripts deploy";
+        }
+    }
+    
+    // Eliminar duplicados
+    $changes = array_unique($changes);
+    
+    // Generar mensaje final
+    if (empty($changes)) {
+        return "v$new_version - Actualización de versión";
+    } elseif (count($changes) === 1) {
+        return "v$new_version - " . $changes[0];
+    } else {
+        return "v$new_version - " . implode(", ", array_slice($changes, 0, 3));
+    }
+}
+
 // Función para hacer push a GitHub
-function push_to_github() {
+function push_to_github($custom_message = '') {
     log_message("🚀 Iniciando push a GitHub...");
     
     // Verificar que Git esté disponible
@@ -99,11 +156,20 @@ function push_to_github() {
         log_message("✅ Versión actualizada en lexhoy-despachos.php");
     }
     
+    // Generar mensaje de commit (personalizado o automático)
+    if (!empty($custom_message)) {
+        $commit_message = "v$new_version - $custom_message";
+        log_message("📝 Usando mensaje personalizado: $custom_message");
+    } else {
+        $commit_message = generate_commit_message($new_version);
+        log_message("📝 Generando mensaje automático...");
+    }
+    
     // Git add, commit y push
     $commands = [
         'git add .',
         'git status --porcelain',
-        "git commit -m \"Deploy automático v$new_version - $(date)\"",
+        "git commit -m \"$commit_message\"",
         'git push origin main'
     ];
     
@@ -324,15 +390,17 @@ function show_status() {
 if (php_sapi_name() === 'cli') {
     // Ejecutado desde terminal
     $command = isset($argv[1]) ? $argv[1] : 'help';
+    $custom_message = isset($argv[2]) ? $argv[2] : '';
 } else {
     // Ejecutado desde navegador
     $command = isset($_GET['action']) ? $_GET['action'] : 'help';
+    $custom_message = isset($_GET['message']) ? $_GET['message'] : '';
     echo "<pre>";
 }
 
 switch ($command) {
     case 'push':
-        push_to_github();
+        push_to_github($custom_message);
         break;
         
     case 'deploy':
@@ -341,8 +409,16 @@ switch ($command) {
         
     case 'full':
         log_message("🚀 Iniciando deploy completo...");
-        if (push_to_github()) {
+        if (push_to_github($custom_message)) {
             sleep(2); // Esperar un poco para que GitHub procese
+            deploy_to_production();
+        }
+        break;
+        
+    case 'custom':
+        log_message("🚀 Iniciando deploy con mensaje personalizado...");
+        if (push_to_github($custom_message)) {
+            sleep(2);
             deploy_to_production();
         }
         break;

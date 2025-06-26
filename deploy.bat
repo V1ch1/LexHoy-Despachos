@@ -39,9 +39,13 @@ echo   deploy.bat deploy  - Actualizar producción desde GitHub
 echo   deploy.bat full    - Push + Deploy completo
 echo   deploy.bat help    - Mostrar esta ayuda
 echo.
+echo Para mensajes personalizados:
+echo   deploy-custom.bat "Tu mensaje aquí"
+echo.
 echo Ejemplos:
 echo   deploy.bat setup
 echo   deploy.bat full
+echo   deploy-custom.bat "Scroll automático en paginación"
 echo.
 goto :end
 
