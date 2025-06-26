@@ -149,7 +149,11 @@ get_header(); ?>
                         <?php if ($telefono): ?>
                             <div class="contact-item">
                                 <i class="fas fa-phone"></i>
-                                <a href="tel:<?php echo esc_attr($telefono); ?>"><?php echo esc_html($telefono); ?></a>
+                                <?php if ($is_verified == '1'): ?>
+                                    <a href="tel:<?php echo esc_attr($telefono); ?>"><?php echo esc_html($telefono); ?></a>
+                                <?php else: ?>
+                                    <span class="phone-verification-notice">Solo mostramos teléfonos de despachos verificados</span>
+                                <?php endif; ?>
                             </div>
                         <?php endif; ?>
                         
@@ -337,13 +341,67 @@ get_header(); ?>
                     <p><strong>Despacho:</strong> <?php echo esc_html($nombre ?: get_the_title()); ?></p>
                     <p>Para actualizar la información de este despacho, por favor completa el formulario de contacto. Nos pondremos en contacto contigo lo antes posible.</p>
                     
-                    <!-- Aquí se agregará el Contact Form 7 -->
-                    <div class="contact-form-placeholder">
-                        <p style="text-align: center; padding: 40px; background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 8px; color: #6c757d;">
-                            <i class="fas fa-plus-circle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
-                            <strong>Formulario de Contacto</strong><br>
-                            Aquí se agregará el shortcode de Contact Form 7
-                        </p>
+                    <!-- Contact Form 7 - Formulario Despachos -->
+                    <div class="despacho-contact-form">
+                        <?php 
+                        // Verificar si Contact Form 7 está activo
+                        if (function_exists('wpcf7_get_contact_form_by_title')) {
+                            // Renderizar el formulario con datos del despacho
+                            echo do_shortcode('[contact-form-7 id="0725a70" title="Formulario Despachos"]');
+                        } elseif (function_exists('do_shortcode')) {
+                            // Intentar renderizar el shortcode directamente
+                            echo do_shortcode('[contact-form-7 id="0725a70" title="Formulario Despachos"]');
+                        } else {
+                            // Fallback si Contact Form 7 no está disponible
+                            echo '<div class="contact-form-fallback">';
+                            echo '<p style="text-align: center; padding: 40px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; color: #856404;">';
+                            echo '<i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>';
+                            echo '<strong>Contact Form 7 requerido</strong><br>';
+                            echo 'Para mostrar el formulario, instala y activa el plugin Contact Form 7.';
+                            echo '</p>';
+                            echo '</div>';
+                        }
+                        ?>
+                        
+                        <!-- Campos ocultos con información del despacho -->
+                        <input type="hidden" id="despacho-telefono-oculto" value="<?php echo esc_attr($telefono); ?>" />
+                        <input type="hidden" id="despacho-nombre-oculto" value="<?php echo esc_attr($nombre ?: get_the_title()); ?>" />
+                        <input type="hidden" id="despacho-id-oculto" value="<?php echo esc_attr($post_id); ?>" />
+                        
+                        <script>
+                        // Rellenar automáticamente campos del formulario si están disponibles
+                        document.addEventListener('DOMContentLoaded', function() {
+                            setTimeout(function() {
+                                // Intentar encontrar y rellenar campos del formulario
+                                const nombreDespacho = document.getElementById('despacho-nombre-oculto')?.value;
+                                const telefonoDespacho = document.getElementById('despacho-telefono-oculto')?.value;
+                                const despacheId = document.getElementById('despacho-id-oculto')?.value;
+                                
+                                // Buscar campos del formulario y pre-rellenarlos
+                                const form = document.querySelector('.despacho-contact-form form');
+                                if (form) {
+                                    // Campo de nombre del despacho (si existe)
+                                    const nameField = form.querySelector('input[name*="despacho"], input[name*="empresa"], input[name*="nombre-despacho"]');
+                                    if (nameField && nombreDespacho) {
+                                        nameField.value = nombreDespacho;
+                                    }
+                                    
+                                    // Campo oculto de teléfono (si existe)
+                                    const phoneField = form.querySelector('input[name*="telefono"], input[type="tel"]');
+                                    if (phoneField && telefonoDespacho) {
+                                        phoneField.value = telefonoDespacho;
+                                        phoneField.type = 'hidden'; // Hacer el campo oculto
+                                    }
+                                    
+                                    // Campo de ID del despacho (si existe)
+                                    const idField = form.querySelector('input[name*="despacho-id"], input[name*="id"]');
+                                    if (idField && despacheId) {
+                                        idField.value = despacheId;
+                                    }
+                                }
+                            }, 500);
+                        });
+                        </script>
                     </div>
                 </div>
             </div>

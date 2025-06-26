@@ -248,6 +248,13 @@
   font-size: 14px;
 }
 
+.phone-verification-notice {
+  color: #666666 !important;
+  font-style: italic;
+  font-size: 13px;
+  font-weight: 400 !important;
+}
+
 /* Lista de especialidades - Bordes cuadrados */
 .specialties-list {
   display: flex;
@@ -488,7 +495,108 @@
 }
 
 /* Placeholder del formulario */
-.contact-form-placeholder {
+/* Estilos para el formulario Contact Form 7 */
+.despacho-contact-form {
+  margin-top: 20px;
+}
+
+.despacho-contact-form .wpcf7 {
+  margin: 0;
+}
+
+.despacho-contact-form .wpcf7-form {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.despacho-contact-form .wpcf7-form p {
+  margin-bottom: 15px;
+}
+
+.despacho-contact-form .wpcf7-form label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #000000;
+  font-size: 14px;
+}
+
+.despacho-contact-form .wpcf7-form input[type="text"],
+.despacho-contact-form .wpcf7-form input[type="email"],
+.despacho-contact-form .wpcf7-form input[type="tel"],
+.despacho-contact-form .wpcf7-form textarea,
+.despacho-contact-form .wpcf7-form select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: "Inter", Arial, sans-serif;
+  transition: border-color 0.3s ease;
+  box-sizing: border-box;
+}
+
+.despacho-contact-form .wpcf7-form input:focus,
+.despacho-contact-form .wpcf7-form textarea:focus,
+.despacho-contact-form .wpcf7-form select:focus {
+  outline: none;
+  border-color: #e10000;
+  box-shadow: 0 0 0 2px rgba(225, 0, 0, 0.1);
+}
+
+.despacho-contact-form .wpcf7-form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.despacho-contact-form .wpcf7-form input[type="submit"] {
+  background: #000000;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+}
+
+.despacho-contact-form .wpcf7-form input[type="submit"]:hover {
+  background: #333333;
+  transform: translateY(-1px);
+}
+
+.despacho-contact-form .wpcf7-response-output {
+  border: none !important;
+  margin: 15px 0 0 0 !important;
+  padding: 12px 15px !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+}
+
+.despacho-contact-form .wpcf7-mail-sent-ok {
+  background: #d4edda !important;
+  color: #155724 !important;
+  border-left: 4px solid #28a745 !important;
+}
+
+.despacho-contact-form .wpcf7-validation-errors,
+.despacho-contact-form .wpcf7-mail-sent-ng {
+  background: #f8d7da !important;
+  color: #721c24 !important;
+  border-left: 4px solid #dc3545 !important;
+}
+
+.despacho-contact-form .wpcf7-spam-blocked {
+  background: #fff3cd !important;
+  color: #856404 !important;
+  border-left: 4px solid #ffc107 !important;
+}
+
+/* Fallback para cuando Contact Form 7 no está disponible */
+.contact-form-fallback {
   margin-top: 20px;
 }
 
