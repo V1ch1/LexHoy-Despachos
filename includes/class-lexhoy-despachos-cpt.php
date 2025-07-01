@@ -73,6 +73,15 @@ class LexhoyDespachosCPT {
         // Cargar plantilla personalizada para despachos individuales
         add_filter('single_template', array($this, 'load_single_despacho_template'));
 
+        // Filtros para configurar títulos de página correctamente
+        add_filter('document_title_parts', array($this, 'modify_page_title'), 10, 1);
+        add_filter('wp_title', array($this, 'modify_wp_title'), 10, 2);
+
+        // HOOKS PARA SEO Y RANK MATH
+        add_filter('rank_math/sitemap/urlimages', array($this, 'add_despacho_images_to_sitemap'), 10, 3);
+        add_filter('rank_math/json_ld', array($this, 'add_despacho_schema'), 10, 2);
+        add_action('wp_head', array($this, 'add_despacho_meta_tags'));
+        add_filter('rank_math/frontend/canonical', array($this, 'modify_canonical_url'), 10, 1);
 
     }
 
@@ -126,6 +135,13 @@ class LexhoyDespachosCPT {
             'menu_icon'         => 'dashicons-building',
             'supports'          => array('title', 'editor', 'thumbnail', 'excerpt'),
             'show_in_rest'      => true,
+            // OPTIMIZACIONES SEO
+            'show_in_nav_menus' => true,
+            'can_export'        => true,
+            'delete_with_user'  => false,
+            'map_meta_cap'      => true,
+            // Soporte para Rank Math SEO
+            'show_in_sitemap'   => true,
         );
 
         register_post_type('despacho', $args);
@@ -2164,4 +2180,4825 @@ class LexhoyDespachosCPT {
         }
         return $template;
     }
-}
+
+    /**
+     * Filtros para configurar títulos de página correctamente
+     */
+    public function modify_page_title($title) {
+        if (is_singular('despacho')) {
+            $despacho_name = get_post_meta(get_the_ID(), '_despacho_nombre', true);
+            if (!empty($despacho_name)) {
+                $title['title'] = $despacho_name;
+            } else {
+                $title['title'] = get_the_title();
+            }
+            $title['site'] = 'Lexhoy';
+        }
+        return $title;
+    }
+
+    public function modify_wp_title($title, $sep) {
+        if (is_singular('despacho')) {
+            $despacho_name = get_post_meta(get_the_ID(), '_despacho_nombre', true);
+            if (!empty($despacho_name)) {
+                return $despacho_name . ' ' . $sep . ' Lexhoy';
+            } else {
+                return get_the_title() . ' ' . $sep . ' Lexhoy';
+            }
+        }
+        return $title;
+    }
+
+    /**
+     * Agregar imágenes de despachos al sitemap de Rank Math
+     */
+    public function add_despacho_images_to_sitemap($images, $post, $post_type) {
+        if ('despacho' !== $post_type) {
+            return $images;
+        }
+
+        // Agregar imagen destacada si existe
+        if (has_post_thumbnail($post->ID)) {
+            $thumbnail_id = get_post_thumbnail_id($post->ID);
+            $image_url = wp_get_attachment_image_url($thumbnail_id, 'full');
+            if ($image_url) {
+                $images[] = array(
+                    'src' => $image_url,
+                    'title' => get_the_title($post->ID),
+                    'alt' => get_post_meta($thumbnail_id, '_wp_attachment_image_alt', true),
+                );
+            }
+        }
+
+        return $images;
+    }
+
+    /**
+     * Agregar datos estructurados (Schema.org) para despachos
+     */
+    public function add_despacho_schema($schema, $post) {
+        if ($post->post_type === 'despacho') {
+            $schema['@type'] = 'LocalBusiness';
+            $schema['name'] = get_the_title($post);
+            $schema['url'] = get_permalink($post);
+            $schema['image'] = wp_get_attachment_url(get_post_thumbnail_id($post->ID));
+            $schema['address'] = array(
+                '@type' => 'PostalAddress',
+                'streetAddress' => get_post_meta($post->ID, '_despacho_direccion', true),
+                'addressLocality' => get_post_meta($post->ID, '_despacho_localidad', true),
+                'addressRegion' => get_post_meta($post->ID, '_despacho_provincia', true),
+                'postalCode' => get_post_meta($post->ID, '_despacho_codigo_postal', true),
+                'addressCountry' => get_option('woocommerce_email_from_address')
+            );
+            $schema['telephone'] = get_post_meta($post->ID, '_despacho_telefono', true);
+            $schema['email'] = get_post_meta($post->ID, '_despacho_email', true);
+            $schema['website'] = get_post_meta($post->ID, '_despacho_web', true);
+            $schema['description'] = get_post_meta($post->ID, '_despacho_descripcion', true);
+            $schema['areaServed'] = array(
+                '@type' => 'State',
+                'name' => get_post_meta($post->ID, '_despacho_provincia', true)
+            );
+            $schema['sameAs'] = array(
+                get_post_meta($post->ID, '_despacho_facebook', true),
+                get_post_meta($post->ID, '_despacho_twitter', true),
+                get_post_meta($post->ID, '_despacho_linkedin', true),
+                get_post_meta($post->ID, '_despacho_instagram', true)
+            );
+        }
+        return $schema;
+    }
+
+    public function add_despacho_meta_tags() {
+        if (is_singular('despacho')) {
+            $despacho_name = get_post_meta(get_the_ID(), '_despacho_nombre', true);
+            $localidad = get_post_meta(get_the_ID(), '_despacho_localidad', true);
+            $provincia = get_post_meta(get_the_ID(), '_despacho_provincia', true);
+            $codigo_postal = get_post_meta(get_the_ID(), '_despacho_codigo_postal', true);
+            $direccion = get_post_meta(get_the_ID(), '_despacho_direccion', true);
+            $telefono = get_post_meta(get_the_ID(), '_despacho_telefono', true);
+            $email = get_post_meta(get_the_ID(), '_despacho_email', true);
+            $web = get_post_meta(get_the_ID(), '_despacho_web', true);
+            $descripcion = get_post_meta(get_the_ID(), '_despacho_descripcion', true);
+            $estado_verificacion = get_post_meta(get_the_ID(), '_despacho_estado_verificacion', true);
+            $is_verified = get_post_meta(get_the_ID(), '_despacho_is_verified', true);
+
+            $especialidades = get_post_meta(get_the_ID(), '_despacho_especialidades', true);
+            $horario = get_post_meta(get_the_ID(), '_despacho_horario', true);
+            $redes_sociales = get_post_meta(get_the_ID(), '_despacho_redes_sociales', true);
+            $experiencia = get_post_meta(get_the_ID(), '_despacho_experiencia', true);
+            $tamano_despacho = get_post_meta(get_the_ID(), '_despacho_tamaño', true);
+            $ano_fundacion = get_post_meta(get_the_ID(), '_despacho_año_fundacion', true);
+            $estado_registro = get_post_meta(get_the_ID(), '_despacho_estado_registro', true);
+
+            $areas_practica = wp_get_post_terms(get_the_ID(), 'area_practica', array('fields' => 'names'));
+
+            $schema = array(
+                '@context' => 'http://schema.org',
+                '@type' => 'LocalBusiness',
+                'name' => $despacho_name,
+                'url' => get_permalink(),
+                'image' => wp_get_attachment_url(get_post_thumbnail_id()),
+                'description' => $descripcion,
+                'address' => array(
+                    '@type' => 'PostalAddress',
+                    'streetAddress' => $direccion,
+                    'addressLocality' => $localidad,
+                    'addressRegion' => $provincia,
+                    'postalCode' => $codigo_postal,
+                    'addressCountry' => get_option('woocommerce_email_from_address')
+                ),
+                'telephone' => $telefono,
+                'email' => $email,
+                'website' => $web,
+                'priceRange' => '',
+                'openingHours' => $horario,
+                'areaServed' => $areas_practica,
+                'sameAs' => array(
+                    $redes_sociales['facebook'],
+                    $redes_sociales['twitter'],
+                    $redes_sociales['linkedin'],
+                    $redes_sociales['instagram']
+                ),
+                'review' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name'),
+                    'logo' => array(
+                        '@type' => 'ImageObject',
+                        'url' => get_site_icon_url()
+                    )
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get_search_link(),
+                    'query-input' => 'required name=search_query'
+                ),
+                'hasOfferCatalog' => array(
+                    '@type' => 'OfferCatalog',
+                    'itemListElement' => array(
+                        '@type' => 'Offer',
+                        'itemOffered' => array(
+                            '@type' => 'Service',
+                            'name' => $despacho_name
+                        )
+                    )
+                ),
+                'aggregateOffer' => array(
+                    '@type' => 'AggregateOffer',
+                    'lowPrice' => '',
+                    'highPrice' => '',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'availability' => 'https://schema.org/InStock',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition'
+                ),
+                'offers' => array(
+                    '@type' => 'Offer',
+                    'priceCurrency' => get_woocommerce_currency(),
+                    'price' => '',
+                    'priceValidUntil' => '',
+                    'itemCondition' => 'https://schema.org/NewCondition',
+                    'availability' => 'https://schema.org/InStock',
+                    'seller' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'businessFunction' => 'http://schema.org/ConsultingService',
+                'area' => $areas_practica,
+                'competencies' => $especialidades,
+                'experienceIn' => $experiencia,
+                'award' => '',
+                'brand' => array(
+                    '@type' => 'Brand',
+                    'name' => get_bloginfo('name')
+                ),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url()
+                ),
+                'contactPoint' => array(
+                    '@type' => 'ContactPoint',
+                    'contactType' => 'customer service',
+                    'email' => $email,
+                    'url' => $web,
+                    'telephone' => $telefono
+                ),
+                'aggregateRating' => array(
+                    '@type' => 'AggregateRating',
+                    'ratingValue' => '',
+                    'reviewCount' => ''
+                ),
+                'review' => array(
+                    '@type' => 'Review',
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => get_the_author()
+                    ),
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'bestRating' => '5',
+                        'ratingValue' => '',
+                        'worstRating' => '1'
+                    ),
+                    'datePublished' => get_the_date('c'),
+                    'dateModified' => get_post_modified_time('c'),
+                    'name' => $despacho_name,
+                    'reviewBody' => $descripcion,
+                    'itemReviewed' => array(
+                        '@type' => 'Service',
+                        'name' => $despacho_name
+                    ),
+                    'publisher' => array(
+                        '@type' => 'Organization',
+                        'name' => get_bloginfo('name')
+                    )
+                ),
+                'reviewRating' => array(
+                    '@type' => 'Rating',
+                    'bestRating' => '5',
+                    'ratingValue' => '',
+                    'worstRating' => '1'
+                ),
+                'itemReviewed' => array(
+                    '@type' => 'Service',
+                    'name' => $despacho_name
+                ),
+                'author' => array(
+                    '@type' => 'Person',
+                    'name' => get_the_author()
+                ),
+                'publisher' => array(
+                    '@type' => 'Organization',
+                    'name' => get_bloginfo('name')
+                ),
+                'mainEntityOfPage' => array(
+                    '@type' => 'WebPage',
+                    '@id' => get_permalink()
+                ),
+                'potentialAction' => array(
+                    '@type' => 'SearchAction',
+                    'target' => get

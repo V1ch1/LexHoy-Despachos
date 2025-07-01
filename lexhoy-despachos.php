@@ -27,6 +27,7 @@ require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-algolia-client
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-cpt.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-shortcode.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-areas-cpt.php';
+require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-seo-helper.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/algolia-page.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/shortcode-page.php';
 
@@ -46,8 +47,55 @@ function lexhoy_despachos_init() {
     if (class_exists('LexhoyAreasCPT')) {
         new LexhoyAreasCPT();
     }
+
+    if (class_exists('LexhoyDespachosSeOHelper')) {
+        new LexhoyDespachosSeOHelper();
+    }
 }
 add_action('plugins_loaded', 'lexhoy_despachos_init');
+
+// FORZAR ARREGLO DE TÍTULOS - Agregado para solucionar problema de títulos
+add_action('wp', function() {
+    // Solo en el frontend
+    if (is_admin()) return;
+    
+    // Para páginas individuales de despachos
+    add_filter('document_title_parts', function($title) {
+        if (is_singular('despacho')) {
+            $despacho_name = get_post_meta(get_the_ID(), '_despacho_nombre', true);
+            if (!empty($despacho_name)) {
+                $title['title'] = $despacho_name;
+            } else {
+                $title['title'] = get_the_title();
+            }
+            $title['site'] = 'Lexhoy';
+        }
+        
+        if (is_page() && has_shortcode(get_post()->post_content, 'lexhoy_despachos_search')) {
+            $title['title'] = 'Buscador de despachos';
+            $title['site'] = 'Lexhoy';
+        }
+        
+        return $title;
+    }, 99);
+    
+    add_filter('wp_title', function($title, $sep) {
+        if (is_singular('despacho')) {
+            $despacho_name = get_post_meta(get_the_ID(), '_despacho_nombre', true);
+            if (!empty($despacho_name)) {
+                return $despacho_name . ' ' . $sep . ' Lexhoy';
+            } else {
+                return get_the_title() . ' ' . $sep . ' Lexhoy';
+            }
+        }
+        
+        if (is_page() && has_shortcode(get_post()->post_content, 'lexhoy_despachos_search')) {
+            return 'Buscador de despachos ' . $sep . ' Lexhoy';
+        }
+        
+        return $title;
+    }, 99, 2);
+});
 
 // Activar el plugin
 function lexhoy_despachos_activate() {

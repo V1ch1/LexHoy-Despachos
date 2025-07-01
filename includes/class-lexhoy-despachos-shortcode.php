@@ -25,6 +25,10 @@ class LexhoyDespachosShortcode {
         if ($app_id && $admin_api_key && $search_api_key && $index_name) {
             $this->algolia_client = new LexhoyAlgoliaClient($app_id, $admin_api_key, $search_api_key, $index_name);
         }
+
+        // Filtros para configurar títulos de página del buscador
+        add_filter('document_title_parts', array($this, 'modify_search_page_title'), 10, 1);
+        add_filter('wp_title', array($this, 'modify_search_wp_title'), 10, 2);
     }
 
     public function render_search_form($atts) {
@@ -516,5 +520,40 @@ class LexhoyDespachosShortcode {
         foreach ($areas as $area) {
             wp_cache_delete('lexhoy_despachos_area_count_' . sanitize_title($area));
         }
+    }
+
+    /**
+     * Filtro para configurar títulos de página del buscador
+     */
+    public function modify_search_page_title($title) {
+        if ($this->is_search_page()) {
+            $title['title'] = 'Buscador de despachos';
+            $title['site'] = 'Lexhoy';
+        }
+        return $title;
+    }
+
+    /**
+     * Filtro para configurar títulos de página del buscador
+     */
+    public function modify_search_wp_title($title, $sep) {
+        if ($this->is_search_page()) {
+            return 'Buscador de despachos ' . $sep . ' Lexhoy';
+        }
+        return $title;
+    }
+
+    /**
+     * Verificar si estamos en una página que contiene el shortcode del buscador
+     */
+    private function is_search_page() {
+        global $post;
+        
+        if (!is_object($post)) {
+            return false;
+        }
+
+        // Verificar si el contenido de la página contiene nuestro shortcode
+        return has_shortcode($post->post_content, 'lexhoy_despachos_search');
     }
 } 
