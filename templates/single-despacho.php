@@ -118,7 +118,7 @@ get_header(); ?>
             <?php elseif ($estado_verificacion == 'pendiente'): ?>
                 <div class="verification-badge pending">
                     <i class="fas fa-clock"></i>
-                    Pendiente
+                    Pendiente verificación
                 </div>
             <?php elseif ($estado_verificacion == 'rechazado'): ?>
                 <div class="verification-badge rejected">

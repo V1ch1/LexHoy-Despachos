@@ -69,7 +69,7 @@ Plugin para gestionar despachos de abogados con sincronización automática con 
 - **Tamaño del despacho**: Número de abogados
 - **Año de fundación**: Año en que se fundó el despacho
 - **Estado de registro**: Activo/Inactivo
-- **Estado de verificación**: Pendiente/Verificado/Rechazado
+- **Estado de verificación**: Pendiente verificación/Verificado/Rechazado
 
 ## Shortcodes
 

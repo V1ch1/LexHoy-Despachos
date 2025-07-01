@@ -16,6 +16,11 @@ class LexhoyDespachosShortcode {
         add_action('deleted_post', array($this, 'clear_cache'));
         add_action('wp_update_nav_menu', array($this, 'clear_cache'));
         
+        // Modificar título de la página cuando se muestra el buscador
+        add_filter('document_title_parts', array($this, 'modify_search_page_title'), 10, 1);
+        add_filter('wp_title', array($this, 'modify_wp_title'), 10, 2);
+        add_action('wp_head', array($this, 'add_search_page_meta'));
+        
         // Obtener credenciales de Algolia (para futuras integraciones)
         $app_id = get_option('lexhoy_despachos_algolia_app_id');
         $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
@@ -25,10 +30,6 @@ class LexhoyDespachosShortcode {
         if ($app_id && $admin_api_key && $search_api_key && $index_name) {
             $this->algolia_client = new LexhoyAlgoliaClient($app_id, $admin_api_key, $search_api_key, $index_name);
         }
-
-        // Filtros para configurar títulos de página del buscador
-        add_filter('document_title_parts', array($this, 'modify_search_page_title'), 10, 1);
-        add_filter('wp_title', array($this, 'modify_search_wp_title'), 10, 2);
     }
 
     public function render_search_form($atts) {
@@ -523,37 +524,47 @@ class LexhoyDespachosShortcode {
     }
 
     /**
-     * Filtro para configurar títulos de página del buscador
-     */
-    public function modify_search_page_title($title) {
-        if ($this->is_search_page()) {
-            $title['title'] = 'Buscador de despachos';
-            $title['site'] = 'Lexhoy';
-        }
-        return $title;
-    }
-
-    /**
-     * Filtro para configurar títulos de página del buscador
-     */
-    public function modify_search_wp_title($title, $sep) {
-        if ($this->is_search_page()) {
-            return 'Buscador de despachos ' . $sep . ' Lexhoy';
-        }
-        return $title;
-    }
-
-    /**
-     * Verificar si estamos en una página que contiene el shortcode del buscador
+     * Verificar si la página actual contiene el shortcode del buscador
      */
     private function is_search_page() {
         global $post;
         
-        if (!is_object($post)) {
+        if (!$post) {
             return false;
         }
-
+        
         // Verificar si el contenido de la página contiene nuestro shortcode
         return has_shortcode($post->post_content, 'lexhoy_despachos_search');
+    }
+
+    /**
+     * Modificar título de la página cuando se muestra el buscador
+     */
+    public function modify_search_page_title($title) {
+        if ($this->is_search_page()) {
+            $title['title'] = 'Buscador de despachos - LexHoy';
+            return $title;
+        }
+        return $title;
+    }
+
+    /**
+     * Modificar título de la página cuando se muestra el buscador
+     */
+    public function modify_wp_title($title, $sep) {
+        if ($this->is_search_page()) {
+            return 'Buscador de despachos - LexHoy';
+        }
+        return $title;
+    }
+
+    /**
+     * Añadir metadatos a la página de búsqueda
+     */
+    public function add_search_page_meta() {
+        if ($this->is_search_page()) {
+            echo '<meta name="description" content="Encuentra despachos de abogados en España. Busca por nombre, provincia, localidad o área de práctica en nuestro directorio de abogados verificados.">' . "\n";
+            echo '<meta name="keywords" content="buscador despachos, abogados España, directorio abogados, despachos verificados, abogados por provincia, LexHoy">' . "\n";
+        }
     }
 } 
