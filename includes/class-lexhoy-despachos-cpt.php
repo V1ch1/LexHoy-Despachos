@@ -72,6 +72,11 @@ class LexhoyDespachosCPT {
         
         // Cargar plantilla personalizada para despachos individuales
         add_filter('single_template', array($this, 'load_single_despacho_template'));
+        
+        // Modificar títulos de páginas de despachos individuales
+        add_filter('document_title_parts', array($this, 'modify_despacho_page_title'), 10, 1);
+        add_filter('wp_title', array($this, 'modify_despacho_wp_title'), 10, 2);
+        add_action('wp_head', array($this, 'add_despacho_page_meta'));
 
 
     }
@@ -2419,6 +2424,92 @@ class LexhoyDespachosCPT {
             echo '<div class="notice notice-error">';
             echo '<p><strong>❌ Error:</strong> ' . esc_html($e->getMessage()) . '</p>';
             echo '</div>';
+        }
+    }
+
+    /**
+     * Modificar título de páginas de despachos individuales
+     */
+    public function modify_despacho_page_title($title) {
+        if (is_singular('despacho')) {
+            global $post;
+            if ($post) {
+                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
+                $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
+                $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
+                
+                // Usar el nombre del meta o el título del post
+                $despacho_name = $nombre ?: $post->post_title;
+                
+                // Crear título simplificado
+                $title['title'] = $despacho_name . ' - LexHoy';
+            }
+        }
+        return $title;
+    }
+
+    /**
+     * Modificar título wp_title para despachos individuales
+     */
+    public function modify_despacho_wp_title($title, $sep) {
+        if (is_singular('despacho')) {
+            global $post;
+            if ($post) {
+                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
+                $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
+                $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
+                
+                $despacho_name = $nombre ?: $post->post_title;
+                
+                return $despacho_name . ' - LexHoy';
+            }
+        }
+        return $title;
+    }
+
+    /**
+     * Añadir metadatos a páginas de despachos individuales
+     */
+    public function add_despacho_page_meta() {
+        if (is_singular('despacho')) {
+            global $post;
+            if ($post) {
+                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
+                $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
+                $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
+                $descripcion = get_post_meta($post->ID, '_despacho_descripcion', true);
+                
+                $despacho_name = $nombre ?: $post->post_title;
+                $location_parts = array_filter(array($localidad, $provincia));
+                
+                // Meta description
+                if (!empty($descripcion)) {
+                    $meta_description = wp_trim_words($descripcion, 25, '...');
+                } else {
+                    $meta_description = "Información de contacto y servicios del despacho de abogados " . $despacho_name;
+                    if (!empty($location_parts)) {
+                        $meta_description .= " en " . implode(', ', $location_parts);
+                    }
+                    $meta_description .= ". Encuentra abogados verificados en LexHoy.";
+                }
+                
+                echo '<meta name="description" content="' . esc_attr($meta_description) . '">' . "\n";
+                
+                // Meta keywords
+                $keywords = ['despacho abogados'];
+                if (!empty($nombre)) $keywords[] = $nombre;
+                if (!empty($localidad)) $keywords[] = 'abogados ' . $localidad;
+                if (!empty($provincia)) $keywords[] = 'abogados ' . $provincia;
+                $keywords[] = 'LexHoy';
+                
+                echo '<meta name="keywords" content="' . esc_attr(implode(', ', $keywords)) . '">' . "\n";
+                
+                // Open Graph tags
+                echo '<meta property="og:title" content="' . esc_attr($despacho_name . (!empty($location_parts) ? ' - ' . implode(', ', $location_parts) : '') . ' - LexHoy') . '">' . "\n";
+                echo '<meta property="og:description" content="' . esc_attr($meta_description) . '">' . "\n";
+                echo '<meta property="og:type" content="business.business">' . "\n";
+                echo '<meta property="og:url" content="' . esc_url(get_permalink($post->ID)) . '">' . "\n";
+            }
         }
     }
 
