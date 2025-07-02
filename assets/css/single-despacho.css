@@ -86,11 +86,11 @@
   color: #e10000; /* Solo el icono en rojo */
 }
 
-/* Badge de verificación - Mismo diseño que el botón de regreso */
+/* Badge de verificación - Alineado con el borde derecho de la foto */
 .verification-badge {
   position: absolute;
   top: 20px; /* Ajustado para alinear con el botón de regreso */
-  right: 20px;
+  right: 40px; /* Mismo padding que el header para alinearse con el borde derecho de la foto */
   background: #2ecc71; /* Cambiado al verde del buscador */
   color: white;
   padding: 8px 16px;
@@ -128,10 +128,11 @@
 /* Contenedor de título y foto de perfil */
 .despacho-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* Cambiar a flex-start para alineación superior */
   justify-content: space-between;
   width: 100%;
   gap: 20px;
+  margin-top: 20px; /* Misma distancia que el badge desde el top */
 }
 
 .despacho-title-content {
@@ -164,23 +165,25 @@
   width: 120px;
   height: 120px;
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* Alineación superior como el badge */
   justify-content: center;
+  margin-top: 20px; /* Bajar la imagen más para mejor posicionamiento */
 }
 
 .profile-image {
   width: 120px;
   height: 120px;
-  border-radius: 50%; /* Circular */
+  border-radius: 0; /* Cuadrada */
   object-fit: cover;
-  border: 3px solid #000000; /* Borde negro para consistencia */
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #ddd; /* Marco fino gris claro */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
 }
 
 .profile-image:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  border-color: #999; /* Marco un poco más oscuro al hover */
 }
 
 /* Contenido principal - IDÉNTICO al layout del buscador */
@@ -712,6 +715,7 @@
   .lexhoy-despacho-single .profile-image {
     width: 100px;
     height: 100px;
+    border-radius: 0; /* Cuadrada en tablet también */
   }
 
   .lexhoy-despacho-single .despacho-content {
@@ -836,6 +840,7 @@
   .lexhoy-despacho-single .profile-image {
     width: 80px;
     height: 80px;
+    border-radius: 0; /* Cuadrada en móvil también */
   }
 
   .lexhoy-despacho-single .despacho-content {
