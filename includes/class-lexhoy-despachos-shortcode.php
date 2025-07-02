@@ -542,7 +542,7 @@ class LexhoyDespachosShortcode {
      */
     public function modify_search_page_title($title) {
         if ($this->is_search_page()) {
-            $title['title'] = 'Buscador de despachos - LexHoy';
+            $title['title'] = 'Buscador de abogados - LexHoy';
             return $title;
         }
         return $title;
@@ -553,7 +553,7 @@ class LexhoyDespachosShortcode {
      */
     public function modify_wp_title($title, $sep) {
         if ($this->is_search_page()) {
-            return 'Buscador de despachos - LexHoy';
+            return 'Buscador de abogados - LexHoy';
         }
         return $title;
     }
@@ -564,7 +564,7 @@ class LexhoyDespachosShortcode {
     public function add_search_page_meta() {
         if ($this->is_search_page()) {
             echo '<meta name="description" content="Encuentra despachos de abogados en España. Busca por nombre, provincia, localidad o área de práctica en nuestro directorio de abogados verificados.">' . "\n";
-            echo '<meta name="keywords" content="buscador despachos, abogados España, directorio abogados, despachos verificados, abogados por provincia, LexHoy">' . "\n";
+            echo '<meta name="keywords" content="buscador abogados, abogados España, directorio abogados, despachos verificados, abogados por provincia, LexHoy">' . "\n";
         }
     }
 } 
