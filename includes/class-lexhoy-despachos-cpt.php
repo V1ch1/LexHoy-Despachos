@@ -175,6 +175,7 @@ class LexhoyDespachosCPT {
         $tamano_despacho = get_post_meta($post->ID, '_despacho_tamaño', true);
         $ano_fundacion = get_post_meta($post->ID, '_despacho_año_fundacion', true);
         $estado_registro = get_post_meta($post->ID, '_despacho_estado_registro', true);
+        $foto_perfil = get_post_meta($post->ID, '_despacho_foto_perfil', true);
 
         // Nonce para seguridad
         wp_nonce_field('despacho_meta_box', 'despacho_meta_box_nonce');
@@ -301,6 +302,14 @@ class LexhoyDespachosCPT {
                     <option value="activo" <?php selected($estado_registro, 'activo'); ?>>Activo</option>
                     <option value="inactivo" <?php selected($estado_registro, 'inactivo'); ?>>Inactivo</option>
                 </select>
+            </p>
+
+            <!-- NUEVO: Foto de Perfil -->
+            <p>
+                <label for="despacho_foto_perfil">Foto de Perfil:</label><br>
+                <input type="url" id="despacho_foto_perfil" name="despacho_foto_perfil" 
+                       value="<?php echo esc_attr($foto_perfil); ?>" class="widefat">
+                <span class="description">URL de la foto de perfil del despacho (opcional)</span>
             </p>
 
             <!-- NUEVO: Áreas de Práctica -->
@@ -466,7 +475,8 @@ class LexhoyDespachosCPT {
             'despacho_experiencia' => '_despacho_experiencia',
             'despacho_tamaño' => '_despacho_tamaño',
             'despacho_año_fundacion' => '_despacho_año_fundacion',
-            'despacho_estado_registro' => '_despacho_estado_registro'
+            'despacho_estado_registro' => '_despacho_estado_registro',
+            'despacho_foto_perfil' => '_despacho_foto_perfil'
         );
 
         foreach ($fields as $post_field => $meta_field) {
@@ -610,6 +620,7 @@ class LexhoyDespachosCPT {
                 'tamaño_despacho'  => $posted_or_meta('despacho_tamaño', '_despacho_tamaño'),
                 'año_fundacion'    => (int) $posted_or_meta('despacho_año_fundacion', '_despacho_año_fundacion'),
                 'estado_registro'  => $posted_or_meta('despacho_estado_registro', '_despacho_estado_registro'),
+                'foto_perfil'      => $posted_or_meta('despacho_foto_perfil', '_despacho_foto_perfil', 'esc_url_raw'),
                 'ultima_actualizacion' => date('d-m-Y'),
                 'slug'             => $post->post_name,
             );
@@ -1206,6 +1217,7 @@ class LexhoyDespachosCPT {
             update_post_meta($post_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
             update_post_meta($post_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
             update_post_meta($post_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
+            update_post_meta($post_id, '_despacho_foto_perfil', $record['foto_perfil'] ?? '');
 
             // Sincronizar áreas de práctica (crear términos si no existen)
             if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
@@ -1686,6 +1698,15 @@ class LexhoyDespachosCPT {
             'manage_options',
             'lexhoy-clean-without-name',
             array($this, 'render_clean_without_name_page')
+        );
+        
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Añadir Fotos de Perfil',
+            'Añadir Fotos',
+            'manage_options',
+            'lexhoy-add-photos',
+            array($this, 'render_add_photos_page')
         );
     }
 

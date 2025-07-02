@@ -741,6 +741,121 @@ class LexhoyAlgoliaClient {
     }
 
     /**
+     * Actualizar parcialmente un objeto en Algolia
+     */
+    public function partial_update_object($index_name, $object_id, $partial_data) {
+        try {
+            $this->custom_log('Intentando actualización parcial de objeto en Algolia - Index: ' . $index_name . ', ID: ' . $object_id);
+            $this->custom_log('Datos parciales: ' . json_encode($partial_data));
+            
+            if (empty($this->app_id) || empty($this->admin_api_key)) {
+                throw new Exception('Credenciales de Algolia no configuradas');
+            }
+
+            $url = $this->get_api_url() . "/1/indexes/{$index_name}/{$object_id}/partial";
+            $this->custom_log('URL de actualización parcial: ' . $url);
+            
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($partial_data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'Content-Type: application/json',
+                'X-Algolia-API-Key: ' . $this->admin_api_key,
+                'X-Algolia-Application-Id: ' . $this->app_id
+            ));
+
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            
+            if (curl_errno($ch)) {
+                throw new Exception('Error de conexión: ' . curl_error($ch));
+            }
+            
+            curl_close($ch);
+
+            if ($http_code !== 200 && $http_code !== 201) {
+                $this->custom_log('Error de Algolia (HTTP ' . $http_code . '): ' . $response);
+                throw new Exception('Error de Algolia (HTTP ' . $http_code . ')');
+            }
+
+            $this->custom_log('Objeto actualizado parcialmente exitosamente');
+            return true;
+
+        } catch (Exception $e) {
+            $this->custom_log('Error en partial_update_object: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Actualizar múltiples objetos en lote (batch update)
+     */
+    public function batch_partial_update($index_name, $updates) {
+        try {
+            $this->custom_log('Iniciando actualización en lote - Index: ' . $index_name . ', ' . count($updates) . ' objetos');
+            
+            if (empty($this->app_id) || empty($this->admin_api_key)) {
+                throw new Exception('Credenciales de Algolia no configuradas');
+            }
+
+            // Preparar las operaciones de actualización en lote
+            $requests = array();
+            foreach ($updates as $object_id => $partial_data) {
+                $requests[] = array(
+                    'action' => 'partialUpdateObject',
+                    'objectID' => $object_id,
+                    'body' => $partial_data
+                );
+            }
+
+            $batch_data = array('requests' => $requests);
+            
+            $url = $this->get_api_url() . "/1/indexes/{$index_name}/batch";
+            $this->custom_log('URL de actualización en lote: ' . $url);
+            $this->custom_log('Enviando ' . count($requests) . ' actualizaciones');
+            
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($batch_data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'Content-Type: application/json',
+                'X-Algolia-API-Key: ' . $this->admin_api_key,
+                'X-Algolia-Application-Id: ' . $this->app_id
+            ));
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Mayor timeout para operaciones batch
+
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            
+            if (curl_errno($ch)) {
+                throw new Exception('Error de conexión: ' . curl_error($ch));
+            }
+            
+            curl_close($ch);
+
+            if ($http_code !== 200 && $http_code !== 201) {
+                $this->custom_log('Error de Algolia (HTTP ' . $http_code . '): ' . $response);
+                throw new Exception('Error de Algolia (HTTP ' . $http_code . ')');
+            }
+
+            $result = json_decode($response, true);
+            if (isset($result['taskID'])) {
+                $this->custom_log('Actualización en lote exitosa, taskID: ' . $result['taskID']);
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $this->custom_log('Error en batch_partial_update: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
      * Obtener registros de Algolia por página específica usando search API
      */
     public function browse_page($page = 0, $hits_per_page = 200) {
