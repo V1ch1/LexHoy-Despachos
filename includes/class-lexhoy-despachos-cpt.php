@@ -73,9 +73,10 @@ class LexhoyDespachosCPT {
         // Cargar plantilla personalizada para despachos individuales
         add_filter('single_template', array($this, 'load_single_despacho_template'));
         
-        // Modificar títulos de páginas de despachos individuales
-        add_filter('document_title_parts', array($this, 'modify_despacho_page_title'), 10, 1);
-        add_filter('wp_title', array($this, 'modify_despacho_wp_title'), 10, 2);
+        // Modificar títulos de páginas de despachos individuales - PRIORIDAD ALTA para sobrescribir RankMath
+        add_filter('document_title_parts', array($this, 'modify_despacho_page_title'), 999, 1);
+        add_filter('wp_title', array($this, 'modify_despacho_wp_title'), 999, 2);
+        add_filter('rank_math/frontend/title', array($this, 'override_rankmath_title'), 999);
         add_action('wp_head', array($this, 'add_despacho_page_meta'));
 
 
@@ -2748,6 +2749,21 @@ class LexhoyDespachosCPT {
                 
                 $despacho_name = $nombre ?: $post->post_title;
                 
+                return $despacho_name . ' - LexHoy';
+            }
+        }
+        return $title;
+    }
+
+    /**
+     * Sobrescribir título de RankMath para despachos
+     */
+    public function override_rankmath_title($title) {
+        if (is_singular('despacho')) {
+            global $post;
+            if ($post) {
+                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
+                $despacho_name = $nombre ?: $post->post_title;
                 return $despacho_name . ' - LexHoy';
             }
         }
