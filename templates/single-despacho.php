@@ -96,9 +96,13 @@ get_header(); ?>
         $tamano_despacho = get_post_meta($post_id, '_despacho_tamaño', true);
         $ano_fundacion = get_post_meta($post_id, '_despacho_año_fundacion', true);
         $estado_registro = get_post_meta($post_id, '_despacho_estado_registro', true);
+        $foto_perfil = get_post_meta($post_id, '_despacho_foto_perfil', true);
         
         // Áreas de práctica
         $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+        
+        // Auto-detectar entorno para fotos
+        $is_local = (strpos($_SERVER['HTTP_HOST'], 'lexhoy.local') !== false);
         ?>
         
         <!-- Cabecera del despacho - IDÉNTICA al header del buscador -->
@@ -127,14 +131,34 @@ get_header(); ?>
                 </div>
             <?php endif; ?>
             
-            <!-- Título y subtítulo - IDÉNTICO al buscador -->
-            <h1 class="despacho-title"><?php echo esc_html($nombre ?: get_the_title()); ?></h1>
-            <p class="despacho-subtitle">
-                <?php 
-                $location_parts = array_filter(array($localidad, $provincia));
-                echo esc_html(implode(', ', $location_parts));
+            <!-- Título y foto de perfil -->
+            <div class="despacho-title-row">
+                <div class="despacho-title-content">
+                    <h1 class="despacho-title"><?php echo esc_html($nombre ?: get_the_title()); ?></h1>
+                    <p class="despacho-subtitle">
+                        <?php 
+                        $location_parts = array_filter(array($localidad, $provincia));
+                        echo esc_html(implode(', ', $location_parts));
+                        ?>
+                    </p>
+                </div>
+                <?php
+                // DEBUG: Información de la foto de perfil
+                echo "<!-- DEBUG FOTO - Post ID: {$post_id} -->";
+                echo "<!-- DEBUG FOTO - Variable \$foto_perfil: " . ($foto_perfil ? $foto_perfil : 'VACÍA') . " -->";
+                echo "<!-- DEBUG FOTO - get_post_meta directo: " . get_post_meta($post_id, '_despacho_foto_perfil', true) . " -->";
                 ?>
-            </p>
+                <?php if ($foto_perfil): ?>
+                    <div class="despacho-profile-photo">
+                        <img src="<?php echo esc_url($foto_perfil); ?>" alt="Foto de perfil de <?php echo esc_attr($nombre ?: get_the_title()); ?>" class="profile-image">
+                    </div>
+                <?php else: ?>
+                    <!-- DEBUG: No hay foto, usando predeterminada -->
+                    <div class="despacho-profile-photo">
+                        <img src="<?php echo $is_local ? 'http://lexhoy.local' : 'https://lexhoy.com'; ?>/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp" alt="Foto predeterminada" class="profile-image">
+                    </div>
+                <?php endif; ?>
+            </div>
         </div>
         
         <!-- Contenido principal - IDÉNTICO al layout del buscador -->

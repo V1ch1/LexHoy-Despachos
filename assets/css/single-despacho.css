@@ -125,11 +125,25 @@
   background: #e74c3c; /* Rojo para rechazado */
 }
 
-/* Título del despacho - Negro en lugar de rojo */
+/* Contenedor de título y foto de perfil */
+.despacho-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 20px;
+}
+
+.despacho-title-content {
+  flex: 1;
+  text-align: left; /* Cambiar a izquierda */
+}
+
+/* Título del despacho - Negro y alineado a la izquierda */
 .despacho-title {
   font-size: 2.5rem; /* Aumentado de x-large a 2.5rem */
   color: #000000;
-  text-align: center;
+  text-align: left; /* Cambiar a izquierda */
   padding: 20px 0;
   margin: 0;
   font-weight: bold;
@@ -139,9 +153,34 @@
 .despacho-subtitle {
   font-size: large;
   color: #000000;
-  text-align: center;
+  text-align: left; /* Cambiar a izquierda */
   margin: 0;
   padding: 10px 0;
+}
+
+/* Foto de perfil */
+.despacho-profile-photo {
+  flex-shrink: 0;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-image {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%; /* Circular */
+  object-fit: cover;
+  border: 3px solid #000000; /* Borde negro para consistencia */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.profile-image:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* Contenido principal - IDÉNTICO al layout del buscador */
@@ -646,8 +685,33 @@
     min-height: auto;
   }
 
+  .lexhoy-despacho-single .despacho-title-row {
+    flex-direction: column;
+    text-align: center;
+    gap: 15px;
+  }
+
+  .lexhoy-despacho-single .despacho-title-content {
+    text-align: center;
+  }
+
   .lexhoy-despacho-single .despacho-title {
     font-size: large;
+    text-align: center;
+  }
+
+  .lexhoy-despacho-single .despacho-subtitle {
+    text-align: center;
+  }
+
+  .lexhoy-despacho-single .despacho-profile-photo {
+    width: 100px;
+    height: 100px;
+  }
+
+  .lexhoy-despacho-single .profile-image {
+    width: 100px;
+    height: 100px;
   }
 
   .lexhoy-despacho-single .despacho-content {
@@ -745,8 +809,33 @@
     min-height: auto;
   }
 
+  .lexhoy-despacho-single .despacho-title-row {
+    flex-direction: column;
+    text-align: center;
+    gap: 10px;
+  }
+
+  .lexhoy-despacho-single .despacho-title-content {
+    text-align: center;
+  }
+
   .lexhoy-despacho-single .despacho-title {
     font-size: medium;
+    text-align: center;
+  }
+
+  .lexhoy-despacho-single .despacho-subtitle {
+    text-align: center;
+  }
+
+  .lexhoy-despacho-single .despacho-profile-photo {
+    width: 80px;
+    height: 80px;
+  }
+
+  .lexhoy-despacho-single .profile-image {
+    width: 80px;
+    height: 80px;
   }
 
   .lexhoy-despacho-single .despacho-content {

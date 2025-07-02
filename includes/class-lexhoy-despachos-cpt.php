@@ -305,12 +305,100 @@ class LexhoyDespachosCPT {
             </p>
 
             <!-- NUEVO: Foto de Perfil -->
-            <p>
-                <label for="despacho_foto_perfil">Foto de Perfil:</label><br>
-                <input type="url" id="despacho_foto_perfil" name="despacho_foto_perfil" 
-                       value="<?php echo esc_attr($foto_perfil); ?>" class="widefat">
-                <span class="description">URL de la foto de perfil del despacho (opcional)</span>
-            </p>
+            <div class="despacho-foto-perfil-section">
+                <h4>📷 Foto de Perfil</h4>
+                
+                <!-- Vista previa de la foto actual -->
+                <div id="foto-perfil-preview" style="margin-bottom: 15px;">
+                    <?php if ($foto_perfil): ?>
+                        <div style="display: flex; align-items: center; gap: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9;">
+                            <img src="<?php echo esc_url($foto_perfil); ?>" 
+                                 style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #0073aa;" 
+                                 alt="Foto actual">
+                            <div>
+                                <p><strong>Foto actual:</strong></p>
+                                <p style="font-size: 12px; color: #666; word-break: break-all;"><?php echo esc_html($foto_perfil); ?></p>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <div style="padding: 10px; border: 1px dashed #ddd; border-radius: 5px; text-align: center; color: #666;">
+                            <p>📷 No hay foto de perfil asignada</p>
+                            <p><small>Se mostrará la foto predeterminada en el frontend</small></p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                
+                <!-- Opciones para cambiar la foto -->
+                <div style="border: 1px solid #0073aa; border-radius: 5px; padding: 15px; background: #f0f8ff;">
+                    <p><strong>Opciones para cambiar la foto:</strong></p>
+                    
+                    <!-- Opción 1: Subir nueva foto -->
+                    <div style="margin-bottom: 15px;">
+                        <label>
+                            <input type="radio" name="foto_perfil_action" value="upload" id="foto_upload_option"> 
+                            <strong>📁 Subir nueva foto</strong>
+                        </label>
+                        <div id="foto_upload_section" style="margin-top: 10px; margin-left: 25px; display: none;">
+                            <input type="file" id="foto_perfil_upload" name="foto_perfil_upload" accept="image/*" style="margin-bottom: 10px;">
+                            <p style="font-size: 12px; color: #666;">
+                                <em>Formatos aceptados: JPG, PNG, WEBP. Tamaño recomendado: 500x500px</em>
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- Opción 2: URL personalizada -->
+                    <div style="margin-bottom: 15px;">
+                        <label>
+                            <input type="radio" name="foto_perfil_action" value="url" id="foto_url_option">
+                            <strong>🔗 Usar URL personalizada</strong>
+                        </label>
+                        <div id="foto_url_section" style="margin-top: 10px; margin-left: 25px; display: none;">
+                            <input type="url" id="despacho_foto_perfil_url" name="despacho_foto_perfil_url" 
+                                   value="<?php echo esc_attr($foto_perfil); ?>" class="widefat" 
+                                   placeholder="https://ejemplo.com/mi-foto.jpg">
+                            <p style="font-size: 12px; color: #666;">
+                                <em>Introduce la URL completa de una imagen</em>
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- Opción 3: Mantener actual/usar predeterminada -->
+                    <div>
+                        <label>
+                            <input type="radio" name="foto_perfil_action" value="keep" id="foto_keep_option" checked>
+                            <strong>✅ <?php echo $foto_perfil ? 'Mantener foto actual' : 'Usar foto predeterminada'; ?></strong>
+                        </label>
+                        <p style="font-size: 12px; color: #666; margin-left: 25px;">
+                            <em><?php echo $foto_perfil ? 'No realizar cambios' : 'Se mostrará la foto predeterminada del sistema'; ?></em>
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Campo oculto para mantener la URL actual -->
+                <input type="hidden" name="despacho_foto_perfil_current" value="<?php echo esc_attr($foto_perfil); ?>">
+            </div>
+            
+            <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const uploadOption = document.getElementById('foto_upload_option');
+                const urlOption = document.getElementById('foto_url_option');
+                const keepOption = document.getElementById('foto_keep_option');
+                const uploadSection = document.getElementById('foto_upload_section');
+                const urlSection = document.getElementById('foto_url_section');
+                
+                function toggleSections() {
+                    uploadSection.style.display = uploadOption.checked ? 'block' : 'none';
+                    urlSection.style.display = urlOption.checked ? 'block' : 'none';
+                }
+                
+                uploadOption.addEventListener('change', toggleSections);
+                urlOption.addEventListener('change', toggleSections);
+                keepOption.addEventListener('change', toggleSections);
+                
+                // Estado inicial
+                toggleSections();
+            });
+            </script>
 
             <!-- NUEVO: Áreas de Práctica -->
             <h4>Áreas de Práctica</h4>
@@ -458,7 +546,10 @@ class LexhoyDespachosCPT {
             $this->custom_log('LexHoy DEBUG: validación OK, procediendo a guardar metadatos');
         }
 
-        // Guardar datos
+        // Procesar foto de perfil ANTES de guardar otros campos
+        $this->process_profile_photo($post_id, $is_bulk_import);
+        
+        // Guardar datos (sin foto_perfil porque ya se procesó arriba)
         $fields = array(
             'despacho_nombre' => '_despacho_nombre',
             'despacho_localidad' => '_despacho_localidad',
@@ -475,8 +566,7 @@ class LexhoyDespachosCPT {
             'despacho_experiencia' => '_despacho_experiencia',
             'despacho_tamaño' => '_despacho_tamaño',
             'despacho_año_fundacion' => '_despacho_año_fundacion',
-            'despacho_estado_registro' => '_despacho_estado_registro',
-            'despacho_foto_perfil' => '_despacho_foto_perfil'
+            'despacho_estado_registro' => '_despacho_estado_registro'
         );
 
         foreach ($fields as $post_field => $meta_field) {
@@ -543,6 +633,162 @@ class LexhoyDespachosCPT {
 
         if (!$is_bulk_import) {
             $this->custom_log('=== LexHoy DEBUG save_meta_boxes FINAL para post ' . $post_id . ' ===');
+        }
+    }
+    
+    /**
+     * Procesar foto de perfil (subida de archivo o URL)
+     */
+    private function process_profile_photo($post_id, $is_bulk_import = false) {
+        if ($is_bulk_import) {
+            return; // No procesar fotos durante importación masiva
+        }
+        
+        if (!isset($_POST['foto_perfil_action'])) {
+            return; // No hay acción especificada
+        }
+        
+        $action = sanitize_text_field($_POST['foto_perfil_action']);
+        $current_photo = sanitize_text_field($_POST['despacho_foto_perfil_current'] ?? '');
+        
+        if (!$is_bulk_import) {
+            $this->custom_log("FOTO DEBUG: Acción seleccionada: {$action}");
+        }
+        
+        switch ($action) {
+            case 'upload':
+                $this->handle_photo_upload($post_id, $is_bulk_import);
+                break;
+                
+            case 'url':
+                $this->handle_photo_url($post_id, $is_bulk_import);
+                break;
+                
+            case 'keep':
+            default:
+                // Mantener la foto actual, no hacer nada
+                if (!$is_bulk_import) {
+                    $this->custom_log("FOTO DEBUG: Manteniendo foto actual: {$current_photo}");
+                }
+                break;
+        }
+    }
+    
+    /**
+     * Manejar subida de archivo de foto
+     */
+    private function handle_photo_upload($post_id, $is_bulk_import = false) {
+        if (!isset($_FILES['foto_perfil_upload']) || $_FILES['foto_perfil_upload']['error'] !== UPLOAD_ERR_OK) {
+            if (!$is_bulk_import) {
+                $this->custom_log("FOTO DEBUG: No hay archivo subido o hay error en la subida");
+            }
+            return;
+        }
+        
+        $file = $_FILES['foto_perfil_upload'];
+        
+        // Validar tipo de archivo
+        $allowed_types = array('image/jpeg', 'image/jpg', 'image/png', 'image/webp');
+        if (!in_array($file['type'], $allowed_types)) {
+            if (!$is_bulk_import) {
+                $this->custom_log("FOTO DEBUG: Tipo de archivo no permitido: " . $file['type']);
+                add_action('admin_notices', function() {
+                    echo '<div class="notice notice-error"><p><strong>Error:</strong> Solo se permiten imágenes JPG, PNG o WEBP.</p></div>';
+                });
+            }
+            return;
+        }
+        
+        // Validar tamaño (máximo 2MB)
+        if ($file['size'] > 2 * 1024 * 1024) {
+            if (!$is_bulk_import) {
+                $this->custom_log("FOTO DEBUG: Archivo demasiado grande: " . $file['size']);
+                add_action('admin_notices', function() {
+                    echo '<div class="notice notice-error"><p><strong>Error:</strong> La imagen no puede superar los 2MB.</p></div>';
+                });
+            }
+            return;
+        }
+        
+        // Usar la biblioteca de medios de WordPress
+        require_once(ABSPATH . 'wp-admin/includes/file.php');
+        require_once(ABSPATH . 'wp-admin/includes/media.php');
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        
+        // Configurar el archivo para la subida
+        $upload_overrides = array('test_form' => false);
+        
+        // Generar nombre único para el archivo
+        $file_extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+        $new_filename = 'despacho-' . $post_id . '-' . time() . '.' . $file_extension;
+        $file['name'] = $new_filename;
+        
+        // Subir el archivo
+        $uploaded_file = wp_handle_upload($file, $upload_overrides);
+        
+        if (isset($uploaded_file['error'])) {
+            if (!$is_bulk_import) {
+                $this->custom_log("FOTO DEBUG: Error subiendo archivo: " . $uploaded_file['error']);
+                add_action('admin_notices', function() use ($uploaded_file) {
+                    echo '<div class="notice notice-error"><p><strong>Error:</strong> ' . esc_html($uploaded_file['error']) . '</p></div>';
+                });
+            }
+            return;
+        }
+        
+        // Archivo subido exitosamente
+        $photo_url = $uploaded_file['url'];
+        update_post_meta($post_id, '_despacho_foto_perfil', $photo_url);
+        
+        if (!$is_bulk_import) {
+            $this->custom_log("FOTO DEBUG: Archivo subido exitosamente: {$photo_url}");
+            add_action('admin_notices', function() use ($photo_url) {
+                echo '<div class="notice notice-success"><p><strong>✅ Foto de perfil actualizada exitosamente.</strong></p></div>';
+            });
+        }
+    }
+    
+    /**
+     * Manejar URL personalizada de foto
+     */
+    private function handle_photo_url($post_id, $is_bulk_import = false) {
+        if (!isset($_POST['despacho_foto_perfil_url'])) {
+            return;
+        }
+        
+        $photo_url = esc_url_raw($_POST['despacho_foto_perfil_url']);
+        
+        if (empty($photo_url)) {
+            if (!$is_bulk_import) {
+                $this->custom_log("FOTO DEBUG: URL vacía");
+                add_action('admin_notices', function() {
+                    echo '<div class="notice notice-error"><p><strong>Error:</strong> Debes introducir una URL válida.</p></div>';
+                });
+            }
+            return;
+        }
+        
+        // Validar que la URL sea una imagen (básico)
+        $url_extension = strtolower(pathinfo(parse_url($photo_url, PHP_URL_PATH), PATHINFO_EXTENSION));
+        $allowed_extensions = array('jpg', 'jpeg', 'png', 'webp');
+        
+        if (!in_array($url_extension, $allowed_extensions)) {
+            if (!$is_bulk_import) {
+                $this->custom_log("FOTO DEBUG: Extensión no válida en URL: {$url_extension}");
+                add_action('admin_notices', function() {
+                    echo '<div class="notice notice-warning"><p><strong>Advertencia:</strong> La URL no parece ser una imagen válida. Asegúrate de que termine en .jpg, .png o .webp</p></div>';
+                });
+            }
+        }
+        
+        // Guardar la URL
+        update_post_meta($post_id, '_despacho_foto_perfil', $photo_url);
+        
+        if (!$is_bulk_import) {
+            $this->custom_log("FOTO DEBUG: URL personalizada guardada: {$photo_url}");
+            add_action('admin_notices', function() {
+                echo '<div class="notice notice-success"><p><strong>✅ URL de foto de perfil actualizada exitosamente.</strong></p></div>';
+            });
         }
     }
 
@@ -836,8 +1082,28 @@ class LexhoyDespachosCPT {
                     array(),
                     LEXHOY_DESPACHOS_VERSION
                 );
+                
+                // Añadir script para hacer que el formulario soporte subida de archivos
+                add_action('admin_footer', array($this, 'add_form_enctype_script'));
             }
         }
+    }
+    
+    /**
+     * Añadir script para hacer que el formulario soporte subida de archivos
+     */
+    public function add_form_enctype_script() {
+        ?>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Hacer que el formulario de despacho soporte subida de archivos
+            var form = document.getElementById('post');
+            if (form) {
+                form.setAttribute('enctype', 'multipart/form-data');
+            }
+        });
+        </script>
+        <?php
     }
 
     /**
@@ -2544,3 +2810,4 @@ class LexhoyDespachosCPT {
         return $template;
     }
 }
+

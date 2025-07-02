@@ -220,3 +220,52 @@
 .despacho-meta-box .redes-pairs label {
   margin-bottom: 0;
 }
+
+/* Estilos para la sección de foto de perfil */
+.despacho-foto-perfil-section {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: #fafafa;
+}
+
+.despacho-foto-perfil-section h4 {
+  margin-top: 0;
+  color: #0073aa;
+}
+
+.despacho-foto-perfil-section .foto-option {
+  margin-bottom: 15px;
+  padding: 10px;
+  border-radius: 3px;
+}
+
+.despacho-foto-perfil-section .foto-option:hover {
+  background: #f0f0f1;
+}
+
+.despacho-foto-perfil-section input[type="file"] {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: white;
+  width: 100%;
+}
+
+.despacho-foto-perfil-section input[type="url"] {
+  width: 100%;
+}
+
+/* Estilos para vista previa de foto */
+#foto-perfil-preview img {
+  border: 2px solid #0073aa;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Radio buttons con mejor estilo */
+.despacho-foto-perfil-section input[type="radio"] {
+  margin-right: 8px;
+  transform: scale(1.2);
+}
