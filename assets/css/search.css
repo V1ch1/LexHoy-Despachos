@@ -106,6 +106,14 @@
   flex-wrap: nowrap;
   gap: 0;
   background-color: #ffffff !important;
+  /* Prevenir FOUC */
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Mostrar cuando esté cargado */
+.alphabet-container.loaded {
+  opacity: 1;
 }
 
 /* Letras del alfabeto */

@@ -56,6 +56,24 @@ class LexhoyDespachosShortcode {
 
         ob_start();
         ?>
+        <!-- CSS crítico inline para prevenir FOUC -->
+        <style>
+        .alphabet-container {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .alphabet-container.loaded {
+            opacity: 1;
+        }
+        .alphabet-letter {
+            flex: 1 !important;
+            text-align: center !important;
+        }
+        </style>
+        
         <div class="lexhoy-despachos-search">
             <div class="search-header">
                 <div class="search-title">

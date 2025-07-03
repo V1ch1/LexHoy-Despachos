@@ -15,6 +15,20 @@ jQuery(document).ready(function ($) {
   initializeSearch();
 
   function initializeSearch() {
+    // Prevenir FOUC del alfabeto - múltiples métodos para compatibilidad con LiteSpeed
+    // Método 1: Inmediato
+    $(".alphabet-container").addClass("loaded");
+
+    // Método 2: Después de carga completa
+    setTimeout(function () {
+      $(".alphabet-container").addClass("loaded");
+    }, 50);
+
+    // Método 3: Asegurar después de imágenes y recursos
+    $(window).on("load", function () {
+      $(".alphabet-container").addClass("loaded");
+    });
+
     // Cargar despachos iniciales
     loadDespachos();
 
