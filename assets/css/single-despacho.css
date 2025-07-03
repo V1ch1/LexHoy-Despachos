@@ -35,139 +35,154 @@
 
 /* Reglas base para desktop - SOLO dentro del contenedor */
 .lexhoy-despacho-single > * {
-  max-width: none !important;
-  width: 80% !important;
+  max-width: 1200px !important;
+  width: 90% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 
-/* Cabecera del despacho - IDÉNTICO al header del buscador */
+/* Cabecera del despacho - NUEVA ESTRUCTURA */
 .despacho-header {
-  width: 80% !important;
+  width: 90% !important;
+  max-width: 1200px !important;
   min-height: 320px;
   position: relative;
-  padding: 20px 40px;
+  padding: 20px;
   box-sizing: border-box;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 20px auto 40px auto; /* Aumentado margen inferior de 20px a 40px */
   background: #ffffff;
-  border: 1px solid #000000;
-  border-bottom-width: 5px;
-  margin-top: 20px;
-  margin-bottom: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+/* NUEVA: Fila de botones superiores */
+.lexhoy-despacho-single .despacho-buttons-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  width: 100% !important;
+  margin-bottom: 20px !important;
+  flex-direction: row !important; /* Asegurar que sea horizontal en desktop */
+  flex-wrap: nowrap !important; /* No permitir que se envuelvan */
 }
 
 /* Botón de regreso - Estilo similar al botón de búsqueda */
-.despacho-back-button {
-  display: inline-flex;
+.lexhoy-despacho-single .despacho-back-button {
+  display: inline-flex !important;
   align-items: center;
-  gap: 8px;
-  background: #000000;
-  color: white;
-  text-decoration: none;
-  font-weight: 500;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 14px;
+  gap: 4px; /* Mismo gap que el badge */
+  background: #000000 !important;
+  color: white !important;
+  text-decoration: none !important;
+  font-weight: 500; /* Mismo peso que el badge */
+  padding: 6px 12px !important; /* Padding más pequeño para que quepa */
+  border-radius: 4px; /* Mismo border-radius que el badge */
+  font-size: 12px !important; /* Tamaño más pequeño para que quepa */
+  line-height: 1 !important; /* Controlar altura de línea */
   transition: all 0.3s ease;
-  margin-bottom: 20px;
-  border: none;
+  border: none !important;
   cursor: pointer;
+  flex-shrink: 0 !important; /* No permitir que se encoja */
+  width: auto !important; /* Solo el ancho necesario */
+  max-width: none !important;
+  flex-basis: auto !important;
+  flex-grow: 0 !important;
+  height: auto !important; /* Altura automática */
+  box-sizing: border-box !important;
 }
 
-.despacho-back-button:hover {
-  background: #333333;
+.lexhoy-despacho-single .despacho-back-button:hover {
+  background: #333333 !important;
   transform: translateY(-1px);
-  color: white;
-  text-decoration: none;
+  color: white !important;
+  text-decoration: none !important;
 }
 
-.despacho-back-button i {
-  font-size: 16px;
-  display: inline-block;
-  color: #e10000; /* Solo el icono en rojo */
+.lexhoy-despacho-single .despacho-back-button i {
+  font-size: 12px !important; /* Tamaño más pequeño para que quepa */
+  display: inline-block !important;
+  color: #e10000 !important; /* Solo el icono en rojo */
+  line-height: 1 !important; /* Misma altura de línea */
 }
 
-/* Badge de verificación - Alineado con el borde derecho de la foto */
-.verification-badge {
-  position: absolute;
-  top: 20px; /* Ajustado para alinear con el botón de regreso */
-  right: 40px; /* Mismo padding que el header para alinearse con el borde derecho de la foto */
-  background: #2ecc71; /* Cambiado al verde del buscador */
-  color: white;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 14px; /* Mismo tamaño que el botón de regreso */
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 500;
+/* Contenedor del badge de verificación */
+.lexhoy-despacho-single .verification-badge-container {
+  display: flex !important;
+  justify-content: flex-end !important;
+  flex-shrink: 0 !important; /* No permitir que se encoja */
+  width: auto !important; /* Solo el ancho necesario */
+  flex-grow: 0 !important;
+  flex-basis: auto !important;
+}
+
+.verification-badge-spacer {
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+/* Badge de verificación - NUEVA POSICIÓN: en la misma línea que el botón de regreso */
+.lexhoy-despacho-single .verification-badge {
+  background: #6c757d !important; /* Color gris por defecto */
+  color: white !important;
+  padding: 6px 12px !important; /* Padding más pequeño para que quepa */
+  border-radius: 4px !important;
+  font-size: 12px !important; /* Tamaño más pequeño para que quepa */
+  line-height: 1 !important; /* Misma altura de línea que el botón */
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  font-weight: 500 !important;
   transition: all 0.3s ease;
+  flex-shrink: 0 !important; /* No permitir que se encoja */
+  width: auto !important; /* Solo el ancho necesario */
+  white-space: nowrap !important; /* Evitar que el texto se rompa en líneas */
+  height: auto !important; /* Altura automática */
+  box-sizing: border-box !important;
 }
 
-.verification-badge i {
-  font-size: 16px; /* Mismo tamaño que el icono del botón de regreso */
-  display: inline-block;
-  color: #ffffff; /* Icono blanco para contraste con fondo verde */
+.lexhoy-despacho-single .verification-badge i {
+  font-size: 12px !important; /* Tamaño más pequeño para que quepa */
+  display: inline-block !important;
+  color: #ffffff !important; /* Icono blanco para contraste con fondo verde */
+  line-height: 1 !important; /* Misma altura de línea */
 }
 
-.verification-badge:hover {
-  background: #27ae60; /* Verde más oscuro al hacer hover */
+.lexhoy-despacho-single .verification-badge.verified:hover {
+  background: #27ae60 !important; /* Verde más oscuro para verificado */
 }
 
-.verification-badge.verified {
-  background: #2ecc71; /* Verde */
+.lexhoy-despacho-single .verification-badge.pending:hover {
+  background: #e67e22 !important; /* Naranja más oscuro para pendiente */
 }
 
-.verification-badge.pending {
-  background: #f39c12; /* Naranja para pendiente */
+.lexhoy-despacho-single .verification-badge.rejected:hover {
+  background: #c0392b !important; /* Rojo más oscuro para rechazado */
 }
 
-.verification-badge.rejected {
-  background: #e74c3c; /* Rojo para rechazado */
+.lexhoy-despacho-single .verification-badge.verified {
+  background: #2ecc71 !important; /* Verde para verificado */
 }
 
-/* Contenedor de título y foto de perfil */
-.despacho-title-row {
-  display: flex;
-  align-items: flex-start; /* Cambiar a flex-start para alineación superior */
-  justify-content: space-between;
-  width: 100%;
-  gap: 20px;
-  margin-top: 20px; /* Misma distancia que el badge desde el top */
+.lexhoy-despacho-single .verification-badge.pending {
+  background: #f39c12 !important; /* Amarillo/naranja para pendiente */
 }
 
-.despacho-title-content {
-  flex: 1;
-  text-align: left; /* Cambiar a izquierda */
+.lexhoy-despacho-single .verification-badge.rejected {
+  background: #e74c3c !important; /* Rojo para rechazado */
 }
 
-/* Título del despacho - Negro y alineado a la izquierda */
-.despacho-title {
-  font-size: 2.5rem; /* Aumentado de x-large a 2.5rem */
-  color: #000000;
-  text-align: left; /* Cambiar a izquierda */
-  padding: 20px 0;
-  margin: 0;
-  font-weight: bold;
-  line-height: 1.2;
-}
-
-.despacho-subtitle {
-  font-size: large;
-  color: #000000;
-  text-align: left; /* Cambiar a izquierda */
-  margin: 0;
-  padding: 10px 0;
-}
-
-/* Foto de perfil */
+/* NUEVA: Foto de perfil centrada */
 .despacho-profile-photo {
-  flex-shrink: 0;
   width: 120px;
   height: 120px;
+  margin: 0 auto 20px auto; /* Centrada horizontalmente con margen inferior */
   display: flex;
-  align-items: flex-start; /* Alineación superior como el badge */
+  align-items: center;
   justify-content: center;
-  margin-top: 20px; /* Bajar la imagen más para mejor posicionamiento */
 }
 
 .profile-image {
@@ -186,12 +201,47 @@
   border-color: #999; /* Marco un poco más oscuro al hover */
 }
 
+/* NUEVO: Contenedor de título centrado */
+.despacho-title-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Centrado horizontalmente */
+  justify-content: center;
+  width: 100%;
+  text-align: center; /* Centrar el texto */
+}
+
+.despacho-title-content {
+  width: 100%;
+  text-align: center; /* Centrado */
+}
+
+/* Título del despacho - CENTRADO */
+.despacho-title {
+  font-size: 2.5rem; /* Aumentado de x-large a 2.5rem */
+  color: #000000;
+  text-align: center; /* CENTRADO */
+  padding: 10px 0;
+  margin: 0;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+.despacho-subtitle {
+  font-size: large;
+  color: #000000;
+  text-align: center; /* CENTRADO */
+  margin: 0;
+  padding: 10px 0;
+}
+
 /* Contenido principal - IDÉNTICO al layout del buscador */
 .despacho-content {
-  width: 80% !important;
+  width: 90% !important;
+  max-width: 1200px !important;
   display: flex;
   gap: 20px;
-  margin: 20px auto 0 auto;
+  margin: 0 auto 40px auto; /* Eliminado margen superior, añadido margen inferior */
   box-sizing: border-box;
   flex: 1; /* Para que ocupe el espacio disponible */
 }
@@ -202,6 +252,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 20px; /* Añadido gap entre secciones */
   max-width: 900px;
   margin-left: auto;
   margin-right: auto;
@@ -215,19 +266,20 @@
   gap: 20px;
 }
 
-/* Secciones del despacho - Bordes cuadrados como el badge */
+/* Secciones del despacho - Estilo del buscador */
 .despacho-section {
   background: #ffffff;
-  border: 1px solid #000000;
-  border-bottom-width: 5px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
   padding: 20px;
   box-sizing: border-box;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
 }
 
 .despacho-section:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .despacho-section h3 {
@@ -688,6 +740,25 @@
     min-height: auto;
   }
 
+  /* NUEVO: Responsive para la fila de botones */
+  .lexhoy-despacho-single .despacho-buttons-row {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+    margin-bottom: 15px;
+  }
+
+  .lexhoy-despacho-single .despacho-back-button,
+  .lexhoy-despacho-single .verification-badge {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .lexhoy-despacho-single .verification-badge-container {
+    justify-content: center;
+    min-width: auto;
+  }
+
   .lexhoy-despacho-single .despacho-title-row {
     flex-direction: column;
     text-align: center;
@@ -699,12 +770,15 @@
   }
 
   .lexhoy-despacho-single .despacho-title {
-    font-size: large;
+    font-size: 1.8rem !important; /* Más grande en móviles */
     text-align: center;
+    margin-bottom: 15px !important; /* Más espacio debajo del título */
   }
 
   .lexhoy-despacho-single .despacho-subtitle {
     text-align: center;
+    margin-top: 10px !important; /* Más separación del título */
+    font-size: 1rem !important; /* Tamaño específico para la localidad */
   }
 
   .lexhoy-despacho-single .despacho-profile-photo {
@@ -726,7 +800,18 @@
 
   .lexhoy-despacho-single .despacho-sidebar {
     width: 100%;
-    order: -1;
+    order: -2; /* Prioridad máxima para aparecer justo después del header */
+  }
+
+  /* NUEVO: Hacer que la información de contacto aparezca primero en móviles */
+  .lexhoy-despacho-single .despacho-main {
+    display: flex;
+    flex-direction: column;
+    order: -1; /* Aparece después de sidebar pero antes del resto */
+  }
+
+  .lexhoy-despacho-single .contact-info-section {
+    order: -100; /* Prioridad máxima para información de contacto */
   }
 
   .lexhoy-despacho-single .contact-info {
@@ -813,6 +898,27 @@
     min-height: auto;
   }
 
+  /* NUEVO: Responsive para la fila de botones en móviles pequeños */
+  .lexhoy-despacho-single .despacho-buttons-row {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+    margin-bottom: 10px;
+  }
+
+  .lexhoy-despacho-single .despacho-back-button,
+  .lexhoy-despacho-single .verification-badge {
+    justify-content: center;
+    text-align: center;
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  .lexhoy-despacho-single .verification-badge-container {
+    justify-content: center;
+    min-width: auto;
+  }
+
   .lexhoy-despacho-single .despacho-title-row {
     flex-direction: column;
     text-align: center;
@@ -824,12 +930,15 @@
   }
 
   .lexhoy-despacho-single .despacho-title {
-    font-size: medium;
+    font-size: 1.5rem !important; /* Más grande en móviles pequeños */
     text-align: center;
+    margin-bottom: 15px !important; /* Más espacio debajo del título */
   }
 
   .lexhoy-despacho-single .despacho-subtitle {
     text-align: center;
+    margin-top: 10px !important; /* Más separación del título */
+    font-size: 0.9rem !important; /* Tamaño específico para la localidad en móvil pequeño */
   }
 
   .lexhoy-despacho-single .despacho-profile-photo {
@@ -847,6 +956,17 @@
     width: 100% !important;
     flex-direction: column;
     gap: 10px;
+  }
+
+  /* NUEVO: Hacer que la información de contacto aparezca primero en móviles pequeños también */
+  .lexhoy-despacho-single .despacho-main {
+    display: flex;
+    flex-direction: column;
+    order: -1; /* Aparece después de sidebar pero antes del resto */
+  }
+
+  .lexhoy-despacho-single .contact-info-section {
+    order: -100; /* Prioridad máxima para información de contacto */
   }
 
   .lexhoy-despacho-single .despacho-section {
@@ -887,15 +1007,18 @@
 
 @media (min-width: 1400px) {
   .lexhoy-despacho-single > * {
-    width: 70% !important;
+    width: 90% !important;
+    max-width: 1200px !important;
   }
 
   .despacho-header {
-    width: 70% !important;
+    width: 90% !important;
+    max-width: 1200px !important;
   }
 
   .despacho-content {
-    width: 70% !important;
+    width: 90% !important;
+    max-width: 1200px !important;
   }
 
   .despacho-sidebar {
@@ -909,15 +1032,18 @@
 
 @media (min-width: 1800px) {
   .lexhoy-despacho-single > * {
-    width: 60% !important;
+    width: 90% !important;
+    max-width: 1200px !important;
   }
 
   .despacho-header {
-    width: 60% !important;
+    width: 90% !important;
+    max-width: 1200px !important;
   }
 
   .despacho-content {
-    width: 60% !important;
+    width: 90% !important;
+    max-width: 1200px !important;
   }
 
   .despacho-sidebar {

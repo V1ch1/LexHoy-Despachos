@@ -303,14 +303,14 @@ jQuery(document).ready(function ($) {
 
     // Botón anterior
     if (currentPageNum > 1) {
-      paginationHTML += `<a href="#" class="pagination-link" data-page="${
+      paginationHTML += `<a href="#" class="pagination-link nav-button" data-page="${
         currentPageNum - 1
-      }">← Anterior</a>`;
+      }">← <span class="nav-text">Anterior</span></a>`;
     }
 
-    // Números de página - Mejorado para muchas páginas
-    if (totalPages <= 10) {
-      // Si hay 10 páginas o menos, mostrar todas
+    // Números de página - Estrategia compacta para móviles
+    if (totalPages <= 5) {
+      // Si hay 5 páginas o menos, mostrar todas
       for (let i = 1; i <= totalPages; i++) {
         if (i === currentPageNum) {
           paginationHTML += `<span class="pagination-current">${i}</span>`;
@@ -319,34 +319,24 @@ jQuery(document).ready(function ($) {
         }
       }
     } else {
-      // Si hay más de 10 páginas, mostrar estrategia inteligente
+      // Si hay más de 5 páginas, mostrar máximo 5 números
+      let startPage, endPage;
 
-      // Siempre mostrar primera página
-      if (currentPageNum === 1) {
-        paginationHTML += `<span class="pagination-current">1</span>`;
+      if (currentPageNum <= 3) {
+        // Cerca del inicio: mostrar 1,2,3,4,5
+        startPage = 1;
+        endPage = 5;
+      } else if (currentPageNum >= totalPages - 2) {
+        // Cerca del final: mostrar las últimas 5
+        startPage = totalPages - 4;
+        endPage = totalPages;
       } else {
-        paginationHTML += `<a href="#" class="pagination-link" data-page="1">1</a>`;
+        // En el medio: mostrar página actual ±2
+        startPage = currentPageNum - 2;
+        endPage = currentPageNum + 2;
       }
 
-      // Calcular rango de páginas a mostrar
-      let startPage = Math.max(2, currentPageNum - 2);
-      let endPage = Math.min(totalPages - 1, currentPageNum + 2);
-
-      // Ajustar si estamos cerca del inicio
-      if (currentPageNum <= 4) {
-        endPage = Math.min(totalPages - 1, 6);
-      }
-      // Ajustar si estamos cerca del final
-      if (currentPageNum >= totalPages - 3) {
-        startPage = Math.max(2, totalPages - 5);
-      }
-
-      // Mostrar "..." si hay gap al inicio
-      if (startPage > 2) {
-        paginationHTML += `<span class="pagination-ellipsis">...</span>`;
-      }
-
-      // Mostrar páginas del rango
+      // Mostrar las páginas del rango calculado
       for (let i = startPage; i <= endPage; i++) {
         if (i === currentPageNum) {
           paginationHTML += `<span class="pagination-current">${i}</span>`;
@@ -354,25 +344,13 @@ jQuery(document).ready(function ($) {
           paginationHTML += `<a href="#" class="pagination-link" data-page="${i}">${i}</a>`;
         }
       }
-
-      // Mostrar "..." si hay gap al final
-      if (endPage < totalPages - 1) {
-        paginationHTML += `<span class="pagination-ellipsis">...</span>`;
-      }
-
-      // Siempre mostrar última página
-      if (currentPageNum === totalPages) {
-        paginationHTML += `<span class="pagination-current">${totalPages}</span>`;
-      } else {
-        paginationHTML += `<a href="#" class="pagination-link" data-page="${totalPages}">${totalPages}</a>`;
-      }
     }
 
     // Botón siguiente
     if (currentPageNum < totalPages) {
-      paginationHTML += `<a href="#" class="pagination-link" data-page="${
+      paginationHTML += `<a href="#" class="pagination-link nav-button" data-page="${
         currentPageNum + 1
-      }">Siguiente →</a>`;
+      }"><span class="nav-text">Siguiente</span> →</a>`;
     }
 
     paginationHTML += "</div>";

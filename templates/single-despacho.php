@@ -105,33 +105,59 @@ get_header(); ?>
         $is_local = (strpos($_SERVER['HTTP_HOST'], 'lexhoy.local') !== false);
         ?>
         
-        <!-- Cabecera del despacho - IDÉNTICA al header del buscador -->
+        <!-- Cabecera del despacho - NUEVA ESTRUCTURA RESPONSIVE -->
         <div class="despacho-header">
-            <!-- Botón de regreso -->
-            <a href="<?php echo esc_url(get_search_page_url()); ?>" class="despacho-back-button">
-                <i class="fas fa-arrow-left"></i>
-                Volver al buscador
-            </a>
+            <!-- Fila de botones superiores -->
+            <div class="despacho-buttons-row">
+                <!-- Botón de regreso -->
+                <a href="<?php echo esc_url(get_search_page_url()); ?>" class="despacho-back-button">
+                    <i class="fas fa-arrow-left"></i>
+                    Volver al buscador
+                </a>
+                
+                <!-- Badge de verificación (o espacio vacío para mantener alineación) -->
+                <div class="verification-badge-container">
+                    <?php if ($is_verified == '1'): ?>
+                        <div class="verification-badge verified">
+                            <i class="fas fa-check-circle"></i>
+                            Verificado
+                        </div>
+                    <?php elseif ($estado_verificacion == 'pendiente'): ?>
+                        <div class="verification-badge pending">
+                            <i class="fas fa-clock"></i>
+                            Pendiente verificación
+                        </div>
+                    <?php elseif ($estado_verificacion == 'rechazado'): ?>
+                        <div class="verification-badge rejected">
+                            <i class="fas fa-times-circle"></i>
+                            Rechazado
+                        </div>
+                    <?php else: ?>
+                        <!-- Espacio vacío para mantener la alineación -->
+                        <div class="verification-badge-spacer"></div>
+                    <?php endif; ?>
+                </div>
+            </div>
             
-            <!-- Badge de verificación - IDÉNTICO al del buscador -->
-            <?php if ($is_verified == '1'): ?>
-                <div class="verification-badge verified">
-                    <i class="fas fa-check-circle"></i>
-                    Verificado
+            <!-- Foto de perfil centrada -->
+            <?php
+            // DEBUG: Información de la foto de perfil
+            echo "<!-- DEBUG FOTO - Post ID: {$post_id} -->";
+            echo "<!-- DEBUG FOTO - Variable \$foto_perfil: " . ($foto_perfil ? $foto_perfil : 'VACÍA') . " -->";
+            echo "<!-- DEBUG FOTO - get_post_meta directo: " . get_post_meta($post_id, '_despacho_foto_perfil', true) . " -->";
+            ?>
+            <?php if ($foto_perfil): ?>
+                <div class="despacho-profile-photo">
+                    <img src="<?php echo esc_url($foto_perfil); ?>" alt="Foto de perfil de <?php echo esc_attr($nombre ?: get_the_title()); ?>" class="profile-image">
                 </div>
-            <?php elseif ($estado_verificacion == 'pendiente'): ?>
-                <div class="verification-badge pending">
-                    <i class="fas fa-clock"></i>
-                    Pendiente verificación
-                </div>
-            <?php elseif ($estado_verificacion == 'rechazado'): ?>
-                <div class="verification-badge rejected">
-                    <i class="fas fa-times-circle"></i>
-                    Rechazado
+            <?php else: ?>
+                <!-- DEBUG: No hay foto, usando predeterminada -->
+                <div class="despacho-profile-photo">
+                    <img src="<?php echo $is_local ? 'http://lexhoy.local' : 'https://lexhoy.com'; ?>/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp" alt="Foto predeterminada" class="profile-image">
                 </div>
             <?php endif; ?>
             
-            <!-- Título y foto de perfil -->
+            <!-- Título y subtítulo centrados -->
             <div class="despacho-title-row">
                 <div class="despacho-title-content">
                     <h1 class="despacho-title"><?php echo esc_html($nombre ?: get_the_title()); ?></h1>
@@ -142,22 +168,6 @@ get_header(); ?>
                         ?>
                     </p>
                 </div>
-                <?php
-                // DEBUG: Información de la foto de perfil
-                echo "<!-- DEBUG FOTO - Post ID: {$post_id} -->";
-                echo "<!-- DEBUG FOTO - Variable \$foto_perfil: " . ($foto_perfil ? $foto_perfil : 'VACÍA') . " -->";
-                echo "<!-- DEBUG FOTO - get_post_meta directo: " . get_post_meta($post_id, '_despacho_foto_perfil', true) . " -->";
-                ?>
-                <?php if ($foto_perfil): ?>
-                    <div class="despacho-profile-photo">
-                        <img src="<?php echo esc_url($foto_perfil); ?>" alt="Foto de perfil de <?php echo esc_attr($nombre ?: get_the_title()); ?>" class="profile-image">
-                    </div>
-                <?php else: ?>
-                    <!-- DEBUG: No hay foto, usando predeterminada -->
-                    <div class="despacho-profile-photo">
-                        <img src="<?php echo $is_local ? 'http://lexhoy.local' : 'https://lexhoy.com'; ?>/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp" alt="Foto predeterminada" class="profile-image">
-                    </div>
-                <?php endif; ?>
             </div>
         </div>
         
@@ -167,7 +177,7 @@ get_header(); ?>
             <div class="despacho-main">
                 
                 <!-- Información de contacto - IDÉNTICO a las tarjetas del buscador -->
-                <div class="despacho-section">
+                <div class="despacho-section contact-info-section">
                     <h3><i class="fas fa-address-book"></i> Información de Contacto</h3>
                     <div class="contact-info">
                         <?php if ($telefono): ?>
