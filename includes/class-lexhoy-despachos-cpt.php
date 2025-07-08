@@ -78,6 +78,12 @@ class LexhoyDespachosCPT {
         add_filter('wp_title', array($this, 'modify_despacho_wp_title'), 999, 2);
         add_filter('rank_math/frontend/title', array($this, 'override_rankmath_title'), 999);
         add_action('wp_head', array($this, 'add_despacho_page_meta'));
+        
+        // Asegurar que el sitemap incluya despachos
+        add_filter('wp_sitemaps_post_types', array($this, 'add_despachos_to_sitemap'));
+        
+        // Regenerar reglas de rewrite al activar
+        register_activation_hook(LEXHOY_DESPACHOS_PLUGIN_FILE, array($this, 'flush_rewrite_rules_on_activation'));
 
 
     }
@@ -132,6 +138,7 @@ class LexhoyDespachosCPT {
             'menu_icon'         => 'dashicons-building',
             'supports'          => array('title', 'editor', 'thumbnail', 'excerpt'),
             'show_in_rest'      => true,
+            'show_in_sitemap'   => true,
         );
 
         register_post_type('despacho', $args);
@@ -1975,6 +1982,15 @@ class LexhoyDespachosCPT {
             'lexhoy-add-photos',
             array($this, 'render_add_photos_page')
         );
+        
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Regenerar Sitemap',
+            'Regenerar Sitemap',
+            'manage_options',
+            'lexhoy-regenerate-sitemap',
+            array($this, 'render_regenerate_sitemap_page')
+        );
     }
 
     /**
@@ -2825,5 +2841,120 @@ class LexhoyDespachosCPT {
         }
         return $template;
     }
+    
+    /**
+     * Asegurar que los despachos aparezcan en el sitemap
+     */
+    public function add_despachos_to_sitemap($post_types) {
+        if (!isset($post_types['despacho'])) {
+            $post_types['despacho'] = (object) array(
+                'name' => 'despacho',
+                'object' => get_post_type_object('despacho'),
+                'public' => true,
+                'publicly_queryable' => true,
+            );
+        }
+        return $post_types;
+    }
+    
+    /**
+     * Regenerar reglas de rewrite al activar el plugin
+     */
+    public function flush_rewrite_rules_on_activation() {
+        // Registrar el post type primero
+        $this->register_post_type();
+        // Regenerar las reglas de permalink
+        flush_rewrite_rules();
+        // Forzar regeneración del sitemap
+        wp_cache_delete('core_sitemaps_post_types', 'sitemaps');
+    }
+    
+         /**
+      * Función para regenerar manualmente el sitemap desde admin
+      */
+     public function regenerate_sitemap() {
+         // Limpiar caché del sitemap
+         wp_cache_delete('core_sitemaps_post_types', 'sitemaps');
+         
+         // Regenerar reglas de rewrite
+         flush_rewrite_rules();
+         
+         // Notificar éxito
+         add_action('admin_notices', function() {
+             echo '<div class="notice notice-success is-dismissible">';
+             echo '<p><strong>✅ Sitemap regenerado exitosamente.</strong> Los despachos deberían aparecer ahora en <a href="' . home_url('/despacho-sitemap.xml') . '" target="_blank">despacho-sitemap.xml</a></p>';
+             echo '</div>';
+         });
+     }
+     
+     /**
+      * Renderizar página de regeneración del sitemap
+      */
+     public function render_regenerate_sitemap_page() {
+         if (!current_user_can('manage_options')) {
+             wp_die(__('No tienes permisos suficientes para acceder a esta página.'));
+         }
+
+         // Procesar acción si se envió el formulario
+         if (isset($_POST['action']) && $_POST['action'] === 'regenerate_sitemap') {
+             check_admin_referer('regenerate_sitemap_action', 'regenerate_sitemap_nonce');
+             $this->regenerate_sitemap();
+         }
+
+         // Obtener estadísticas
+         $total_despachos = wp_count_posts('despacho')->publish;
+         
+         echo '<div class="wrap">';
+         echo '<h1>🗺️ Regenerar Sitemap de Despachos</h1>';
+         echo '<p>Esta herramienta regenera el sitemap XML para asegurar que todos los despachos aparezcan correctamente.</p>';
+         
+         echo '<div class="card" style="max-width: 600px;">';
+         echo '<h2>📊 Estado Actual</h2>';
+         echo '<table class="form-table">';
+         echo '<tr>';
+         echo '<th>Despachos publicados:</th>';
+         echo '<td><strong>' . number_format($total_despachos) . '</strong></td>';
+         echo '</tr>';
+         echo '<tr>';
+         echo '<th>Sitemap principal:</th>';
+         echo '<td><a href="' . home_url('/sitemap_index.xml') . '" target="_blank">' . home_url('/sitemap_index.xml') . '</a></td>';
+         echo '</tr>';
+         echo '<tr>';
+         echo '<th>Sitemap de despachos:</th>';
+         echo '<td><a href="' . home_url('/despacho-sitemap.xml') . '" target="_blank">' . home_url('/despacho-sitemap.xml') . '</a></td>';
+         echo '</tr>';
+         echo '</table>';
+         echo '</div>';
+         
+         echo '<div class="card" style="max-width: 600px; margin-top: 20px;">';
+         echo '<h2>🔄 Regenerar Sitemap</h2>';
+         echo '<p><strong>¿Cuándo regenerar?</strong></p>';
+         echo '<ul>';
+         echo '<li>Cuando el sitemap de despachos no muestre ningún resultado</li>';
+         echo '<li>Después de importar nuevos despachos masivamente</li>';
+         echo '<li>Si los despachos no aparecen en los motores de búsqueda</li>';
+         echo '<li>Cuando cambies la configuración de permalinks</li>';
+         echo '</ul>';
+         
+         echo '<form method="post" style="margin-top: 20px;">';
+         wp_nonce_field('regenerate_sitemap_action', 'regenerate_sitemap_nonce');
+         echo '<input type="hidden" name="action" value="regenerate_sitemap">';
+         echo '<p class="submit">';
+         echo '<input type="submit" class="button button-primary" value="🔄 Regenerar Sitemap de Despachos">';
+         echo '</p>';
+         echo '</form>';
+         echo '</div>';
+         
+         echo '<div class="card" style="max-width: 600px; margin-top: 20px; background: #fff3cd; border-left: 4px solid #ffc107;">';
+         echo '<h3>💡 Consejos adicionales</h3>';
+         echo '<ul>';
+         echo '<li><strong>Tiempo de indexación:</strong> Los motores de búsqueda pueden tardar hasta 24-48 horas en indexar los cambios</li>';
+         echo '<li><strong>Google Search Console:</strong> Puedes enviar manualmente el sitemap en Google Search Console para acelerar el proceso</li>';
+         echo '<li><strong>Verificación:</strong> Después de regenerar, verifica que el sitemap XML muestre los despachos correctamente</li>';
+         echo '</ul>';
+         echo '</div>';
+         
+         echo '</div>';
+     }
 }
 
