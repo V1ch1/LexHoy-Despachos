@@ -175,6 +175,30 @@
   background: #e74c3c !important; /* Rojo para rechazado */
 }
 
+/* Estilos personalizados para encabezados */
+.lexhoy-despacho-single h2 {
+  font-size: 2rem !important; /* ≈32px */
+  font-weight: bold !important;
+  margin-bottom: 0.75em !important;
+}
+
+.lexhoy-despacho-single h3 {
+  font-size: 1.5rem !important; /* ≈24px */
+  font-weight: normal !important;
+  margin-bottom: 0.5em !important;
+}
+
+/* Ajustes responsive para encabezados */
+@media (max-width: 768px) {
+  .lexhoy-despacho-single h2 {
+    font-size: 1.75rem !important; /* ≈28px */
+  }
+
+  .lexhoy-despacho-single h3 {
+    font-size: 1.25rem !important; /* ≈20px */
+  }
+}
+
 /* NUEVA: Foto de perfil centrada */
 .despacho-profile-photo {
   width: 120px;

@@ -21,6 +21,7 @@ if (!defined('ABSPATH')) {
 define('LEXHOY_DESPACHOS_VERSION', '1.1.1');
 define('LEXHOY_DESPACHOS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('LEXHOY_DESPACHOS_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('LEXHOY_DESPACHOS_PLUGIN_FILE', __FILE__);
 
 // Incluir archivos necesarios
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-algolia-client.php';

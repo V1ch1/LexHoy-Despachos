@@ -184,6 +184,10 @@ class LexhoyDespachosCPT {
         $ano_fundacion = get_post_meta($post->ID, '_despacho_año_fundacion', true);
         $estado_registro = get_post_meta($post->ID, '_despacho_estado_registro', true);
         $foto_perfil = get_post_meta($post->ID, '_despacho_foto_perfil', true);
+        
+        // CAMPOS PROFESIONALES NUEVOS
+        $numero_colegiado = get_post_meta($post->ID, '_despacho_numero_colegiado', true);
+        $colegio = get_post_meta($post->ID, '_despacho_colegio', true);
 
         // Nonce para seguridad
         wp_nonce_field('despacho_meta_box', 'despacho_meta_box_nonce');
@@ -240,6 +244,21 @@ class LexhoyDespachosCPT {
                 <textarea id="despacho_descripcion" name="despacho_descripcion" 
                           class="widefat" rows="3"><?php echo esc_textarea($descripcion); ?></textarea>
                 <span class="description">Descripción del despacho (opcional)</span>
+            </p>
+            
+            <!-- CAMPOS PROFESIONALES NUEVOS -->
+            <h4>📋 Información Profesional</h4>
+            <p>
+                <label for="despacho_numero_colegiado">Número de Colegiado:</label><br>
+                <input type="text" id="despacho_numero_colegiado" name="despacho_numero_colegiado" 
+                       value="<?php echo esc_attr($numero_colegiado); ?>" class="widefat">
+                <span class="description">Número de colegiación del abogado (opcional)</span>
+            </p>
+            <p>
+                <label for="despacho_colegio">Colegio de Abogados:</label><br>
+                <input type="text" id="despacho_colegio" name="despacho_colegio" 
+                       value="<?php echo esc_attr($colegio); ?>" class="widefat">
+                <span class="description">Nombre del Colegio de Abogados (opcional)</span>
             </p>
             <p>
                 <label for="despacho_estado_verificacion">Estado de Verificación:</label><br>
@@ -569,7 +588,10 @@ class LexhoyDespachosCPT {
             'despacho_web' => '_despacho_web',
             'despacho_descripcion' => '_despacho_descripcion',
             'despacho_estado_verificacion' => '_despacho_estado_verificacion',
-            // NUEVOS CAMPOS
+            // CAMPOS PROFESIONALES NUEVOS
+            'despacho_numero_colegiado' => '_despacho_numero_colegiado',
+            'despacho_colegio' => '_despacho_colegio',
+            // OTROS CAMPOS NUEVOS
             'despacho_especialidades' => '_despacho_especialidades',
             'despacho_experiencia' => '_despacho_experiencia',
             'despacho_tamaño' => '_despacho_tamaño',
@@ -866,7 +888,10 @@ class LexhoyDespachosCPT {
                 'descripcion'      => $posted_or_meta('despacho_descripcion', '_despacho_descripcion', 'sanitize_textarea_field'),
                 'estado_verificacion'=> $posted_or_meta('despacho_estado_verificacion', '_despacho_estado_verificacion'),
                 'isVerified'       => isset($_POST['despacho_is_verified']) ? true : (get_post_meta($post_id, '_despacho_is_verified', true) ? true : false),
-                // NUEVOS CAMPOS
+                // CAMPOS PROFESIONALES NUEVOS
+                'numero_colegiado' => $posted_or_meta('despacho_numero_colegiado', '_despacho_numero_colegiado'),
+                'colegio'          => $posted_or_meta('despacho_colegio', '_despacho_colegio'),
+                // OTROS CAMPOS NUEVOS
                 'especialidades'   => isset($_POST['despacho_especialidades']) ? array_filter(array_map('trim', explode(',', $_POST['despacho_especialidades']))) : array_filter(array_map('trim', explode(',', get_post_meta($post_id, '_despacho_especialidades', true) ))),
                 'horario'          => isset($_POST['despacho_horario']) ? array_map('sanitize_text_field', $_POST['despacho_horario']) : (array) get_post_meta($post_id, '_despacho_horario', true),
                 'redes_sociales'   => isset($_POST['despacho_redes_sociales']) ? array_map('esc_url_raw', $_POST['despacho_redes_sociales']) : (array) get_post_meta($post_id, '_despacho_redes_sociales', true),
@@ -970,7 +995,10 @@ class LexhoyDespachosCPT {
                     update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
                     update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
                     update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? 0);
-                    // NUEVOS CAMPOS
+                    // CAMPOS PROFESIONALES NUEVOS
+                    update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
+                    update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
+                    // OTROS CAMPOS NUEVOS
                     update_post_meta($post_id, '_despacho_especialidades', isset($record['especialidades']) && is_array($record['especialidades']) ? implode(',', $record['especialidades']) : '');
                     update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
                     update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
@@ -1483,7 +1511,10 @@ class LexhoyDespachosCPT {
             update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
             update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
             update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? 0);
-            // NUEVOS CAMPOS
+            // CAMPOS PROFESIONALES NUEVOS
+            update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
+            update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
+            // OTROS CAMPOS NUEVOS
             update_post_meta($post_id, '_despacho_especialidades', isset($record['especialidades']) && is_array($record['especialidades']) ? implode(',', $record['especialidades']) : '');
             update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
             update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
@@ -1990,6 +2021,15 @@ class LexhoyDespachosCPT {
             'manage_options',
             'lexhoy-regenerate-sitemap',
             array($this, 'render_regenerate_sitemap_page')
+        );
+        
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Añadir Campos Faltantes',
+            'Campos Faltantes',
+            'manage_options',
+            'lexhoy-add-missing-fields',
+            array($this, 'render_add_missing_fields_page')
         );
     }
 
@@ -2956,5 +2996,155 @@ class LexhoyDespachosCPT {
          
          echo '</div>';
      }
+     
+    /**
+     * Renderizar página para añadir campos faltantes
+     */
+    public function render_add_missing_fields_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('No tienes permisos suficientes para acceder a esta página.'));
+        }
+
+        echo '<div class="wrap">';
+        echo '<h1>➕ Añadir Campos Faltantes a Algolia</h1>';
+        
+        // Verificar configuración de Algolia
+        $app_id = get_option('lexhoy_despachos_algolia_app_id');
+        $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+        $search_api_key = get_option('lexhoy_despachos_algolia_search_api_key');
+        $index_name = get_option('lexhoy_despachos_algolia_index_name');
+
+        if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+            echo '<div class="notice notice-error"><p>⚠️ <strong>Configuración de Algolia incompleta.</strong> Completa la configuración antes de proceder.</p></div>';
+            echo '</div>';
+            return;
+        }
+        
+        if (isset($_POST['add_missing_fields'])) {
+            echo '<h2>🔄 Añadiendo campos faltantes...</h2>';
+            echo '<div style="font-family: monospace; background: #f8f9fa; padding: 15px; border: 1px solid #ccd0d4;">';
+            
+            $this->execute_add_missing_fields();
+            
+            echo '</div>';
+        } else {
+            ?>
+            <div class="card" style="max-width: 700px;">
+                <h2>📋 Información</h2>
+                <p>Este proceso añadirá los campos faltantes <code>numero_colegiado</code> y <code>colegio</code> a todos los registros existentes en Algolia.</p>
+                
+                <div style="background: #fff3cd; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                    <strong>📋 Lo que hará este proceso:</strong>
+                    <ul>
+                        <li>Leer todos los registros existentes en Algolia</li>
+                        <li>Añadir <code>numero_colegiado: ""</code> si no existe</li>
+                        <li>Añadir <code>colegio: ""</code> si no existe</li>
+                        <li><strong>NO modificar</strong> ningún dato existente</li>
+                        <li>Procesar en lotes para optimizar rendimiento</li>
+                    </ul>
+                </div>
+                
+                <form method="post">
+                    <?php wp_nonce_field('lexhoy_add_missing_fields', 'add_missing_fields_nonce'); ?>
+                    <input type="submit" name="add_missing_fields" class="button button-primary" 
+                           value="➕ Añadir Campos Faltantes" 
+                           onclick="return confirm('¿Estás seguro de que quieres añadir los campos faltantes a todos los registros de Algolia?')" />
+                </form>
+            </div>
+            
+            <style>
+            .card { background: white; padding: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04); }
+            </style>
+            <?php
+        }
+        
+        echo '</div>';
+    }
+    
+    /**
+     * Ejecutar añadir campos faltantes
+     */
+    private function execute_add_missing_fields() {
+        try {
+            $algolia_client = new LexhoyAlgoliaClient(
+                get_option('lexhoy_despachos_algolia_app_id'),
+                get_option('lexhoy_despachos_algolia_admin_api_key'),
+                get_option('lexhoy_despachos_algolia_search_api_key'),
+                get_option('lexhoy_despachos_algolia_index_name')
+            );
+            
+            echo "🔄 Obteniendo todos los registros de Algolia...\n";
+            flush();
+            
+            $all_records = $algolia_client->browse_all_unfiltered();
+            
+            if (!$all_records || empty($all_records['hits'])) {
+                echo "❌ No se encontraron registros en Algolia\n";
+                return;
+            }
+            
+            $total = count($all_records['hits']);
+            echo "📊 Encontrados {$total} registros para procesar\n";
+            flush();
+            
+            $updated = 0;
+            $skipped = 0;
+            $errors = 0;
+            
+            foreach ($all_records['hits'] as $index => $record) {
+                try {
+                    $needs_update = false;
+                    
+                    if (!isset($record['numero_colegiado'])) {
+                        $record['numero_colegiado'] = '';
+                        $needs_update = true;
+                    }
+                    
+                    if (!isset($record['colegio'])) {
+                        $record['colegio'] = '';
+                        $needs_update = true;
+                    }
+                    
+                    if ($needs_update) {
+                        $result = $algolia_client->save_object(
+                            $algolia_client->get_index_name(),
+                            $record
+                        );
+                        
+                        if ($result) {
+                            $updated++;
+                        } else {
+                            $errors++;
+                        }
+                    } else {
+                        $skipped++;
+                    }
+                    
+                    if (($index + 1) % 50 == 0) {
+                        echo "⏳ Progreso: " . ($index + 1) . "/{$total} - Actualizados: {$updated}, Omitidos: {$skipped}, Errores: {$errors}\n";
+                        flush();
+                    }
+                    
+                } catch (Exception $e) {
+                    $errors++;
+                    echo "❌ Error en registro {$record['objectID']}: " . $e->getMessage() . "\n";
+                }
+            }
+            
+            echo "\n✅ Proceso completado:\n";
+            echo "   • Total procesados: {$total}\n";
+            echo "   • Actualizados: {$updated}\n";
+            echo "   • Ya tenían los campos: {$skipped}\n";
+            echo "   • Errores: {$errors}\n";
+            
+            if ($updated > 0) {
+                echo "\n🎉 ¡Campos añadidos exitosamente!\n";
+                echo "Ahora todos los registros tienen los campos 'numero_colegiado' y 'colegio'.\n";
+            }
+            
+        } catch (Exception $e) {
+            echo "❌ Error general: " . $e->getMessage() . "\n";
+        }
+    }
 }
 

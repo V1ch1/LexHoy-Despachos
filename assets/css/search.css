@@ -1,5 +1,29 @@
 /* Estilos SOLO para el buscador de despachos - Versión limpia y centrada */
 
+/* Estilos globales para encabezados */
+h2 {
+  font-size: 2rem !important;        /* ≈32px */
+  font-weight: bold !important;
+  margin-bottom: 0.75em !important;
+}
+
+h3 {
+  font-size: 1.5rem !important;      /* ≈24px */
+  font-weight: normal !important;
+  margin-bottom: 0.5em !important;
+}
+
+/* Ajustes responsive globales */
+@media (max-width: 768px) {
+  h2 {
+    font-size: 1.75rem !important; /* ≈28px */
+  }
+
+  h3 {
+    font-size: 1.25rem !important; /* ≈20px */
+  }
+}
+
 /* Contenedor principal */
 .lexhoy-despachos-search {
   width: 100% !important;
