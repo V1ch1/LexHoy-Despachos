@@ -194,7 +194,11 @@ get_header(); ?>
                         <?php if ($email): ?>
                             <div class="contact-item">
                                 <i class="fas fa-envelope"></i>
-                                <a href="mailto:<?php echo esc_attr($email); ?>"><?php echo esc_html($email); ?></a>
+                                <?php if ($is_verified == '1'): ?>
+                                    <a href="mailto:<?php echo esc_attr($email); ?>"><?php echo esc_html($email); ?></a>
+                                <?php else: ?>
+                                    <span class="phone-verification-notice">Solo mostramos emails de despachos verificados</span>
+                                <?php endif; ?>
                             </div>
                         <?php endif; ?>
                         
