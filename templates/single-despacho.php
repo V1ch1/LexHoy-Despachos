@@ -225,6 +225,84 @@ get_header(); ?>
                     </div>
                 </div>
                 
+                <!-- Sedes del Despacho - NUEVA SECCIÓN -->
+                <?php 
+                $sedes = LexhoySedesManager::get_sedes_activas(get_the_ID());
+                if (!empty($sedes)): ?>
+                    <div class="despacho-section despacho-sedes">
+                        <h3><i class="fas fa-building"></i> Nuestras Sedes</h3>
+                        <div class="sedes-container">
+                            <?php foreach ($sedes as $sede): ?>
+                                <div class="sede-card <?php echo $sede['es_principal'] ? 'sede-principal' : ''; ?>">
+                                    <div class="sede-header">
+                                        <h4>
+                                            🏢 <?php echo esc_html($sede['nombre']); ?>
+                                            <?php if ($sede['es_principal']): ?>
+                                                <span class="badge-principal">⭐ Principal</span>
+                                            <?php endif; ?>
+                                        </h4>
+                                    </div>
+                                    
+                                    <div class="sede-info">
+                                        <?php if (!empty($sede['persona_contacto'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-user"></i>
+                                                <span><strong>Contacto:</strong> <?php echo esc_html($sede['persona_contacto']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!empty($sede['telefono'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-phone"></i>
+                                                <a href="tel:<?php echo esc_attr($sede['telefono']); ?>" class="phone-link">
+                                                    <?php echo esc_html($sede['telefono']); ?>
+                                                </a>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!empty($sede['email_contacto'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-envelope"></i>
+                                                <a href="mailto:<?php echo esc_attr($sede['email_contacto']); ?>">
+                                                    <?php echo esc_html($sede['email_contacto']); ?>
+                                                </a>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!empty($sede['direccion_completa'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-map-marker-alt"></i>
+                                                <span><?php echo esc_html($sede['direccion_completa']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!empty($sede['horario_atencion'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-clock"></i>
+                                                <span><strong>Horario:</strong> <?php echo esc_html($sede['horario_atencion']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!empty($sede['servicios_especificos'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-gavel"></i>
+                                                <span><strong>Servicios:</strong> <?php echo esc_html($sede['servicios_especificos']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!empty($sede['observaciones'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-info-circle"></i>
+                                                <span><strong>Observaciones:</strong> <?php echo esc_html($sede['observaciones']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
                 <!-- Descripción - IDÉNTICO a las tarjetas del buscador -->
                 <?php if ($descripcion): ?>
                     <div class="despacho-section">

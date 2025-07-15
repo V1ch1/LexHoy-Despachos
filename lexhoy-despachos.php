@@ -28,6 +28,7 @@ require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-algolia-client
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-cpt.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-shortcode.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-areas-cpt.php';
+require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-sedes-manager.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/algolia-page.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/shortcode-page.php';
 
@@ -46,6 +47,11 @@ function lexhoy_despachos_init() {
 
     if (class_exists('LexhoyAreasCPT')) {
         new LexhoyAreasCPT();
+    }
+    
+    // Inicializar el gestor de sedes solo en admin
+    if (is_admin() && class_exists('LexhoySedesManager')) {
+        new LexhoySedesManager();
     }
 }
 add_action('plugins_loaded', 'lexhoy_despachos_init');

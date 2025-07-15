@@ -1206,4 +1206,110 @@ class LexhoyAlgoliaClient {
             ];
         }
     }
+
+    /**
+     * Obtener página de registros SIN filtros para normalización
+     * Retorna TODOS los registros tal como están en Algolia
+     */
+    public function browse_page_for_normalization($page = 0, $hits_per_page = 200) {
+        try {
+            $this->custom_log("=== ALGOLIA browse_page_for_normalization iniciado - página {$page}, hits por página: {$hits_per_page} ===");
+            
+            if (!$this->verify_credentials()) {
+                $this->custom_log('ALGOLIA FATAL: Credenciales no válidas');
+                return [
+                    'success' => false,
+                    'message' => 'Credenciales de Algolia no configuradas',
+                    'error' => 'missing_credentials'
+                ];
+            }
+
+            $url = "https://{$this->app_id}-dsn.algolia.net/1/indexes/{$this->index_name}/query";
+            $headers = [
+                'X-Algolia-API-Key: ' . $this->admin_api_key,
+                'X-Algolia-Application-Id: ' . $this->app_id,
+                'Content-Type: application/json'
+            ];
+
+            $post_data = [
+                'query' => '',
+                'hitsPerPage' => $hits_per_page,
+                'page' => $page
+            ];
+
+            $this->custom_log('ALGOLIA URL: ' . $url);
+            $this->custom_log('ALGOLIA Datos POST: ' . json_encode($post_data));
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch);
+            curl_close($ch);
+
+            $this->custom_log('ALGOLIA HTTP Code: ' . $http_code);
+            $this->custom_log('ALGOLIA Response (primeros 300 chars): ' . substr($response, 0, 300));
+
+            if ($curl_error) {
+                return [
+                    'success' => false,
+                    'message' => 'Error de conexión: ' . $curl_error,
+                    'error' => 'curl_error'
+                ];
+            }
+
+            if ($http_code !== 200) {
+                return [
+                    'success' => false,
+                    'message' => 'Error de Algolia (HTTP ' . $http_code . ')',
+                    'error' => 'http_error'
+                ];
+            }
+
+            $data = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return [
+                    'success' => false,
+                    'message' => 'Error al procesar la respuesta de Algolia',
+                    'error' => 'json_error'
+                ];
+            }
+
+            if (!isset($data['hits']) || !is_array($data['hits'])) {
+                return [
+                    'success' => false,
+                    'message' => 'Formato de respuesta de Algolia inválido',
+                    'error' => 'invalid_format'
+                ];
+            }
+
+            $this->custom_log('browse_page_for_normalization exitoso - ' . count($data['hits']) . ' registros obtenidos SIN filtros');
+
+            // SIN FILTROS - devolver todos los registros tal como están
+            return [
+                'success' => true,
+                'hits' => $data['hits'], // TODOS los registros
+                'total_records' => $data['nbHits'] ?? count($data['hits']),
+                'page' => $data['page'] ?? $page,
+                'nbPages' => $data['nbPages'] ?? 1
+            ];
+
+        } catch (Exception $e) {
+            error_log('LexHoy: Exception en browse_page_for_normalization: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error interno: ' . $e->getMessage(),
+                'error' => 'exception'
+            ];
+        }
+    }
 } 

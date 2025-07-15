@@ -14,6 +14,139 @@
   min-height: 100vh; /* Asegurar que ocupe toda la altura */
 }
 
+/* Estilos para las sedes del despacho */
+.despacho-sedes {
+  margin: 30px 0;
+}
+
+.despacho-sedes h3 {
+  color: #1976d2;
+  border-bottom: 2px solid #1976d2;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.sedes-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.sede-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  background: #fafafa;
+  transition: all 0.3s ease;
+}
+
+.sede-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.sede-card.sede-principal {
+  border-color: #4caf50;
+  background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e8 100%);
+  position: relative;
+}
+
+.sede-card.sede-principal::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  border-radius: 8px 8px 0 0;
+}
+
+.sede-header {
+  margin-bottom: 15px;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 10px;
+}
+
+.sede-header h4 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.badge-principal {
+  background: #4caf50;
+  color: white;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.sede-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sede-contact-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.sede-contact-item i {
+  color: #1976d2;
+  width: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sede-contact-item a {
+  color: #1976d2;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.sede-contact-item a:hover {
+  color: #0d47a1;
+  text-decoration: underline;
+}
+
+.sede-contact-item strong {
+  color: #333;
+}
+
+/* Responsive para sedes */
+@media (max-width: 768px) {
+  .sedes-container {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .sede-card {
+    padding: 15px;
+  }
+
+  .sede-header h4 {
+    font-size: 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .badge-principal {
+    align-self: flex-start;
+  }
+}
+
 /* Aplicar tipografía Inter solo a elementos de texto específicos */
 .lexhoy-despacho-single h1,
 .lexhoy-despacho-single h2,

@@ -148,20 +148,27 @@ class LexhoyDespachosCPT {
      * Agregar meta boxes
      */
     public function add_meta_boxes() {
-        add_meta_box(
-            'despacho_details',
-            'Detalles del Despacho',
-            array($this, 'render_meta_box'),
-            'despacho',
-            'normal',
-            'high'
-        );
+        // Meta box eliminado - ahora se usa LexhoySedesManager
+        // Los campos del despacho ahora se gestionan por sede
     }
 
     /**
-     * Renderizar meta box
+     * Renderizar meta box - ELIMINADO
+     * Ahora se usa LexhoySedesManager para gestionar toda la información
      */
     public function render_meta_box($post) {
+        echo '<div style="padding: 20px; text-align: center; background: #f0f8ff; border: 2px dashed #0073aa; border-radius: 5px;">';
+        echo '<h3 style="color: #0073aa;">🏢 Gestión de Sedes Activada</h3>';
+        echo '<p>Los campos del despacho ahora se gestionan a través del <strong>Sistema de Gestión de Sedes</strong> más abajo.</p>';
+        echo '<p>Cada sede puede tener información específica: contacto, dirección, horarios, especialidades, etc.</p>';
+        echo '<p style="color: #666;"><em>El formulario anterior ha sido reemplazado por el nuevo sistema más completo.</em></p>';
+        echo '</div>';
+    }
+
+    /**
+     * Renderizar meta box - MÉTODO ORIGINAL ELIMINADO
+     */
+    public function render_meta_box_OLD($post) {
         // Obtener valores guardados
         $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
         $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
@@ -1996,41 +2003,7 @@ class LexhoyDespachosCPT {
             array($this, 'render_bulk_import_page')
         );
         
-        add_submenu_page(
-            'edit.php?post_type=despacho',
-            'Limpieza de Registros sin Nombre',
-            'Limpiar sin Nombre',
-            'manage_options',
-            'lexhoy-clean-without-name',
-            array($this, 'render_clean_without_name_page')
-        );
-        
-        add_submenu_page(
-            'edit.php?post_type=despacho',
-            'Añadir Fotos de Perfil',
-            'Añadir Fotos',
-            'manage_options',
-            'lexhoy-add-photos',
-            array($this, 'render_add_photos_page')
-        );
-        
-        add_submenu_page(
-            'edit.php?post_type=despacho',
-            'Regenerar Sitemap',
-            'Regenerar Sitemap',
-            'manage_options',
-            'lexhoy-regenerate-sitemap',
-            array($this, 'render_regenerate_sitemap_page')
-        );
-        
-        add_submenu_page(
-            'edit.php?post_type=despacho',
-            'Añadir Campos Faltantes',
-            'Campos Faltantes',
-            'manage_options',
-            'lexhoy-add-missing-fields',
-            array($this, 'render_add_missing_fields_page')
-        );
+
     }
 
     /**
