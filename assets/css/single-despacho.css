@@ -20,10 +20,14 @@
 }
 
 .despacho-sedes h3 {
-  color: #1976d2;
-  border-bottom: 2px solid #1976d2;
+  color: #000000; /* Negro en lugar de azul */
+  border-bottom: 2px solid #000000; /* Borde negro */
   padding-bottom: 10px;
   margin-bottom: 20px;
+}
+
+.despacho-sedes h3 i {
+  color: #e10000; /* Solo el icono en rojo */
 }
 
 .sedes-container {
@@ -47,9 +51,10 @@
 }
 
 .sede-card.sede-principal {
-  border-color: #4caf50;
-  background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e8 100%);
+  border-color: #000000;
+  background: #f8f9fa;
   position: relative;
+  border-width: 2px; /* Borde más grueso para destacar */
 }
 
 .sede-card.sede-principal::before {
@@ -59,7 +64,7 @@
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  background: #000000; /* Negro en lugar de verde */
   border-radius: 8px 8px 0 0;
 }
 
@@ -80,11 +85,11 @@
 }
 
 .badge-principal {
-  background: #4caf50;
+  background: #000000; /* Negro en lugar de verde */
   color: white;
   font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 12px;
+  padding: 4px 12px; /* Padding más rectangular */
+  border-radius: 4px; /* Bordes cuadrados como otros elementos */
   font-weight: 500;
 }
 
@@ -103,20 +108,20 @@
 }
 
 .sede-contact-item i {
-  color: #1976d2;
+  color: #e10000; /* Rojo como otros iconos de la página */
   width: 16px;
   flex-shrink: 0;
   margin-top: 2px;
 }
 
 .sede-contact-item a {
-  color: #1976d2;
+  color: #000000; /* Negro como otros enlaces */
   text-decoration: none;
   transition: color 0.3s ease;
 }
 
 .sede-contact-item a:hover {
-  color: #0d47a1;
+  color: #333333; /* Gris oscuro al hover */
   text-decoration: underline;
 }
 
@@ -578,6 +583,19 @@
   background: #333333;
   transform: translateY(-2px);
   color: white;
+}
+
+/* Información del despacho - Estilos específicos para texto más pequeño */
+.despacho-section p {
+  font-size: 14px !important; /* Tamaño más pequeño para la información */
+  line-height: 1.5;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.despacho-section p strong {
+  font-weight: 600;
+  color: #000000;
 }
 
 /* Estado de registro - Negro en lugar de verde/rojo */

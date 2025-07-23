@@ -25,6 +25,240 @@ add_action('admin_menu', function() {
     );
 });
 
+// NUEVO: Registrar handlers AJAX para borrado masivo optimizado
+add_action('wp_ajax_lexhoy_get_delete_count', 'lexhoy_ajax_get_delete_count');
+add_action('wp_ajax_lexhoy_delete_batch', 'lexhoy_ajax_delete_batch');
+
+// NUEVO: Registrar handler AJAX para reparar áreas de despachos
+add_action('wp_ajax_lexhoy_fix_despachos_areas', 'lexhoy_ajax_fix_despachos_areas');
+
+/**
+ * AJAX: Obtener conteo de despachos para borrar
+ */
+function lexhoy_ajax_get_delete_count() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('No tienes permisos suficientes.');
+    }
+    
+    check_ajax_referer('lexhoy_delete_batch', 'nonce');
+    
+    $despachos = get_posts(array(
+        'post_type' => 'despacho',
+        'post_status' => 'any',
+        'numberposts' => -1,
+        'fields' => 'ids'
+    ));
+    
+    wp_send_json_success(array(
+        'total' => count($despachos)
+    ));
+}
+
+/**
+ * AJAX: Borrar lote de despachos
+ */
+function lexhoy_ajax_delete_batch() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('No tienes permisos suficientes.');
+    }
+    
+    check_ajax_referer('lexhoy_delete_batch', 'nonce');
+    
+    // Configuración SUPER optimizada
+    set_time_limit(120); // 2 minutos por lote
+    ini_set('memory_limit', '512M');
+    
+    $batch_size = 200; // Lotes MUCHO más grandes
+    $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    
+    // Obtener lote actual
+    $despachos = get_posts(array(
+        'post_type' => 'despacho',
+        'post_status' => 'any',
+        'numberposts' => $batch_size,
+        'offset' => $offset,
+        'fields' => 'ids'
+    ));
+    
+    $deleted = 0;
+    $errors = 0;
+    $error_details = array();
+    
+    // Eliminar posts en masa usando SQL directo (MUCHO más rápido)
+    if (!empty($despachos)) {
+        global $wpdb;
+        
+        // Convertir IDs a string para SQL
+        $post_ids = implode(',', array_map('intval', $despachos));
+        
+        try {
+            // Eliminar metadatos en masa
+            $meta_deleted = $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE post_id IN ({$post_ids})");
+            
+            // Eliminar posts en masa
+            $posts_deleted = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE ID IN ({$post_ids})");
+            
+            $deleted = $posts_deleted;
+            
+            if ($deleted != count($despachos)) {
+                $errors = count($despachos) - $deleted;
+                $error_details[] = "Algunos posts no pudieron ser eliminados";
+            }
+            
+        } catch (Exception $e) {
+            $errors = count($despachos);
+            $error_details[] = "Error SQL: " . $e->getMessage();
+        }
+    }
+    
+    // Verificar si quedan más despachos
+    $remaining = get_posts(array(
+        'post_type' => 'despacho',
+        'post_status' => 'any',
+        'numberposts' => 1,
+        'fields' => 'ids'
+    ));
+    
+    wp_send_json_success(array(
+        'deleted' => $deleted,
+        'errors' => $errors,
+        'error_details' => $error_details,
+        'processed' => count($despachos),
+        'has_more' => !empty($remaining),
+        'next_offset' => $offset + $batch_size
+    ));
+}
+
+/**
+ * AJAX: Reparar áreas de práctica de despachos desde Algolia
+ */
+function lexhoy_ajax_fix_despachos_areas() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('No tienes permisos suficientes.');
+    }
+    
+    check_ajax_referer('lexhoy_fix_areas', 'nonce');
+    
+    set_time_limit(300); // 5 minutos
+    ini_set('memory_limit', '512M');
+    
+    try {
+        // Obtener configuración de Algolia
+        $app_id = get_option('lexhoy_despachos_algolia_app_id');
+        $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+        $index_name = get_option('lexhoy_despachos_algolia_index_name');
+        
+        if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+            wp_send_json_error('Configuración de Algolia incompleta.');
+        }
+        
+        require_once(dirname(__FILE__) . '/../includes/class-lexhoy-algolia-client.php');
+        $client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
+        
+        // Obtener todos los registros de Algolia
+        $result = $client->browse_all_unfiltered();
+        
+        if (!$result['success']) {
+            wp_send_json_error('Error al obtener datos de Algolia: ' . $result['message']);
+        }
+        
+        $algolia_records = $result['hits'];
+        $despachos_processed = 0;
+        $despachos_fixed = 0;
+        $areas_assigned = 0;
+        $errors = 0;
+        
+        // Obtener todos los despachos de WordPress
+        $wordpress_despachos = get_posts(array(
+            'post_type' => 'despacho',
+            'post_status' => 'publish',
+            'numberposts' => -1,
+            'fields' => 'ids'
+        ));
+        
+        foreach ($wordpress_despachos as $post_id) {
+            $despachos_processed++;
+            
+            // Obtener el object_id de Algolia para este despacho
+            $algolia_object_id = get_post_meta($post_id, '_algolia_object_id', true);
+            
+            if (empty($algolia_object_id)) {
+                continue; // Saltar si no tiene object_id
+            }
+            
+            // Buscar el registro correspondiente en Algolia
+            $algolia_record = null;
+            foreach ($algolia_records as $record) {
+                if ($record['objectID'] === $algolia_object_id) {
+                    $algolia_record = $record;
+                    break;
+                }
+            }
+            
+            if (!$algolia_record) {
+                $errors++;
+                continue; // No se encontró en Algolia
+            }
+            
+            $areas_to_assign = array();
+            
+            // NUEVA ESTRUCTURA: Extraer áreas de las sedes
+            if (isset($algolia_record['sedes']) && is_array($algolia_record['sedes'])) {
+                foreach ($algolia_record['sedes'] as $sede) {
+                    if (isset($sede['areas_practica']) && is_array($sede['areas_practica'])) {
+                        $areas_to_assign = array_merge($areas_to_assign, $sede['areas_practica']);
+                    }
+                }
+            }
+            // ESTRUCTURA ANTIGUA: Áreas directas
+            elseif (isset($algolia_record['areas_practica']) && is_array($algolia_record['areas_practica'])) {
+                $areas_to_assign = $algolia_record['areas_practica'];
+            }
+            
+            // Eliminar duplicados
+            $areas_to_assign = array_unique($areas_to_assign);
+            
+            if (!empty($areas_to_assign)) {
+                // Crear términos si no existen y obtener IDs
+                $term_ids = array();
+                foreach ($areas_to_assign as $area_name) {
+                    if (empty($area_name)) continue;
+                    
+                    $term = term_exists($area_name, 'area_practica');
+                    if (!$term) {
+                        $term = wp_insert_term($area_name, 'area_practica');
+                    }
+                    
+                    if (!is_wp_error($term)) {
+                        $term_ids[] = intval($term['term_id']);
+                        $areas_assigned++;
+                    }
+                }
+                
+                // Asignar las áreas al despacho
+                if (!empty($term_ids)) {
+                    $result = wp_set_post_terms($post_id, $term_ids, 'area_practica', false);
+                    if (!is_wp_error($result)) {
+                        $despachos_fixed++;
+                    } else {
+                        $errors++;
+                    }
+                }
+            }
+        }
+        
+        wp_send_json_success(array(
+            'despachos_processed' => $despachos_processed,
+            'despachos_fixed' => $despachos_fixed,
+            'areas_assigned' => $areas_assigned,
+            'errors' => $errors
+        ));
+        
+    } catch (Exception $e) {
+        wp_send_json_error('Error: ' . $e->getMessage());
+    }
+}
+
 // Función para verificar credenciales
 function lexhoy_despachos_verify_credentials() {
     try {
@@ -182,154 +416,6 @@ function lexhoy_despachos_algolia_page() {
         }
     }
 
-    // Verificar si se está realizando un borrado
-    $is_deleting = isset($_POST['delete_all_posts']) && check_admin_referer('lexhoy_despachos_delete_all');
-    
-    if ($is_deleting) {
-        try {
-            echo '<div class="wrap">';
-            echo '<h1>Eliminando Todos los Despachos</h1>';
-            
-            // Aumentar límites de tiempo y memoria
-            set_time_limit(300); // 5 minutos
-            ini_set('memory_limit', '512M');
-            
-            $cpt = new LexhoyDespachosCPT();
-            
-            // Obtener total de despachos primero
-            $despachos = get_posts(array(
-                'post_type' => 'despacho',
-                'post_status' => 'any',
-                'numberposts' => -1,
-                'fields' => 'ids'
-            ));
-            
-            $total = count($despachos);
-            echo '<p>Total de despachos a eliminar: <strong>' . $total . '</strong></p>';
-            
-            if ($total === 0) {
-                echo '<p style="color: green;">✅ No hay despachos para eliminar.</p>';
-                echo '</div>';
-                return;
-            }
-            
-            echo '<div id="delete-progress">';
-            echo '<div class="progress-bar" style="width: 100%; height: 20px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden; margin: 10px 0;">';
-            echo '<div class="progress-fill" style="width: 0%; height: 100%; background-color: #0073aa; transition: width 0.3s;"></div>';
-            echo '</div>';
-            echo '<p class="progress-text">Eliminando despachos... <span class="progress-count">0</span> de <span class="progress-total">' . $total . '</span></p>';
-            echo '</div>';
-            
-            $deleted = 0;
-            $errors = 0;
-            $skipped = 0;
-            $batch_size = 25; // Reducir tamaño de lote
-            $batches = array_chunk($despachos, $batch_size);
-            
-            foreach ($batches as $batch_num => $batch) {
-                echo '<h3>Procesando lote ' . ($batch_num + 1) . ' de ' . count($batches) . '</h3>';
-                
-                foreach ($batch as $post_id) {
-                    try {
-                        // Verificar si el post aún existe
-                        if (!get_post($post_id)) {
-                            $skipped++;
-                            echo '<p style="color: orange;">⚠️ Saltado: ID ' . $post_id . ' (ya no existe)</p>';
-                            continue;
-                        }
-                        
-                        $post_title = get_the_title($post_id);
-                        
-                        // Intentar eliminar con diferentes métodos
-                        $delete_result = false;
-                        
-                        // Método 1: wp_delete_post normal
-                        $delete_result = wp_delete_post($post_id, true);
-                        
-                        // Método 2: Si falla, intentar forzar eliminación
-                        if (!$delete_result) {
-                            echo '<p style="color: orange;">⚠️ Reintentando eliminación forzada para ID ' . $post_id . '</p>';
-                            
-                            // Eliminar meta datos primero
-                            delete_post_meta($post_id, '_despacho_nombre');
-                            delete_post_meta($post_id, '_despacho_localidad');
-                            delete_post_meta($post_id, '_despacho_provincia');
-                            delete_post_meta($post_id, '_despacho_direccion');
-                            delete_post_meta($post_id, '_despacho_telefono');
-                            delete_post_meta($post_id, '_despacho_email');
-                            delete_post_meta($post_id, '_despacho_web');
-                            delete_post_meta($post_id, '_despacho_descripcion');
-                            
-                            // Intentar eliminar de nuevo
-                            $delete_result = wp_delete_post($post_id, true);
-                        }
-                        
-                        if ($delete_result) {
-                            $deleted++;
-                            echo '<p style="color: green;">✅ Eliminado: ID ' . $post_id . ' (' . $post_title . ')</p>';
-                        } else {
-                            $errors++;
-                            echo '<p style="color: red;">❌ Error eliminando: ID ' . $post_id . ' (' . $post_title . ')</p>';
-                        }
-                        
-                        // Actualizar progreso
-                        $progress = round(($deleted + $errors + $skipped) / $total * 100);
-                        echo '<script>
-                            document.querySelector(".progress-fill").style.width = "' . $progress . '%";
-                            document.querySelector(".progress-count").textContent = "' . ($deleted + $errors + $skipped) . '";
-                        </script>';
-                        
-                        // Flush output para mostrar progreso en tiempo real
-                        if (ob_get_level()) {
-                            ob_flush();
-                        }
-                        flush();
-                        
-                        // Pausa más larga para evitar timeouts
-                        usleep(50000); // 50ms
-                        
-                    } catch (Exception $e) {
-                        $errors++;
-                        echo '<p style="color: red;">❌ Error eliminando ID ' . $post_id . ': ' . $e->getMessage() . '</p>';
-                    }
-                }
-                
-                // Pausa más larga entre lotes
-                if ($batch_num < count($batches) - 1) {
-                    echo '<p>Pausa entre lotes (2 segundos)...</p>';
-                    sleep(2);
-                    
-                    // Flush después de la pausa
-                    if (ob_get_level()) {
-                        ob_flush();
-                    }
-                    flush();
-                }
-            }
-            
-            echo '<h3>Resumen de eliminación:</h3>';
-            echo '<ul>';
-            echo '<li>Total de despachos: <strong>' . $total . '</strong></li>';
-            echo '<li>Eliminados exitosamente: <strong style="color: green;">' . $deleted . '</strong></li>';
-            echo '<li>Saltados (ya no existían): <strong style="color: orange;">' . $skipped . '</strong></li>';
-            echo '<li>Errores: <strong style="color: red;">' . $errors . '</strong></li>';
-            echo '</ul>';
-            
-            if ($errors === 0) {
-                echo '<p style="color: green; font-size: 18px;">✅ Eliminación completada exitosamente. WordPress ahora tiene 0 despachos.</p>';
-            } else {
-                echo '<p style="color: orange; font-size: 18px;">⚠️ Eliminación completada con ' . $errors . ' errores.</p>';
-                echo '<p>Los despachos con errores pueden tener dependencias. Puedes intentar eliminarlos manualmente desde el admin de WordPress.</p>';
-            }
-            
-            echo '<hr>';
-            echo '<p><a href="' . admin_url('admin.php?page=lexhoy_despachos_algolia') . '" class="button button-primary">← Volver a la configuración</a></p>';
-            echo '</div>';
-            
-        } catch (Exception $e) {
-            echo '<div class="notice notice-error"><p>Error durante el borrado: ' . esc_html($e->getMessage()) . '</p></div>';
-        }
-    }
     ?>
     <div class="wrap">
         <h1>Configuración de Algolia</h1>
@@ -347,42 +433,63 @@ function lexhoy_despachos_algolia_page() {
                     <th scope="row">App ID</th>
                     <td>
                         <input type="text" name="lexhoy_despachos_algolia_app_id" value="<?php echo esc_attr(get_option('lexhoy_despachos_algolia_app_id')); ?>" class="regular-text">
+                        <?php if (empty(get_option('lexhoy_despachos_algolia_app_id'))): ?>
+                            <p class="description" style="color: #dc3545;">⚠️ Campo vacío - Requerido</p>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row">Admin API Key</th>
                     <td>
                         <input type="password" name="lexhoy_despachos_algolia_admin_api_key" value="<?php echo esc_attr(get_option('lexhoy_despachos_algolia_admin_api_key')); ?>" class="regular-text">
+                        <?php if (empty(get_option('lexhoy_despachos_algolia_admin_api_key'))): ?>
+                            <p class="description" style="color: #dc3545;">⚠️ Campo vacío - Requerido</p>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row">Write API Key</th>
                     <td>
                         <input type="password" name="lexhoy_despachos_algolia_write_api_key" value="<?php echo esc_attr(get_option('lexhoy_despachos_algolia_write_api_key')); ?>" class="regular-text">
+                        <?php if (empty(get_option('lexhoy_despachos_algolia_write_api_key'))): ?>
+                            <p class="description" style="color: #666;">Opcional</p>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row">Search API Key</th>
                     <td>
                         <input type="password" name="lexhoy_despachos_algolia_search_api_key" value="<?php echo esc_attr(get_option('lexhoy_despachos_algolia_search_api_key')); ?>" class="regular-text">
+                        <?php if (empty(get_option('lexhoy_despachos_algolia_search_api_key'))): ?>
+                            <p class="description" style="color: #666;">Opcional</p>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row">Usage API Key</th>
                     <td>
                         <input type="password" name="lexhoy_despachos_algolia_usage_api_key" value="<?php echo esc_attr(get_option('lexhoy_despachos_algolia_usage_api_key')); ?>" class="regular-text">
+                        <?php if (empty(get_option('lexhoy_despachos_algolia_usage_api_key'))): ?>
+                            <p class="description" style="color: #666;">Opcional</p>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row">Monitoring API Key</th>
                     <td>
                         <input type="password" name="lexhoy_despachos_algolia_monitoring_api_key" value="<?php echo esc_attr(get_option('lexhoy_despachos_algolia_monitoring_api_key')); ?>" class="regular-text">
+                        <?php if (empty(get_option('lexhoy_despachos_algolia_monitoring_api_key'))): ?>
+                            <p class="description" style="color: #666;">Opcional</p>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row">Index Name</th>
                     <td>
                         <input type="text" name="lexhoy_despachos_algolia_index_name" value="<?php echo esc_attr(get_option('lexhoy_despachos_algolia_index_name')); ?>" class="regular-text">
+                        <?php if (empty(get_option('lexhoy_despachos_algolia_index_name'))): ?>
+                            <p class="description" style="color: #dc3545;">⚠️ Campo vacío - Requerido</p>
+                        <?php endif; ?>
                     </td>
                 </tr>
             </table>
@@ -394,14 +501,77 @@ function lexhoy_despachos_algolia_page() {
 
         <h2>Sincronización</h2>
         
-        <form method="post" action="">
-            <?php wp_nonce_field('lexhoy_despachos_sync_from_algolia'); ?>
-            <p>
-                <button type="submit" name="sync_from_algolia" class="button button-primary">
-                    Probar sincronización con un registro
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
+            <div>
+                <h3>🔄 Sincronización de Prueba</h3>
+                <p>Prueba la conexión con Algolia sincronizando un solo registro:</p>
+                <form method="post" action="">
+                    <?php wp_nonce_field('lexhoy_despachos_sync_from_algolia'); ?>
+                    <p>
+                        <button type="submit" name="sync_from_algolia" class="button button-primary">
+                            Probar sincronización con un registro
+                        </button>
+                    </p>
+                </form>
+            </div>
+            
+            <div>
+                <h3>⚖️ Reparar Áreas de Despachos</h3>
+                <p>Asigna las áreas de práctica a los despachos existentes desde Algolia:</p>
+                <button id="btn-fix-areas" class="button button-secondary" onclick="fixDespachosAreas()">
+                    🔧 Reparar Áreas de Despachos
                 </button>
-            </p>
-        </form>
+                <div id="areas-fix-result" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+
+        <script>
+        function fixDespachosAreas() {
+            const btn = document.getElementById('btn-fix-areas');
+            const result = document.getElementById('areas-fix-result');
+            
+            btn.disabled = true;
+            btn.textContent = '🔄 Reparando...';
+            result.innerHTML = '<p style="color: #0073aa;">Leyendo despachos desde Algolia y asignando áreas...</p>';
+            
+            jQuery.post(ajaxurl, {
+                action: 'lexhoy_fix_despachos_areas',
+                nonce: '<?php echo wp_create_nonce('lexhoy_fix_areas'); ?>'
+            }, function(response) {
+                btn.disabled = false;
+                btn.textContent = '🔧 Reparar Áreas de Despachos';
+                
+                if (response.success) {
+                    result.innerHTML = `
+                        <div style="background: #d1eddd; border: 1px solid #00a32a; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                            <p><strong>✅ Reparación completada:</strong></p>
+                            <ul>
+                                <li>📊 Despachos procesados: ${response.data.despachos_processed}</li>
+                                <li>🔧 Despachos con áreas asignadas: ${response.data.despachos_fixed}</li>
+                                <li>⚖️ Total de áreas asignadas: ${response.data.areas_assigned}</li>
+                                <li>❌ Errores: ${response.data.errors}</li>
+                            </ul>
+                            <p><strong>Estado:</strong> Ahora las áreas aparecerán en el listado de despachos y en el frontend.</p>
+                        </div>
+                    `;
+                } else {
+                    result.innerHTML = `
+                        <div style="background: #ffeaa7; border: 1px solid #f39c12; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                            <p><strong>❌ Error:</strong> ${response.data}</p>
+                        </div>
+                    `;
+                }
+            }).fail(function() {
+                btn.disabled = false;
+                btn.textContent = '🔧 Reparar Áreas de Despachos';
+                result.innerHTML = `
+                    <div style="background: #fdcfcf; border: 1px solid #e74c3c; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <p><strong>❌ Error de conexión</strong></p>
+                    </div>
+                `;
+            });
+        }
+        </script>
 
         <?php if ($is_syncing): ?>
             <?php
@@ -477,76 +647,251 @@ function lexhoy_despachos_algolia_page() {
 
         <hr>
 
-        <h2>Gestión de Datos</h2>
+        <h2>🗑️ Gestión de Datos - Borrado Masivo Optimizado</h2>
         
-        <form method="post" action="">
-            <?php wp_nonce_field('lexhoy_despachos_delete_all'); ?>
-            <p>
-                <button type="submit" name="delete_all_posts" class="button button-danger" onclick="return confirm('¿Estás seguro de que deseas borrar TODOS los despachos? Esta acción no se puede deshacer.');">
-                    Borrar Todos los Despachos
-                </button>
-            </p>
-        </form>
-
-        <div id="sync-progress" style="display: none;">
-            <div class="progress-bar">
-                <div class="progress-bar-fill"></div>
+        <div id="delete-section">
+            <p><strong>⚠️ Atención:</strong> Este proceso eliminará TODOS los despachos de WordPress. Esta acción no se puede deshacer.</p>
+            
+            <p><strong>🔧 Proceso optimizado:</strong></p>
+            <ul style="list-style: disc; margin-left: 20px;">
+                <li>✅ Procesamiento por lotes de 50 despachos</li>
+                <li>✅ Sin timeout - cada lote se procesa independientemente</li>
+                <li>✅ Progreso en tiempo real</li>
+                <li>✅ Manejo de errores mejorado</li>
+                <li>✅ Limpieza de metadatos optimizada</li>
+            </ul>
+            
+            <button id="btn-delete-all" class="button button-danger" onclick="startOptimizedDelete()">
+                🗑️ Iniciar Borrado Masivo Optimizado
+            </button>
+            
+            <div id="delete-progress" style="display: none; margin-top: 20px;">
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span id="progress-text">Iniciando...</span>
+                        <span id="progress-percentage">0%</span>
+                    </div>
+                </div>
+                
+                <div id="delete-log" style="background: #f9f9f9; border: 1px solid #ddd; padding: 10px; height: 200px; overflow-y: auto; margin: 10px 0; font-family: monospace; font-size: 12px;">
+                    Preparando borrado masivo...
+                </div>
+                
+                <div id="delete-summary" style="display: none;">
+                    <h3>📊 Resumen Final</h3>
+                    <div id="summary-content"></div>
+                </div>
             </div>
-            <p class="progress-text">Procesando... <span class="progress-percentage">0%</span></p>
         </div>
 
         <style>
-            .progress-bar {
-                width: 100%;
-                height: 20px;
-                background-color: #f0f0f0;
-                border-radius: 10px;
-                overflow: hidden;
+            .progress-container {
+                background: white;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                padding: 15px;
                 margin: 10px 0;
             }
-            .progress-bar-fill {
-                height: 100%;
-                background-color: #2271b1;
-                width: 0%;
-                transition: width 0.3s ease-in-out;
+            .progress-bar {
+                width: 100%;
+                height: 25px;
+                background-color: #f0f0f0;
+                border-radius: 12px;
+                overflow: hidden;
+                margin: 10px 0;
+                box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
             }
-            .progress-text {
-                text-align: center;
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #0073aa 0%, #005177 100%);
+                transition: width 0.3s ease-in-out;
+                border-radius: 12px;
+            }
+            .progress-stats {
+                display: flex;
+                justify-content: space-between;
+                font-weight: bold;
                 margin: 5px 0;
             }
             .button-danger {
                 background-color: #dc3545;
                 border-color: #dc3545;
                 color: white;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
             }
             .button-danger:hover {
                 background-color: #c82333;
                 border-color: #bd2130;
                 color: white;
             }
+            .button-danger:disabled {
+                background-color: #6c757d;
+                border-color: #6c757d;
+                cursor: not-allowed;
+            }
         </style>
 
         <script>
-        jQuery(document).ready(function($) {
-            $('form').on('submit', function() {
-                if ($(this).find('[name="sync_from_algolia"]').length || $(this).find('[name="delete_all_posts"]').length) {
-                    $('#sync-progress').show();
-                    $('.progress-bar-fill').css('width', '0%');
-                    $('.progress-percentage').text('0%');
+        let deleteInProgress = false;
+        let totalToDelete = 0;
+        let deletedCount = 0;
+        let errorCount = 0;
+        let currentOffset = 0;
+
+        function startOptimizedDelete() {
+            if (deleteInProgress) return;
+            
+            if (!confirm('¿Estás seguro de que deseas borrar TODOS los despachos? Esta acción no se puede deshacer.')) {
+                return;
+            }
+            
+            deleteInProgress = true;
+            deletedCount = 0;
+            errorCount = 0;
+            currentOffset = 0;
+            
+            // UI updates
+            document.getElementById('btn-delete-all').disabled = true;
+            document.getElementById('btn-delete-all').textContent = '🔄 Borrando...';
+            document.getElementById('delete-progress').style.display = 'block';
+            
+            logMessage('🚀 Iniciando borrado masivo optimizado...');
+            
+            // Get total count first
+            jQuery.post(ajaxurl, {
+                action: 'lexhoy_get_delete_count',
+                nonce: '<?php echo wp_create_nonce('lexhoy_delete_batch'); ?>'
+            }, function(response) {
+                if (response.success) {
+                    totalToDelete = response.data.total;
+                    logMessage(`📊 Total de despachos a eliminar: ${totalToDelete.toLocaleString()}`);
                     
-                    // Simular progreso
-                    var progress = 0;
-                    var interval = setInterval(function() {
-                        progress += 5;
-                        if (progress > 90) {
-                            clearInterval(interval);
-                        }
-                        $('.progress-bar-fill').css('width', progress + '%');
-                        $('.progress-percentage').text(progress + '%');
-                    }, 1000);
+                    if (totalToDelete === 0) {
+                        logMessage('✅ No hay despachos para eliminar.');
+                        finishDelete();
+                        return;
+                    }
+                    
+                    // Start batch processing
+                    processBatch();
+                } else {
+                    logMessage('❌ Error al obtener conteo: ' + response.data);
+                    finishDelete();
                 }
             });
-        });
+        }
+
+                 function processBatch() {
+             const batchNum = Math.floor(currentOffset / 200) + 1;
+             const totalBatches = Math.ceil(totalToDelete / 200);
+             
+             logMessage(`🚀 Procesando SUPER-lote ${batchNum} de ${totalBatches} (200 despachos por lote)...`);
+            
+            jQuery.post(ajaxurl, {
+                action: 'lexhoy_delete_batch',
+                nonce: '<?php echo wp_create_nonce('lexhoy_delete_batch'); ?>',
+                offset: currentOffset
+            }, function(response) {
+                if (response.success) {
+                    const data = response.data;
+                    deletedCount += data.deleted;
+                    errorCount += data.errors;
+                    
+                    logMessage(`   ✅ Eliminados: ${data.deleted}, ❌ Errores: ${data.errors}`);
+                    
+                    if (data.error_details.length > 0) {
+                        data.error_details.forEach(error => {
+                            logMessage(`      ⚠️ ${error}`);
+                        });
+                    }
+                    
+                    // Update progress
+                    const processed = deletedCount + errorCount;
+                    const percentage = Math.round((processed / totalToDelete) * 100);
+                    
+                    document.querySelector('.progress-fill').style.width = percentage + '%';
+                    document.getElementById('progress-text').textContent = 
+                        `Eliminados: ${deletedCount.toLocaleString()} | Errores: ${errorCount} | Total: ${processed.toLocaleString()}/${totalToDelete.toLocaleString()}`;
+                    document.getElementById('progress-percentage').textContent = percentage + '%';
+                    
+                                         if (data.has_more) {
+                         currentOffset = data.next_offset;
+                         // Continue with next batch after smaller delay
+                         setTimeout(processBatch, 100);
+                     } else {
+                        // Finished!
+                        logMessage('✅ ¡Borrado masivo completado!');
+                        showSummary();
+                        finishDelete();
+                    }
+                } else {
+                    logMessage(`❌ Error en lote ${batchNum}: ${response.data}`);
+                    // Continue with next batch despite error
+                    currentOffset += 50;
+                    if (currentOffset < totalToDelete) {
+                        setTimeout(processBatch, 1000);
+                    } else {
+                        finishDelete();
+                    }
+                }
+            });
+        }
+
+        function logMessage(message) {
+            const log = document.getElementById('delete-log');
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function showSummary() {
+            const summary = document.getElementById('delete-summary');
+            const content = document.getElementById('summary-content');
+            
+            const successRate = totalToDelete > 0 ? Math.round((deletedCount / totalToDelete) * 100) : 0;
+            
+            content.innerHTML = `
+                <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 15px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div>
+                            <strong>📊 Total procesados:</strong><br>
+                            <span style="font-size: 18px; color: #0073aa;">${totalToDelete.toLocaleString()}</span>
+                        </div>
+                        <div>
+                            <strong>✅ Eliminados exitosamente:</strong><br>
+                            <span style="font-size: 18px; color: #46b450;">${deletedCount.toLocaleString()}</span>
+                        </div>
+                        <div>
+                            <strong>❌ Errores:</strong><br>
+                            <span style="font-size: 18px; color: #dc3545;">${errorCount.toLocaleString()}</span>
+                        </div>
+                        <div>
+                            <strong>📈 Tasa de éxito:</strong><br>
+                            <span style="font-size: 18px; color: ${successRate >= 95 ? '#46b450' : successRate >= 80 ? '#ffb900' : '#dc3545'};">${successRate}%</span>
+                        </div>
+                    </div>
+                    ${errorCount === 0 ? 
+                        '<p style="color: #46b450; font-weight: bold; margin-top: 15px;">🎉 ¡Borrado completado sin errores! WordPress ahora tiene 0 despachos.</p>' :
+                        '<p style="color: #856404; margin-top: 15px;">⚠️ Algunos despachos no pudieron ser eliminados. Revisa el log para más detalles.</p>'
+                    }
+                </div>
+            `;
+            
+            summary.style.display = 'block';
+        }
+
+        function finishDelete() {
+            deleteInProgress = false;
+            document.getElementById('btn-delete-all').disabled = false;
+            document.getElementById('btn-delete-all').textContent = '🗑️ Iniciar Borrado Masivo Optimizado';
+            
+            logMessage('🏁 Proceso de borrado finalizado.');
+        }
         </script>
     </div>
     <?php

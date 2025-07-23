@@ -205,8 +205,24 @@ class LexhoyAreasCPT {
         foreach ($result['hits'] as $index => $hit) {
             error_log("SYNC AREAS: Procesando registro {$index} - ID: " . ($hit['objectID'] ?? 'N/A'));
             
-            if (isset($hit['areas_practica'])) {
-                error_log("SYNC AREAS: Registro {$index} tiene areas_practica: " . print_r($hit['areas_practica'], true));
+            // NUEVA ESTRUCTURA: Extraer áreas de las sedes
+            if (isset($hit['sedes']) && is_array($hit['sedes'])) {
+                error_log("SYNC AREAS: Registro {$index} tiene estructura nueva con sedes");
+                foreach ($hit['sedes'] as $sede_index => $sede) {
+                    if (isset($sede['areas_practica']) && is_array($sede['areas_practica'])) {
+                        $records_with_areas++;
+                        foreach ($sede['areas_practica'] as $area) {
+                            if (!empty($area)) {
+                                $areas[$area] = true;
+                                error_log("SYNC AREAS: Área encontrada en sede {$sede_index}: {$area}");
+                            }
+                        }
+                    }
+                }
+            }
+            // COMPATIBILIDAD: Estructura antigua
+            elseif (isset($hit['areas_practica'])) {
+                error_log("SYNC AREAS: Registro {$index} tiene areas_practica (estructura antigua): " . print_r($hit['areas_practica'], true));
                 
                 if (is_array($hit['areas_practica'])) {
                     $records_with_areas++;

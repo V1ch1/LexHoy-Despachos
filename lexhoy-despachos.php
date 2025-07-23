@@ -56,6 +56,8 @@ function lexhoy_despachos_init() {
 }
 add_action('plugins_loaded', 'lexhoy_despachos_init');
 
+// MENÚ DE DEBUG REMOVIDO PARA PRODUCCIÓN
+
 // Activar el plugin
 function lexhoy_despachos_activate() {
     // Verificar que las clases necesarias existen

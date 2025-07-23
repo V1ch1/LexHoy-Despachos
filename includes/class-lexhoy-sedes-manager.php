@@ -1,7 +1,6 @@
 <?php
 /**
  * Gestor de Sedes para Despachos
- * Permite a cada despacho tener múltiples sedes con información específica
  */
 
 if (!defined('ABSPATH')) {
@@ -10,22 +9,28 @@ if (!defined('ABSPATH')) {
 
 class LexhoySedesManager {
     
+    private $algolia_client;
+    
     public function __construct() {
-        // Solo inicializar si WordPress está disponible
-        if (function_exists('add_action')) {
-            // Agregar meta box para gestión de sedes
-            add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
-            add_action('save_post', array($this, 'save_sedes_data'));
+        add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
+        add_action('save_post', array($this, 'save_sedes'));
+        add_action('wp_ajax_add_sede', array($this, 'ajax_add_sede'));
+        add_action('wp_ajax_remove_sede', array($this, 'ajax_remove_sede'));
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_scripts'));
+    }
+    
+    /**
+     * Cargar scripts necesarios
+     */
+    public function enqueue_scripts($hook) {
+        global $post;
+        
+        if ($hook == 'post.php' && $post->post_type == 'despacho') {
+            wp_enqueue_script('jquery');
             
-            // AJAX handlers para gestión dinámica de sedes
-            add_action('wp_ajax_lexhoy_add_sede', array($this, 'ajax_add_sede'));
-            add_action('wp_ajax_lexhoy_remove_sede', array($this, 'ajax_remove_sede'));
-            add_action('wp_ajax_lexhoy_update_sede', array($this, 'ajax_update_sede'));
-            add_action('wp_ajax_upload_sede_photo', array($this, 'ajax_upload_sede_photo'));
-            add_action('wp_ajax_lexhoy_cargar_sedes_json', array($this, 'ajax_cargar_sedes_json'));
-            
-            // Enqueue scripts y styles para admin
-            add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
+            // Cargar media uploader
+            wp_enqueue_media();
+            wp_enqueue_script('wp-media');
         }
     }
     
@@ -53,129 +58,21 @@ class LexhoySedesManager {
             $sedes_wp = array();
         }
         
-        // OPTIMIZACIÓN: No cargar datos del JSON sincrónicamente para evitar pantalla en blanco
-        // Los datos se cargarán vía AJAX después de renderizar la página
+        // Cargar sedes desde Algolia (con manejo de errores)
         $sedes_json = array();
+        try {
+            $sedes_json = $this->get_sedes_from_algolia($post->ID);
+        } catch (Exception $e) {
+            // Si hay error, continuar sin datos de Algolia
+            error_log('Error cargando sedes desde Algolia: ' . $e->getMessage());
+            $sedes_json = array();
+        }
         
         // Nonce para seguridad
         wp_nonce_field('despacho_sedes_meta_box', 'despacho_sedes_nonce');
         ?>
         
         <div id="sedes-container">
-            
-            <?php if (!empty($sedes_json)): ?>
-                <div class="sedes-json-section">
-                    <h3 style="color: #2563eb; margin-bottom: 20px;">
-                        🏢 Sedes Existentes del Despacho
-                        <small style="color: #666; font-weight: normal;">
-                            (Datos del JSON - Solo lectura)
-                        </small>
-                    </h3>
-                    
-                    <div class="sedes-json-grid">
-                        <?php foreach ($sedes_json as $index => $sede_json): ?>
-                            <div class="sede-json-card">
-                                <div class="sede-json-header">
-                                    <h4><?php echo esc_html($sede_json['nombre'] ?? 'Sede sin nombre'); ?></h4>
-                                    <div class="sede-json-badges">
-                                        <?php if (!empty($sede_json['es_principal'])): ?>
-                                            <span class="badge badge-principal">⭐ Principal</span>
-                                        <?php endif; ?>
-                                        <?php if (!empty($sede_json['activa'])): ?>
-                                            <span class="badge badge-activa">✅ Activa</span>
-                                        <?php endif; ?>
-                                        <?php if (!empty($sede_json['is_verified'])): ?>
-                                            <span class="badge badge-verificada">🔒 Verificada</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                                
-                                <div class="sede-json-content">
-                                    <?php if (!empty($sede_json['persona_contacto'])): ?>
-                                        <p><strong>👤 Contacto:</strong> <?php echo esc_html($sede_json['persona_contacto']); ?></p>
-                                    <?php endif; ?>
-                                    
-                                    <?php if (!empty($sede_json['telefono'])): ?>
-                                        <p><strong>📞 Teléfono:</strong> <?php echo esc_html($sede_json['telefono']); ?></p>
-                                    <?php endif; ?>
-                                    
-                                    <?php if (!empty($sede_json['email_contacto'])): ?>
-                                        <p><strong>📧 Email:</strong> <?php echo esc_html($sede_json['email_contacto']); ?></p>
-                                    <?php endif; ?>
-                                    
-                                    <?php if (!empty($sede_json['localidad']) || !empty($sede_json['provincia'])): ?>
-                                        <p><strong>📍 Ubicación:</strong> 
-                                            <?php echo esc_html(trim($sede_json['localidad'] . ', ' . $sede_json['provincia'], ', ')); ?>
-                                        </p>
-                                    <?php endif; ?>
-                                    
-                                    <?php if (!empty($sede_json['areas_practica']) && is_array($sede_json['areas_practica'])): ?>
-                                        <p><strong>⚖️ Áreas:</strong> 
-                                            <?php echo esc_html(implode(', ', $sede_json['areas_practica'])); ?>
-                                        </p>
-                                    <?php endif; ?>
-                                </div>
-                                
-                                <div class="sede-json-actions">
-                                    <button type="button" class="button button-secondary import-sede-btn" 
-                                            data-sede-index="<?php echo $index; ?>">
-                                        📥 Importar a WordPress
-                                    </button>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                    
-                    <h5 style="color: #1976d2; margin: 20px 0 15px;">📱 Redes Sociales</h5>
-                    
-                    <div class="redes-sociales" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                        <div class="sede-field">
-                            <label for="sede_facebook_<?php echo $index; ?>" style="font-size: 12px;">📘 Facebook</label>
-                            <input type="url" 
-                                   id="sede_facebook_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][facebook]" 
-                                   value="<?php echo esc_attr($sede['facebook']); ?>"
-                                   placeholder="https://facebook.com/..."
-                                   style="font-size: 12px;">
-                        </div>
-                        
-                        <div class="sede-field">
-                            <label for="sede_twitter_<?php echo $index; ?>" style="font-size: 12px;">🐦 Twitter</label>
-                            <input type="url" 
-                                   id="sede_twitter_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][twitter]" 
-                                   value="<?php echo esc_attr($sede['twitter']); ?>"
-                                   placeholder="https://twitter.com/..."
-                                   style="font-size: 12px;">
-                        </div>
-                        
-                        <div class="sede-field">
-                            <label for="sede_linkedin_<?php echo $index; ?>" style="font-size: 12px;">💼 LinkedIn</label>
-                            <input type="url" 
-                                   id="sede_linkedin_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][linkedin]" 
-                                   value="<?php echo esc_attr($sede['linkedin']); ?>"
-                                   placeholder="https://linkedin.com/..."
-                                   style="font-size: 12px;">
-                        </div>
-                        
-                        <div class="sede-field">
-                            <label for="sede_instagram_<?php echo $index; ?>" style="font-size: 12px;">📷 Instagram</label>
-                            <input type="url" 
-                                   id="sede_instagram_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][instagram]" 
-                                   value="<?php echo esc_attr($sede['instagram']); ?>"
-                                   placeholder="https://instagram.com/..."
-                                   style="font-size: 12px;">
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="sedes-divider">
-                    <hr style="margin: 30px 0; border: 1px solid #ddd;">
-                </div>
-            <?php endif; ?>
-            
             <div class="sedes-wp-section">
                 <div class="sedes-header">
                     <h3 style="color: #2563eb; margin-bottom: 15px;">
@@ -185,748 +82,219 @@ class LexhoySedesManager {
                     <div id="sedes-list">
                         <?php if (!empty($sedes_wp)): ?>
                             <?php foreach ($sedes_wp as $index => $sede): ?>
-                                <?php $this->render_sede_form($index, $sede, false); // No contraer sedes existentes ?>
+                                <?php $this->render_sede_form($index, $sede, false); ?>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <?php 
-                            // Si no hay sedes en WordPress, crear la primera sede con datos existentes del despacho
+                            // Si no hay sedes en WordPress, crear la primera sede con datos del JSON
                             $sede_inicial = array('es_principal' => true, 'activa' => true);
                             
-                            // Intentar cargar datos desde metadatos tradicionales del despacho
-                            $direccion_completa = get_post_meta($post->ID, '_despacho_direccion', true);
-                            
-                            // Intentar separar calle y número de la dirección completa
-                            $calle = '';
-                            $numero = '';
-                            if (!empty($direccion_completa)) {
-                                // Buscar patrones como "Calle Principal 123" o "Av. España, 45"
-                                if (preg_match('/^(.+?)[\s,]+(\d+[a-zA-Z]*)/', $direccion_completa, $matches)) {
-                                    $calle = trim($matches[1]);
-                                    $numero = trim($matches[2]);
-                                } else {
-                                    // Si no se puede separar, poner todo en calle
-                                    $calle = $direccion_completa;
-                                }
+                            // Priorizar datos del JSON si existen
+                            if (!empty($sedes_json)) {
+                                // Usar la primera sede del JSON (generalmente la principal)
+                                $sede_json = $sedes_json[0];
+                                
+                                // Mapear datos del JSON a estructura de formulario
+                                $sede_inicial = array_merge($sede_inicial, array(
+                                    'nombre' => $sede_json['nombre'] ?? '',
+                                    'descripcion' => $sede_json['descripcion'] ?? '',
+                                    'web' => $sede_json['web'] ?? '',
+                                    'ano_fundacion' => $sede_json['ano_fundacion'] ?? '',
+                                    'tamano_despacho' => $sede_json['tamano_despacho'] ?? '',
+                                    'persona_contacto' => $sede_json['persona_contacto'] ?? '',
+                                    'email_contacto' => $sede_json['email_contacto'] ?? '',
+                                    'telefono' => $sede_json['telefono'] ?? '',
+                                    'numero_colegiado' => $sede_json['numero_colegiado'] ?? '',
+                                    'colegio' => $sede_json['colegio'] ?? '',
+                                    'experiencia' => $sede_json['experiencia'] ?? '',
+                                    'calle' => $sede_json['calle'] ?? '',
+                                    'numero' => $sede_json['numero'] ?? '',
+                                    'piso' => $sede_json['piso'] ?? '',
+                                    'localidad' => $sede_json['localidad'] ?? '',
+                                    'provincia' => $sede_json['provincia'] ?? '',
+                                    'codigo_postal' => $sede_json['codigo_postal'] ?? '',
+                                    'pais' => $sede_json['pais'] ?? 'España',
+                                    'especialidades' => $sede_json['especialidades'] ?? '',
+                                    'areas_practica' => $sede_json['areas_practica'] ?? array(),
+                                    'servicios_especificos' => $sede_json['servicios_especificos'] ?? '',
+                                    'estado_verificacion' => $sede_json['estado_verificacion'] ?? 'pendiente',
+                                    'estado_registro' => $sede_json['estado_registro'] ?? 'activo',
+                                    'foto_perfil' => $sede_json['foto_perfil'] ?? '',
+                                    'is_verified' => $sede_json['is_verified'] ?? false,
+                                    'observaciones' => $sede_json['observaciones'] ?? '',
+                                    'horarios' => $sede_json['horarios'] ?? array(),
+                                    'redes_sociales' => $sede_json['redes_sociales'] ?? array(),
+                                    'es_principal' => $sede_json['es_principal'] ?? true,
+                                    'activa' => $sede_json['activa'] ?? true
+                                ));
                             }
                             
-                            // Obtener áreas de práctica como taxonomía
-                            $areas_practica_terms = wp_get_post_terms($post->ID, 'area_practica', array('fields' => 'names'));
-                            $areas_practica = is_array($areas_practica_terms) ? $areas_practica_terms : array();
-                            
-                            // Obtener horarios y redes sociales como arrays
-                            $horario = get_post_meta($post->ID, '_despacho_horario', true);
-                            $redes_sociales = get_post_meta($post->ID, '_despacho_redes_sociales', true);
-                            
-                            // Asegurar que son arrays
-                            if (!is_array($horario)) $horario = array();
-                            if (!is_array($redes_sociales)) $redes_sociales = array();
-                            
-                            $campos_meta = array(
-                                'nombre' => get_post_meta($post->ID, '_despacho_nombre', true),
-                                'persona_contacto' => '', // Este campo no existe en metadatos tradicionales
-                                'email_contacto' => get_post_meta($post->ID, '_despacho_email', true),
-                                'telefono' => get_post_meta($post->ID, '_despacho_telefono', true),
-                                'direccion' => $direccion_completa, // Dirección completa original
-                                'calle' => $calle, // Calle extraída
-                                'numero' => $numero, // Número extraído
-                                'localidad' => get_post_meta($post->ID, '_despacho_localidad', true),
-                                'provincia' => get_post_meta($post->ID, '_despacho_provincia', true),
-                                'codigo_postal' => get_post_meta($post->ID, '_despacho_codigo_postal', true),
-                                'web' => get_post_meta($post->ID, '_despacho_web', true),
-                                'descripcion' => get_post_meta($post->ID, '_despacho_descripcion', true),
-                                'numero_colegiado' => get_post_meta($post->ID, '_despacho_numero_colegiado', true),
-                                'colegio' => get_post_meta($post->ID, '_despacho_colegio', true),
-                                'experiencia' => get_post_meta($post->ID, '_despacho_experiencia', true),
-                                'especialidades' => get_post_meta($post->ID, '_despacho_especialidades', true),
-                                'areas_practica' => $areas_practica, // Áreas de práctica desde taxonomía
-                                'estado_verificacion' => get_post_meta($post->ID, '_despacho_estado_verificacion', true),
-                                'is_verified' => get_post_meta($post->ID, '_despacho_is_verified', true) === '1',
-                                'foto_perfil' => get_post_meta($post->ID, '_despacho_foto_perfil', true),
-                                
-                                // Campos adicionales que podrían existir
-                                'ano_fundacion' => get_post_meta($post->ID, '_despacho_año_fundacion', true),
-                                'tamano_despacho' => get_post_meta($post->ID, '_despacho_tamaño', true),
-                                'estado_registro' => get_post_meta($post->ID, '_despacho_estado_registro', true),
-                                
-                                // Horarios detallados
-                                'horario_lunes' => isset($horario['lunes']) ? $horario['lunes'] : '',
-                                'horario_martes' => isset($horario['martes']) ? $horario['martes'] : '',
-                                'horario_miercoles' => isset($horario['miercoles']) ? $horario['miercoles'] : '',
-                                'horario_jueves' => isset($horario['jueves']) ? $horario['jueves'] : '',
-                                'horario_viernes' => isset($horario['viernes']) ? $horario['viernes'] : '',
-                                'horario_sabado' => isset($horario['sabado']) ? $horario['sabado'] : '',
-                                'horario_domingo' => isset($horario['domingo']) ? $horario['domingo'] : '',
-                                
-                                // Redes sociales
-                                'facebook' => isset($redes_sociales['facebook']) ? $redes_sociales['facebook'] : '',
-                                'twitter' => isset($redes_sociales['twitter']) ? $redes_sociales['twitter'] : '',
-                                'linkedin' => isset($redes_sociales['linkedin']) ? $redes_sociales['linkedin'] : '',
-                                'instagram' => isset($redes_sociales['instagram']) ? $redes_sociales['instagram'] : ''
-                            );
-                            
-                            // Solo usar datos si realmente hay información
-                            $tiene_datos = false;
-                            foreach ($campos_meta as $campo => $valor) {
-                                if (!empty($valor) && $campo !== 'es_principal' && $campo !== 'activa') {
-                                    $tiene_datos = true;
-                                    break;
-                                }
-                            }
-                            
-                            if ($tiene_datos) {
-                                // Fusionar datos existentes con valores por defecto de sede
-                                $sede_inicial = array_merge($sede_inicial, $campos_meta);
-                                
-                                // Si no hay nombre específico, usar el título del post
-                                if (empty($sede_inicial['nombre'])) {
-                                    $sede_inicial['nombre'] = $post->post_title;
-                                }
-                            }
-                            
-                            $this->render_sede_form(0, $sede_inicial, false); // Expandida por defecto
+                            $this->render_sede_form(0, $sede_inicial, false);
                             ?>
                         <?php endif; ?>
                     </div>
                     
-                    <div style="margin-top: 20px; text-align: center;">
-                        <button type="button" id="add-sede-btn" class="button button-primary button-large">
-                            ➕ Añadir Nueva Sede Desde Cero
+                    <div style="margin-top: 15px;">
+                        <button type="button" id="add-sede-btn" class="button button-secondary">
+                            ➕ Añadir Nueva Sede
                         </button>
+                        
+                        <?php if (!empty($sedes_json) && count($sedes_json) > count($sedes_wp)): ?>
+                            <button type="button" id="load-algolia-sedes" class="button button-primary" style="margin-left: 10px;">
+                                🔄 Cargar Sedes Restantes desde Algolia (<?php echo count($sedes_json) - count($sedes_wp); ?>)
+                            </button>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- Template para nuevas sedes -->
-        <template id="sede-template">
-            <?php $this->render_sede_form('{{INDEX}}', array()); ?>
-        </template>
+        <?php if (!empty($sedes_json)): ?>
+            <div class="sedes-info-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #28a745; border-radius: 4px;">
+                <h4 style="color: #28a745; margin-bottom: 10px;">📊 Información desde Algolia</h4>
+                <p><strong>Total sedes en Algolia:</strong> <?php echo count($sedes_json); ?></p>
+                <details style="margin-top: 10px;">
+                    <summary style="cursor: pointer; color: #0073aa;">Ver detalles de sedes en Algolia</summary>
+                    <div style="margin-top: 10px;">
+                        <?php foreach ($sedes_json as $i => $sede): ?>
+                            <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; background: white;">
+                                <strong><?php echo esc_html($sede['nombre'] ?? 'Sede sin nombre'); ?></strong>
+                                <?php if (!empty($sede['localidad'])): ?>
+                                    - <?php echo esc_html($sede['localidad']); ?>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </details>
+            </div>
+        <?php endif; ?>
         
-        <style>
-            /* Estilos para sedes del JSON */
-            .sedes-json-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-                gap: 20px;
-                margin-bottom: 20px;
-            }
-            
-            .sede-json-card {
-                background: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 8px;
-                padding: 20px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            
-            .sede-json-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-start;
-                margin-bottom: 15px;
-                padding-bottom: 10px;
-                border-bottom: 1px solid #dee2e6;
-            }
-            
-            .sede-json-header h4 {
-                margin: 0;
-                color: #2563eb;
-                font-size: 16px;
-            }
-            
-            .sede-json-badges {
-                display: flex;
-                flex-direction: column;
-                gap: 5px;
-            }
-            
-            .badge {
-                padding: 3px 8px;
-                border-radius: 12px;
-                font-size: 11px;
-                font-weight: 600;
-                text-align: center;
-            }
-            
-            .badge-principal {
-                background: #fef3cd;
-                color: #856404;
-                border: 1px solid #ffeaa7;
-            }
-            
-            .badge-activa {
-                background: #d1ecf1;
-                color: #0c5460;
-                border: 1px solid #abdde5;
-            }
-            
-            .badge-verificada {
-                background: #d4edda;
-                color: #155724;
-                border: 1px solid #c3e6cb;
-            }
-            
-            .sede-json-content p {
-                margin: 8px 0;
-                font-size: 14px;
-                line-height: 1.4;
-            }
-            
-            .sede-json-actions {
-                margin-top: 15px;
-                text-align: center;
-            }
-            
-            /* Estilos para sedes de WordPress */
-            .sedes-header {
-                margin-bottom: 20px;
-            }
-            
-            .sede-item {
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                padding: 20px;
-                margin-bottom: 20px;
-                background: #ffffff;
-                position: relative;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            }
-            
-            .sede-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 20px;
-                padding-bottom: 15px;
-                border-bottom: 2px solid #e9ecef;
-            }
-            
-            .sede-title {
-                font-weight: bold;
-                color: #2563eb;
-                margin: 0;
-                font-size: 18px;
-            }
-            
-            .sede-actions {
-                display: flex;
-                gap: 10px;
-            }
-            
-            .sede-toggle {
-                background: #6c757d;
-                color: white;
-                border: none;
-                padding: 8px 12px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 12px;
-                transition: background 0.2s;
-            }
-            
-            .sede-toggle:hover {
-                background: #5a6268;
-            }
-            
-            .sede-remove {
-                background: #dc3545;
-                color: white;
-                border: none;
-                padding: 8px 12px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 12px;
-                transition: background 0.2s;
-            }
-            
-            .sede-remove:hover {
-                background: #c82333;
-            }
-            
-            .sede-content {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 20px;
-            }
-            
-            .sede-field {
-                margin-bottom: 15px;
-            }
-            
-            .sede-field label {
-                display: block;
-                font-weight: 600;
-                margin-bottom: 5px;
-                color: #495057;
-            }
-            
-            .sede-field input,
-            .sede-field textarea,
-            .sede-field select {
-                width: 100%;
-                padding: 8px;
-                border: 1px solid #ced4da;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-            
-            .sede-field textarea {
-                height: 80px;
-                resize: vertical;
-            }
-            
-            .sede-collapsed .sede-content {
-                display: none;
-            }
-            
-            .sede-es-principal {
-                background: #f8f9fa;
-                border-color: #ffc107;
-                box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2);
-            }
-            
-            /* Estilos para checkboxes de configuración */
-            .configuracion-sede {
-                background: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 8px;
-                padding: 20px;
-                margin: 15px 0;
-            }
-            
-            .configuracion-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 15px;
-            }
-            
-            .configuracion-item {
-                display: flex;
-                align-items: center;
-                padding: 12px;
-                background: white;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-            
-            .configuracion-item:hover {
-                border-color: #2563eb;
-                box-shadow: 0 2px 4px rgba(37, 99, 235, 0.1);
-            }
-            
-            .configuracion-item input[type="checkbox"] {
-                margin-right: 10px;
-                width: 18px;
-                height: 18px;
-                cursor: pointer;
-            }
-            
-            .configuracion-item .config-label {
-                font-weight: 600;
-                cursor: pointer;
-            }
-            
-            .config-principal { color: #ffc107; }
-            .config-activa { color: #28a745; }
-            .config-verificada { color: #17a2b8; }
-            
-            /* Estilos para áreas de práctica */
-            .areas-practica-container {
-                background: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 8px;
-                padding: 20px;
-                margin: 15px 0;
-            }
-            
-            .areas-practica-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 10px;
-                margin-top: 10px;
-            }
-            
-            .area-practica-item {
-                display: flex;
-                align-items: center;
-                padding: 8px 12px;
-                background: white;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-            
-            .area-practica-item:hover {
-                border-color: #2563eb;
-                background: #f1f5f9;
-            }
-            
-            .area-practica-item input[type="checkbox"] {
-                margin-right: 8px;
-                cursor: pointer;
-            }
-            
-            .area-practica-item label {
-                font-size: 13px;
-                cursor: pointer;
-                margin-bottom: 0;
-            }
-            
-            @media (max-width: 768px) {
-                .sede-content {
-                    grid-template-columns: 1fr;
-                }
-                
-                .sedes-json-grid {
-                    grid-template-columns: 1fr;
-                }
-                
-                .configuracion-grid {
-                    grid-template-columns: 1fr;
-                }
-                
-                .areas-practica-grid {
-                    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                }
-            }
-        </style>
-        
-        <script>
+        <script type="text/javascript">
         jQuery(document).ready(function($) {
-            let sedeIndex = Math.max(<?php echo count($sedes_wp); ?>, 1); // Asegurar que siempre hay al menos 1
+            var sedeIndex = <?php echo max(count($sedes_wp), 1); ?>;
             
-
-            
-            // Añadir nueva sede
-            $('#add-sede-btn').on('click', function() {
-                const template = $('#sede-template').html();
-                const newSedeHtml = template.replace(/{{INDEX}}/g, sedeIndex);
-                
-                // Remover mensaje de "no sedes" si existe
-                $('.no-sedes-message').remove();
-                
-                $('#sedes-list').append(newSedeHtml);
-                sedeIndex++;
-                
-                // Scroll a la nueva sede
-                const newSede = $('#sedes-list .sede-item:last');
-                newSede[0].scrollIntoView({ behavior: 'smooth' });
+            // Funcionalidad existente
+            $('#add-sede-btn').click(function() {
+                $.post(ajaxurl, {
+                    action: 'add_sede',
+                    sede_index: sedeIndex
+                }, function(response) {
+                    $('#sedes-list').append(response);
+                    sedeIndex++;
+                });
             });
             
-            // Importar sede desde JSON
-            $('.import-sede-btn').on('click', function() {
-                const sedeData = <?php echo json_encode($sedes_json); ?>;
-                const sedeIndex_import = $(this).data('sede-index');
-                const sede = sedeData[sedeIndex_import];
-                
-                if (sede) {
-                    // Crear nueva sede con datos del JSON
-                    const template = $('#sede-template').html();
-                    let newSedeHtml = template.replace(/{{INDEX}}/g, sedeIndex);
-                    
-                    // Remover mensaje de "no sedes" si existe
-                    $('.no-sedes-message').remove();
-                    
-                    $('#sedes-list').append(newSedeHtml);
-                    
-                    // Rellenar campos con datos del JSON
-                    const newSedeElement = $('#sedes-list .sede-item:last');
-                    
-                    Object.keys(sede).forEach(function(key) {
-                        const input = newSedeElement.find(`[name*="[${key}]"]`);
-                        
-                        if (input.length) {
-                            if (input.attr('type') === 'checkbox') {
-                                input.prop('checked', !!sede[key]);
-                            } else if (Array.isArray(sede[key])) {
-                                // Para areas_practica
-                                sede[key].forEach(function(area) {
-                                    newSedeElement.find(`input[value="${area}"]`).prop('checked', true);
-                                });
-                            } else {
-                                input.val(sede[key]);
-                            }
-                        }
-                    });
-                    
-                    // Actualizar título
-                    const nombreSede = sede.nombre || 'Sede importada';
-                    newSedeElement.find('.sede-title').text('🏢 ' + nombreSede);
-                    
-                    sedeIndex++;
-                    
-                    // Scroll a la nueva sede
-                    newSedeElement[0].scrollIntoView({ behavior: 'smooth' });
-                    
-                    // Deshabilitar botón de importar
-                    $(this).prop('disabled', true).text('✅ Importada');
+            $(document).on('click', '.remove-sede', function() {
+                if (confirm('¿Estás seguro de que quieres eliminar esta sede?')) {
+                    $(this).closest('.sede-form').remove();
                 }
             });
             
-            // Remover sede
-            $(document).on('click', '.sede-remove', function() {
-                const sedeItem = $(this).closest('.sede-item');
-                const sedeIndex_current = sedeItem.find('input[name*="[nombre]"]').attr('name').match(/\[(\d+)\]/)[1];
+            $(document).on('click', '.toggle-sede', function() {
+                $(this).closest('.sede-form').find('.sede-content').slideToggle();
+            });
+            
+            // Cargar sedes restantes desde Algolia
+            $('#load-algolia-sedes').click(function() {
+                var sedesJson = <?php echo json_encode($sedes_json); ?>;
+                var currentCount = <?php echo count($sedes_wp); ?>;
                 
-                // Evitar eliminar la primera sede (índice 0)
-                if (sedeIndex_current == 0) {
-                    alert('❌ No se puede eliminar la sede principal obligatoria.');
+                for (var i = currentCount; i < sedesJson.length; i++) {
+                    var sede = sedesJson[i];
+                    $.post(ajaxurl, {
+                        action: 'add_sede',
+                        sede_index: sedeIndex,
+                        sede_data: sede
+                    }, function(response) {
+                        $('#sedes-list').append(response);
+                        sedeIndex++;
+                    });
+                }
+                
+                $(this).hide();
+            });
+            
+            // NUEVO: Media Uploader para fotos
+            var mediaUploader;
+            
+            $(document).on('click', '.upload-foto-btn', function(e) {
+                e.preventDefault();
+                
+                var button = $(this);
+                var targetInput = button.data('target');
+                var previewContainer = button.data('preview');
+                
+                // Si ya existe el uploader, abrirlo
+                if (mediaUploader) {
+                    mediaUploader.open();
                     return;
                 }
                 
-                if (confirm('¿Estás seguro de que quieres eliminar esta sede?')) {
-                    sedeItem.fadeOut(300, function() {
-                        $(this).remove();
-                        
-                        // Siempre debe haber al menos una sede, así que no mostrar mensaje de "no hay sedes"
-                    });
-                }
-            });
-            
-            // Toggle expandir/contraer sede
-            $(document).on('click', '.sede-toggle', function() {
-                const sedeItem = $(this).closest('.sede-item');
-                sedeItem.toggleClass('sede-collapsed');
+                // Crear el media uploader
+                mediaUploader = wp.media({
+                    title: 'Seleccionar Foto de Perfil',
+                    button: {
+                        text: 'Usar esta foto'
+                    },
+                    library: {
+                        type: 'image'
+                    },
+                    multiple: false
+                });
                 
-                const isCollapsed = sedeItem.hasClass('sede-collapsed');
-                $(this).text(isCollapsed ? '👁️ Mostrar' : '➖ Contraer');
-            });
-            
-            // Actualizar título de sede cuando cambia el nombre
-            $(document).on('input', '.sede-nombre', function() {
-                const nombre = $(this).val() || 'Sede sin nombre';
-                $(this).closest('.sede-item').find('.sede-title').text('🏢 ' + nombre);
-            });
-            
-            // Manejar checkbox de sede principal
-            $(document).on('change', '.sede-es-principal', function() {
-                const sedeItem = $(this).closest('.sede-item');
-                
-                if ($(this).is(':checked')) {
-                    // Desmarcar todas las otras sedes como principales
-                    $('.sede-es-principal').not(this).prop('checked', false);
-                    $('.sede-item').removeClass('sede-es-principal');
+                // Cuando se selecciona una imagen
+                mediaUploader.on('select', function() {
+                    var attachment = mediaUploader.state().get('selection').first().toJSON();
                     
-                    // Marcar esta sede como principal
-                    sedeItem.addClass('sede-es-principal');
-                } else {
-                    sedeItem.removeClass('sede-es-principal');
+                    // Llenar el campo de URL
+                    $('#' + targetInput).val(attachment.url);
+                    
+                    // Mostrar vista previa
+                    var previewHtml = '<img src="' + attachment.url + '" style="max-width: 150px; max-height: 150px; border: 1px solid #ddd; border-radius: 4px;">' +
+                                     '<button type="button" class="button button-link-delete remove-foto-btn" data-target="' + targetInput + '" data-preview="' + previewContainer + '" style="display: block; margin-top: 5px; color: #dc3232;">🗑️ Eliminar foto</button>';
+                    
+                    $('#' + previewContainer).html(previewHtml).show();
+                });
+                
+                // Abrir el uploader
+                mediaUploader.open();
+            });
+            
+            // Eliminar foto
+            $(document).on('click', '.remove-foto-btn', function(e) {
+                e.preventDefault();
+                
+                var button = $(this);
+                var targetInput = button.data('target');
+                var previewContainer = button.data('preview');
+                
+                if (confirm('¿Estás seguro de que quieres eliminar esta foto?')) {
+                    $('#' + targetInput).val('');
+                    $('#' + previewContainer).html('').hide();
                 }
             });
         });
-        
-        // Función global para importar sede desde JSON
-        window.importarSedeDesdeJSON = function(sede, sedeIndex_import, button) {
-            // Crear nueva sede con datos del JSON
-            const template = $('#sede-template').html();
-            let newSedeHtml = template.replace(/{{INDEX}}/g, sedeIndex);
-            
-            // Remover mensaje de "no sedes" si existe
-            $('.no-sedes-message').remove();
-            
-            $('#sedes-list').append(newSedeHtml);
-            
-            // Rellenar campos con datos del JSON
-            const newSedeElement = $('#sedes-list .sede-item:last');
-            
-            Object.keys(sede).forEach(function(key) {
-                const input = newSedeElement.find(`[name*="[${key}]"]`);
-                
-                if (input.length) {
-                    if (input.attr('type') === 'checkbox') {
-                        input.prop('checked', !!sede[key]);
-                    } else if (Array.isArray(sede[key])) {
-                        // Para areas_practica
-                        sede[key].forEach(function(area) {
-                            newSedeElement.find(`input[value="${area}"]`).prop('checked', true);
-                        });
-                    } else {
-                        input.val(sede[key]);
-                    }
-                }
-            });
-            
-            // Actualizar título
-            const nombreSede = sede.nombre || 'Sede importada';
-            newSedeElement.find('.sede-title').text('🏢 ' + nombreSede);
-            
-            sedeIndex++;
-            
-            // Scroll a la nueva sede
-            newSedeElement[0].scrollIntoView({ behavior: 'smooth' });
-            
-            // Deshabilitar botón de importar
-            button.prop('disabled', true).text('✅ Importada');
-        };
-        
-        // Funciones globales para manejo de fotos de perfil
-        window.updatePhotoPreview = function(index, url) {
-            const preview = document.getElementById('preview_foto_' + index);
-            const defaultLogo = 'https://lexhoy.com/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp';
-            
-            if (url && url.trim() !== '') {
-                // Verificar si la URL de imagen es válida
-                const img = new Image();
-                img.onload = function() {
-                    preview.src = url;
-                };
-                img.onerror = function() {
-                    preview.src = defaultLogo;
-                    alert('No se pudo cargar la imagen. Se usará el logo por defecto.');
-                };
-                img.src = url;
-            } else {
-                preview.src = defaultLogo;
-            }
-        };
-        
-        window.useDefaultLogo = function(index) {
-            const input = document.getElementById('sede_foto_perfil_' + index);
-            const urlInput = document.getElementById('sede_foto_url_' + index);
-            const fileInput = document.getElementById('sede_foto_upload_' + index);
-            const preview = document.getElementById('preview_foto_' + index);
-            const status = document.getElementById('upload_status_' + index);
-            const defaultLogo = 'https://lexhoy.com/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp';
-            
-            input.value = defaultLogo;
-            if (urlInput) urlInput.value = '';
-            if (fileInput) fileInput.value = '';
-            if (status) status.textContent = '';
-            preview.src = defaultLogo;
-        };
-        
-        window.clearPhoto = function(index) {
-            const input = document.getElementById('sede_foto_perfil_' + index);
-            const urlInput = document.getElementById('sede_foto_url_' + index);
-            const fileInput = document.getElementById('sede_foto_upload_' + index);
-            const preview = document.getElementById('preview_foto_' + index);
-            const status = document.getElementById('upload_status_' + index);
-            const defaultLogo = 'https://lexhoy.com/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp';
-            
-            input.value = '';
-            if (urlInput) urlInput.value = '';
-            if (fileInput) fileInput.value = '';
-            if (status) status.textContent = '';
-            preview.src = defaultLogo;
-        };
-        
-        // Función para subir archivo de imagen
-        window.uploadPhotoFile = function(index, fileInput) {
-            const file = fileInput.files[0];
-            const status = document.getElementById('upload_status_' + index);
-            const preview = document.getElementById('preview_foto_' + index);
-            const hiddenInput = document.getElementById('sede_foto_perfil_' + index);
-            const urlInput = document.getElementById('sede_foto_url_' + index);
-            
-            if (!file) return;
-            
-            // Validar tamaño (2MB máximo)
-            const maxSize = 2 * 1024 * 1024; // 2MB en bytes
-            if (file.size > maxSize) {
-                alert('❌ El archivo es demasiado grande. Máximo 2MB.');
-                fileInput.value = '';
-                return;
-            }
-            
-            // Validar tipo de archivo
-            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-            if (!allowedTypes.includes(file.type)) {
-                alert('❌ Formato no válido. Solo se permiten JPG, PNG y WEBP.');
-                fileInput.value = '';
-                return;
-            }
-            
-            status.textContent = '⏳ Subiendo...';
-            status.style.color = '#ffc107';
-            
-            // Crear FormData para envío AJAX
-            const formData = new FormData();
-            formData.append('action', 'upload_sede_photo');
-            formData.append('file', file);
-            formData.append('nonce', '<?php echo wp_create_nonce("upload_sede_photo"); ?>');
-            
-            // Enviar archivo via AJAX
-            fetch(ajaxurl, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Actualizar campos con la URL de la imagen subida
-                    hiddenInput.value = data.data.url;
-                    preview.src = data.data.url;
-                    if (urlInput) urlInput.value = '';
-                    
-                    status.textContent = '✅ Subida exitosa';
-                    status.style.color = '#28a745';
-                    
-                    setTimeout(() => {
-                        status.textContent = '';
-                    }, 3000);
-                } else {
-                    throw new Error(data.data || 'Error al subir la imagen');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                status.textContent = '❌ Error al subir';
-                status.style.color = '#dc3545';
-                fileInput.value = '';
-                
-                setTimeout(() => {
-                    status.textContent = '';
-                }, 5000);
-            });
-        };
-        
-        // Actualizar función updatePhotoPreview para manejar URL manual
-        window.updatePhotoPreview = function(index, url) {
-            const preview = document.getElementById('preview_foto_' + index);
-            const hiddenInput = document.getElementById('sede_foto_perfil_' + index);
-            const fileInput = document.getElementById('sede_foto_upload_' + index);
-            const defaultLogo = 'https://lexhoy.com/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp';
-            
-            if (url && url.trim() !== '') {
-                // Limpiar el input de archivo si se usa URL manual
-                if (fileInput) fileInput.value = '';
-                
-                // Verificar si la URL de imagen es válida
-                const img = new Image();
-                img.onload = function() {
-                    preview.src = url;
-                    hiddenInput.value = url;
-                };
-                img.onerror = function() {
-                    preview.src = defaultLogo;
-                    hiddenInput.value = '';
-                    alert('No se pudo cargar la imagen. Se usará el logo por defecto.');
-                };
-                img.src = url;
-            } else {
-                preview.src = defaultLogo;
-                hiddenInput.value = '';
-            }
-        };
         </script>
+        
         <?php
     }
     
     /**
      * Renderizar formulario individual de sede
      */
-    private function render_sede_form($index, $sede = array(), $collapsed = false) {
-        // Valores por defecto - TODOS LOS CAMPOS DEL JSON
-        $defaults = array(
-            // CAMPOS BÁSICOS
+    private function render_sede_form($index, $sede = array(), $collapsed = true) {
+        $sede = wp_parse_args($sede, array(
             'nombre' => '',
+            'descripcion' => '',
+            'web' => '',
+            'ano_fundacion' => '',
+            'tamano_despacho' => '',
             'persona_contacto' => '',
             'email_contacto' => '',
             'telefono' => '',
-            'direccion' => '',
+            'numero_colegiado' => '',
+            'colegio' => '',
+            'experiencia' => '',
             'calle' => '',
             'numero' => '',
             'piso' => '',
@@ -934,988 +302,609 @@ class LexhoySedesManager {
             'provincia' => '',
             'codigo_postal' => '',
             'pais' => 'España',
-            'web' => '',
-            'descripcion' => '',
-            
-            // CAMPOS PROFESIONALES
-            'numero_colegiado' => '',
-            'colegio' => '',
-            'experiencia' => '',
-            'ano_fundacion' => '',
-            'tamano_despacho' => '',
-            
-            // ESPECIALIDADES Y ÁREAS
             'especialidades' => '',
             'areas_practica' => array(),
             'servicios_especificos' => '',
-            'certificaciones' => '',
-            
-            // HORARIOS DETALLADOS
-            'horario_lunes' => '',
-            'horario_martes' => '',
-            'horario_miercoles' => '',
-            'horario_jueves' => '',
-            'horario_viernes' => '',
-            'horario_sabado' => '',
-            'horario_domingo' => '',
-            'horario_atencion' => '',
-            
-            // REDES SOCIALES
-            'facebook' => '',
-            'twitter' => '',
-            'linkedin' => '',
-            'instagram' => '',
-            
-            // ESTADO Y VERIFICACIÓN
+            'certificaciones' => array(),
             'estado_verificacion' => 'pendiente',
-            'is_verified' => false,
             'estado_registro' => 'activo',
             'foto_perfil' => '',
-            
-            // CAMPOS DE SEDE
+            'is_verified' => false,
             'observaciones' => '',
+            'horarios' => array(),
+            'redes_sociales' => array(),
             'es_principal' => false,
             'activa' => true
-        );
+        ));
         
-        $sede = array_merge($defaults, $sede);
-        $nombre_mostrar = !empty($sede['nombre']) ? $sede['nombre'] : 'Sede sin nombre';
-        $es_principal_class = $sede['es_principal'] ? 'sede-es-principal' : '';
-        $collapsed_class = $collapsed ? 'sede-collapsed' : '';
-        $toggle_text = $collapsed ? '👁️ Mostrar' : '➖ Contraer';
+        $collapse_class = $collapsed ? 'style="display: none;"' : '';
         ?>
         
-        <div class="sede-item <?php echo $es_principal_class; ?> <?php echo $collapsed_class; ?>">
-            <div class="sede-header">
-                <h5 class="sede-title">🏢 <?php echo esc_html($nombre_mostrar); ?></h5>
-                <div class="sede-actions">
-                    <button type="button" class="sede-toggle"><?php echo $toggle_text; ?></button>
-                    <?php if ($index > 0): // Solo mostrar eliminar si no es la primera sede ?>
-                        <button type="button" class="sede-remove">🗑️ Eliminar</button>
-                    <?php else: ?>
-                        <span style="color: #666; font-size: 12px; font-style: italic;">
-                            📌 Sede Obligatoria
-                        </span>
-                    <?php endif; ?>
+        <div class="sede-form" style="border: 1px solid #ddd; margin-bottom: 15px; border-radius: 6px; background: #fff;">
+            <div class="sede-header" style="background: #f1f1f1; padding: 12px; border-bottom: 1px solid #ddd; cursor: pointer;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h4 style="margin: 0; color: #2c3e50;">
+                        <span class="toggle-sede">📍 <?php echo !empty($sede['nombre']) ? esc_html($sede['nombre']) : 'Nueva Sede'; ?></span>
+                        <?php if ($sede['es_principal']): ?>
+                            <span style="background: #e74c3c; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; margin-left: 10px;">PRINCIPAL</span>
+                        <?php endif; ?>
+                        <?php if (!$sede['activa']): ?>
+                            <span style="background: #95a5a6; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; margin-left: 5px;">INACTIVA</span>
+                        <?php endif; ?>
+                    </h4>
+                    <div>
+                        <button type="button" class="toggle-sede button button-small">
+                            <?php echo $collapsed ? 'Expandir' : 'Contraer'; ?>
+                        </button>
+                        <button type="button" class="remove-sede button button-small" style="margin-left: 5px; color: #e74c3c;">
+                            Eliminar
+                        </button>
+                    </div>
                 </div>
             </div>
             
-            <div class="sede-content">
-                <!-- Columna izquierda - INFORMACIÓN BÁSICA -->
-                <div class="sede-column-left">
-                    <h5 style="color: #1976d2; margin-bottom: 15px;">📋 Información Básica</h5>
-                    
-                    <div class="sede-field">
-                        <label for="sede_nombre_<?php echo $index; ?>">🏢 Nombre de la Sede *</label>
-                        <input type="text" 
-                               id="sede_nombre_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][nombre]" 
-                               value="<?php echo esc_attr($sede['nombre']); ?>"
-                               class="sede-nombre"
-                               placeholder="ej: Sede Central Madrid"
-                               required>
+            <div class="sede-content" <?php echo $collapse_class; ?>>
+                <div style="padding: 20px;">
+                    <!-- Nombre de la sede -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Nombre de la Sede *</label>
+                        <input type="text" name="sedes[<?php echo $index; ?>][nombre]" 
+                               value="<?php echo esc_attr($sede['nombre']); ?>" 
+                               style="width: 100%; padding: 8px;" required
+                               placeholder="Ej: Sede Barcelona, Oficina Centro, etc.">
+                        <small style="color: #666;">Este es el nombre específico de la sede, no del despacho</small>
                     </div>
                     
-                    <div class="sede-field">
-                        <label for="sede_descripcion_<?php echo $index; ?>">📝 Descripción</label>
-                        <textarea id="sede_descripcion_<?php echo $index; ?>" 
-                                  name="sedes[<?php echo $index; ?>][descripcion]" 
-                                  rows="3"
-                                  placeholder="Descripción de la sede y sus servicios"><?php echo esc_textarea($sede['descripcion']); ?></textarea>
+                    <!-- Descripción -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Descripción</label>
+                        <textarea name="sedes[<?php echo $index; ?>][descripcion]" 
+                                  style="width: 100%; padding: 8px; height: 80px;"><?php echo esc_textarea($sede['descripcion']); ?></textarea>
                     </div>
                     
-                    <div class="sede-field">
-                        <label for="sede_web_<?php echo $index; ?>">🌐 Sitio Web</label>
-                        <input type="url" 
-                               id="sede_web_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][web]" 
-                               value="<?php echo esc_attr($sede['web']); ?>"
-                               placeholder="https://www.despacho.com">
+                    <!-- Información básica -->
+                    <div class="sede-row" style="display: grid; grid-template-columns: 1fr 1fr 150px 150px; gap: 20px; margin-bottom: 20px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Sitio Web</label>
+                            <input type="url" name="sedes[<?php echo $index; ?>][web]" 
+                                   value="<?php echo esc_attr($sede['web']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Persona de Contacto</label>
+                            <input type="text" name="sedes[<?php echo $index; ?>][persona_contacto]" 
+                                   value="<?php echo esc_attr($sede['persona_contacto']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Año Fundación</label>
+                            <input type="number" name="sedes[<?php echo $index; ?>][ano_fundacion]" 
+                                   value="<?php echo esc_attr($sede['ano_fundacion']); ?>" 
+                                   style="width: 100%; padding: 8px;" min="1900" max="2030">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Tamaño Despacho</label>
+                            <select name="sedes[<?php echo $index; ?>][tamano_despacho]" style="width: 100%; padding: 8px;">
+                                <option value="">Seleccionar</option>
+                                <option value="pequeño" <?php selected($sede['tamano_despacho'], 'pequeño'); ?>>Pequeño (1-5)</option>
+                                <option value="mediano" <?php selected($sede['tamano_despacho'], 'mediano'); ?>>Mediano (6-20)</option>
+                                <option value="grande" <?php selected($sede['tamano_despacho'], 'grande'); ?>>Grande (21+)</option>
+                            </select>
+                        </div>
                     </div>
                     
-                    <div class="sede-field">
-                        <label for="sede_ano_fundacion_<?php echo $index; ?>">📅 Año de Fundación</label>
-                        <input type="number" 
-                               id="sede_ano_fundacion_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][ano_fundacion]" 
-                               value="<?php echo esc_attr($sede['ano_fundacion']); ?>"
-                               min="1800" max="<?php echo date('Y'); ?>"
-                               placeholder="2020">
+                    <!-- Contacto y información profesional -->
+                    <div class="sede-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Teléfono</label>
+                            <input type="text" name="sedes[<?php echo $index; ?>][telefono]" 
+                                   value="<?php echo esc_attr($sede['telefono']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Email de Contacto</label>
+                            <input type="email" name="sedes[<?php echo $index; ?>][email_contacto]" 
+                                   value="<?php echo esc_attr($sede['email_contacto']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Nº Colegiado</label>
+                            <input type="text" name="sedes[<?php echo $index; ?>][numero_colegiado]" 
+                                   value="<?php echo esc_attr($sede['numero_colegiado']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Colegio</label>
+                            <input type="text" name="sedes[<?php echo $index; ?>][colegio]" 
+                                   value="<?php echo esc_attr($sede['colegio']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
                     </div>
                     
-                    <div class="sede-field">
-                        <label for="sede_tamano_<?php echo $index; ?>">👥 Tamaño del Despacho</label>
-                        <select id="sede_tamano_<?php echo $index; ?>" name="sedes[<?php echo $index; ?>][tamano_despacho]">
-                            <option value="">Seleccionar...</option>
-                            <option value="Solo" <?php selected($sede['tamano_despacho'], 'Solo'); ?>>Solo (1 persona)</option>
-                            <option value="Pequeño" <?php selected($sede['tamano_despacho'], 'Pequeño'); ?>>Pequeño (2-5 personas)</option>
-                            <option value="Mediano" <?php selected($sede['tamano_despacho'], 'Mediano'); ?>>Mediano (6-15 personas)</option>
-                            <option value="Grande" <?php selected($sede['tamano_despacho'], 'Grande'); ?>>Grande (16-50 personas)</option>
-                            <option value="Muy Grande" <?php selected($sede['tamano_despacho'], 'Muy Grande'); ?>>Muy Grande (50+ personas)</option>
-                        </select>
+                    <!-- Experiencia -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Experiencia</label>
+                        <textarea name="sedes[<?php echo $index; ?>][experiencia]" 
+                                  style="width: 100%; padding: 8px; height: 60px;"
+                                  placeholder="Describe la experiencia profesional del despacho..."><?php echo esc_textarea($sede['experiencia']); ?></textarea>
                     </div>
                     
-                    <h5 style="color: #1976d2; margin: 20px 0 15px;">👤 Contacto Principal</h5>
-                    
-                    <div class="sede-field">
-                        <label for="sede_persona_contacto_<?php echo $index; ?>">👤 Persona de Contacto *</label>
-                        <input type="text" 
-                               id="sede_persona_contacto_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][persona_contacto]" 
-                               value="<?php echo esc_attr($sede['persona_contacto']); ?>"
-                               placeholder="ej: Ana García López"
-                               required>
+                    <!-- Dirección -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 10px; color: #2c3e50;">📍 Dirección de la Sede</h4>
+                        <div class="sede-row" style="display: grid; grid-template-columns: 1fr 100px 100px 150px; gap: 20px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Calle *</label>
+                                <input type="text" name="sedes[<?php echo $index; ?>][calle]" 
+                                       value="<?php echo esc_attr($sede['calle']); ?>" 
+                                       style="width: 100%; padding: 8px;"
+                                       placeholder="Ej: Calle Mayor">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Número</label>
+                                <input type="text" name="sedes[<?php echo $index; ?>][numero]" 
+                                       value="<?php echo esc_attr($sede['numero']); ?>" 
+                                       style="width: 100%; padding: 8px;"
+                                       placeholder="Ej: 123">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Piso</label>
+                                <input type="text" name="sedes[<?php echo $index; ?>][piso]" 
+                                       value="<?php echo esc_attr($sede['piso']); ?>" 
+                                       style="width: 100%; padding: 8px;"
+                                       placeholder="Ej: 2º A">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Código Postal *</label>
+                                <input type="text" name="sedes[<?php echo $index; ?>][codigo_postal]" 
+                                       value="<?php echo esc_attr($sede['codigo_postal']); ?>" 
+                                       style="width: 100%; padding: 8px;"
+                                       placeholder="Ej: 28001">
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="sede-field">
-                        <label for="sede_email_<?php echo $index; ?>">📧 Email de Contacto *</label>
-                        <input type="email" 
-                               id="sede_email_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][email_contacto]" 
-                               value="<?php echo esc_attr($sede['email_contacto']); ?>"
-                               placeholder="ej: madrid@despacho.com"
-                               required>
+                    <div class="sede-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Localidad</label>
+                            <input type="text" name="sedes[<?php echo $index; ?>][localidad]" 
+                                   value="<?php echo esc_attr($sede['localidad']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Provincia</label>
+                            <input type="text" name="sedes[<?php echo $index; ?>][provincia]" 
+                                   value="<?php echo esc_attr($sede['provincia']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">País</label>
+                            <input type="text" name="sedes[<?php echo $index; ?>][pais]" 
+                                   value="<?php echo esc_attr($sede['pais']); ?>" 
+                                   style="width: 100%; padding: 8px;">
+                        </div>
                     </div>
                     
-                    <div class="sede-field">
-                        <label for="sede_telefono_<?php echo $index; ?>">📞 Teléfono *</label>
-                        <input type="tel" 
-                               id="sede_telefono_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][telefono]" 
-                               value="<?php echo esc_attr($sede['telefono']); ?>"
-                               placeholder="ej: +34 91 123 45 67"
-                               required>
-                    </div>
-                    
-                    <h5 style="color: #1976d2; margin: 20px 0 15px;">⚖️ Información Profesional</h5>
-                    
-                    <div class="sede-field">
-                        <label for="sede_numero_colegiado_<?php echo $index; ?>">🆔 Número de Colegiado</label>
-                        <input type="text" 
-                               id="sede_numero_colegiado_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][numero_colegiado]" 
-                               value="<?php echo esc_attr($sede['numero_colegiado']); ?>"
-                               placeholder="ej: 12345">
-                    </div>
-                    
-                    <div class="sede-field">
-                        <label for="sede_colegio_<?php echo $index; ?>">🏛️ Colegio de Abogados</label>
-                        <input type="text" 
-                               id="sede_colegio_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][colegio]" 
-                               value="<?php echo esc_attr($sede['colegio']); ?>"
-                               placeholder="ej: Colegio de Abogados de Madrid">
-                    </div>
-                    
-                    <div class="sede-field">
-                        <label for="sede_experiencia_<?php echo $index; ?>">💼 Experiencia</label>
-                        <textarea id="sede_experiencia_<?php echo $index; ?>" 
-                                  name="sedes[<?php echo $index; ?>][experiencia]" 
-                                  rows="3"
-                                  placeholder="Describe la experiencia profesional..."><?php echo esc_textarea($sede['experiencia']); ?></textarea>
-                    </div>
-                    
-                    <!-- Redes Sociales -->
-                    <h5 style="color: #1976d2; margin: 20px 0 15px;">🌐 Redes Sociales</h5>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                        <div class="sede-field">
-                            <label for="sede_facebook_<?php echo $index; ?>">📘 Facebook</label>
-                            <input type="url" 
-                                   id="sede_facebook_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][facebook]" 
-                                   value="<?php echo esc_attr($sede['facebook']); ?>"
-                                   placeholder="https://facebook.com/tudespacho">
+                    <!-- Especialidades y servicios -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 10px; color: #2c3e50;">⚖️ Especialidades y Servicios</h4>
+                        <div class="sede-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Especialidades</label>
+                                <textarea name="sedes[<?php echo $index; ?>][especialidades]" 
+                                          style="width: 100%; padding: 8px; height: 80px;"><?php echo esc_textarea($sede['especialidades']); ?></textarea>
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Servicios Específicos</label>
+                                <textarea name="sedes[<?php echo $index; ?>][servicios_especificos]" 
+                                          style="width: 100%; padding: 8px; height: 80px;"><?php echo esc_textarea($sede['servicios_especificos']); ?></textarea>
+                            </div>
                         </div>
                         
-                        <div class="sede-field">
-                            <label for="sede_twitter_<?php echo $index; ?>">🐦 Twitter/X</label>
-                            <input type="url" 
-                                   id="sede_twitter_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][twitter]" 
-                                   value="<?php echo esc_attr($sede['twitter']); ?>"
-                                   placeholder="https://twitter.com/tudespacho">
-                        </div>
-                        
-                        <div class="sede-field">
-                            <label for="sede_linkedin_<?php echo $index; ?>">💼 LinkedIn</label>
-                            <input type="url" 
-                                   id="sede_linkedin_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][linkedin]" 
-                                   value="<?php echo esc_attr($sede['linkedin']); ?>"
-                                   placeholder="https://linkedin.com/company/tudespacho">
-                        </div>
-                        
-                        <div class="sede-field">
-                            <label for="sede_instagram_<?php echo $index; ?>">📷 Instagram</label>
-                            <input type="url" 
-                                   id="sede_instagram_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][instagram]" 
-                                   value="<?php echo esc_attr($sede['instagram']); ?>"
-                                   placeholder="https://instagram.com/tudespacho">
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Columna derecha - DIRECCIÓN Y ESPECIALIDADES -->
-                <div class="sede-column-right">
-                    <h5 style="color: #1976d2; margin-bottom: 15px;">📍 Dirección Completa</h5>
-                    
-                    <div class="sede-field">
-                        <label for="sede_calle_<?php echo $index; ?>">🛣️ Calle *</label>
-                        <input type="text" 
-                               id="sede_calle_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][calle]" 
-                               value="<?php echo esc_attr($sede['calle']); ?>"
-                               placeholder="ej: Calle Mayor"
-                               required>
-                    </div>
-                    
-                    <div class="sede-field" style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
-                        <div>
-                            <label for="sede_numero_<?php echo $index; ?>">🔢 Número *</label>
-                            <input type="text" 
-                                   id="sede_numero_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][numero]" 
-                                   value="<?php echo esc_attr($sede['numero']); ?>"
-                                   placeholder="123"
-                                   required>
-                        </div>
-                        <div>
-                            <label for="sede_piso_<?php echo $index; ?>">🏠 Piso/Oficina</label>
-                            <input type="text" 
-                                   id="sede_piso_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][piso]" 
-                                   value="<?php echo esc_attr($sede['piso']); ?>"
-                                   placeholder="3º A">
-                        </div>
-                    </div>
-                    
-                    <div class="sede-field" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                        <div>
-                            <label for="sede_localidad_<?php echo $index; ?>">🏙️ Localidad *</label>
-                            <input type="text" 
-                                   id="sede_localidad_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][localidad]" 
-                                   value="<?php echo esc_attr($sede['localidad']); ?>"
-                                   placeholder="Madrid"
-                                   required>
-                        </div>
-                        <div>
-                            <label for="sede_provincia_<?php echo $index; ?>">🗺️ Provincia *</label>
-                            <input type="text" 
-                                   id="sede_provincia_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][provincia]" 
-                                   value="<?php echo esc_attr($sede['provincia']); ?>"
-                                   placeholder="Madrid"
-                                   required>
-                        </div>
-                    </div>
-                    
-                    <div class="sede-field" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                        <div>
-                            <label for="sede_cp_<?php echo $index; ?>">📮 Código Postal</label>
-                            <input type="text" 
-                                   id="sede_cp_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][codigo_postal]" 
-                                   value="<?php echo esc_attr($sede['codigo_postal']); ?>"
-                                   placeholder="28001">
-                        </div>
-                        <div>
-                            <label for="sede_pais_<?php echo $index; ?>">🌍 País</label>
-                            <input type="text" 
-                                   id="sede_pais_<?php echo $index; ?>" 
-                                   name="sedes[<?php echo $index; ?>][pais]" 
-                                   value="<?php echo esc_attr($sede['pais']); ?>"
-                                   placeholder="España">
-                        </div>
-                    </div>
-                    
-                    <h5 style="color: #1976d2; margin: 20px 0 15px;">⚖️ Especialidades y Servicios</h5>
-                    
-                    <div class="sede-field">
-                        <label for="sede_especialidades_<?php echo $index; ?>">🎯 Especialidades Específicas (separadas por coma)</label>
-                        <input type="text" 
-                               id="sede_especialidades_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][especialidades]" 
-                               value="<?php echo esc_attr($sede['especialidades']); ?>"
-                               placeholder="ej: Mediación familiar, Arbitraje comercial, Derecho marítimo">
-                    </div>
-                    
-                    <div class="sede-field">
-                        <label for="sede_servicios_<?php echo $index; ?>">⚖️ Servicios Específicos</label>
-                        <textarea id="sede_servicios_<?php echo $index; ?>" 
-                                  name="sedes[<?php echo $index; ?>][servicios_especificos]" 
-                                  rows="3"
-                                  placeholder="ej: Derecho mercantil, Asesoría fiscal, Representación judicial"><?php echo esc_textarea($sede['servicios_especificos']); ?></textarea>
-                    </div>
-                    
-                    <div class="sede-field">
-                        <label for="sede_certificaciones_<?php echo $index; ?>">🏆 Certificaciones</label>
-                        <textarea id="sede_certificaciones_<?php echo $index; ?>" 
-                                  name="sedes[<?php echo $index; ?>][certificaciones]" 
-                                  rows="2"
-                                  placeholder="ej: ISO 9001, Certificación en mediación"><?php echo esc_textarea($sede['certificaciones']); ?></textarea>
-                    </div>
-                    
-                    <!-- Áreas de Práctica con Checkboxes -->
-                    <div class="areas-practica-container">
-                        <h5 style="color: #1976d2; margin-bottom: 10px;">⚖️ Áreas de Práctica</h5>
-                        <p style="font-size: 13px; color: #6c757d; margin-bottom: 15px;">
-                            Selecciona las áreas en las que opera esta sede:
-                        </p>
-                        
-                        <div class="areas-practica-grid">
-                            <?php
-                            $areas_disponibles = array(
-                                'Administrativo' => 'Derecho Administrativo',
-                                'Civil' => 'Derecho Civil',
-                                'Fiscal' => 'Derecho Fiscal',
-                                'Laboral' => 'Derecho Laboral',
-                                'Mercantil' => 'Derecho Mercantil',
-                                'Penal' => 'Derecho Penal',
-                                'Familia' => 'Derecho de Familia',
-                                'Sucesiones' => 'Sucesiones',
-                                'Vivienda' => 'Derecho de Vivienda',
-                                'Bancario' => 'Derecho Bancario',
-                                'Inmobiliario' => 'Derecho Inmobiliario',
-                                'Consumo' => 'Derecho del Consumo',
-                                'Empresarial' => 'Derecho Empresarial',
-                                'Seguros' => 'Derecho de Seguros',
-                                'Medio Ambiente' => 'Derecho Medio Ambiente'
-                            );
+                        <div style="grid-column: 1 / -1;">
+                            <label style="display: block; margin-bottom: 10px; font-weight: bold;">Áreas de Práctica</label>
+                            <?php 
+                            // Obtener todas las áreas de práctica disponibles
+                            $all_areas = get_terms(array(
+                                'taxonomy' => 'area_practica',
+                                'hide_empty' => false,
+                                'orderby' => 'name',
+                                'order' => 'ASC'
+                            ));
                             
-                            $areas_seleccionadas = is_array($sede['areas_practica']) ? $sede['areas_practica'] : array();
+                            // Áreas seleccionadas para esta sede
+                            $selected_areas = is_array($sede['areas_practica']) ? $sede['areas_practica'] : 
+                                             (is_string($sede['areas_practica']) ? explode(', ', $sede['areas_practica']) : array());
                             
-                            foreach ($areas_disponibles as $valor => $etiqueta): ?>
-                                <div class="area-practica-item">
-                                    <input type="checkbox" 
-                                           id="area_<?php echo $index; ?>_<?php echo sanitize_title($valor); ?>" 
-                                           name="sedes[<?php echo $index; ?>][areas_practica][]" 
-                                           value="<?php echo esc_attr($valor); ?>"
-                                           <?php checked(in_array($valor, $areas_seleccionadas)); ?>>
-                                    <label for="area_<?php echo $index; ?>_<?php echo sanitize_title($valor); ?>">
-                                        <?php echo esc_html($etiqueta); ?>
-                                    </label>
+                            if (!empty($all_areas) && !is_wp_error($all_areas)): ?>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9;">
+                                    <?php foreach ($all_areas as $area): 
+                                        $checked = in_array($area->name, $selected_areas) ? 'checked' : '';
+                                    ?>
+                                        <label style="display: flex; align-items: center; margin-bottom: 5px; font-weight: normal;">
+                                            <input type="checkbox" 
+                                                   name="sedes[<?php echo $index; ?>][areas_practica][]" 
+                                                   value="<?php echo esc_attr($area->name); ?>" 
+                                                   <?php echo $checked; ?>
+                                                   style="margin-right: 8px;">
+                                            <?php echo esc_html($area->name); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                                <small style="color: #666; display: block; margin-top: 5px;">
+                                    Selecciona las áreas de práctica que corresponden a esta sede. 
+                                    <?php if (current_user_can('manage_options')): ?>
+                                        <a href="<?php echo admin_url('edit-tags.php?taxonomy=area_practica&post_type=despacho'); ?>" target="_blank">Gestionar áreas</a>
+                                    <?php endif; ?>
+                                </small>
+                            <?php else: ?>
+                                <p style="color: #999; font-style: italic;">
+                                    No hay áreas de práctica disponibles. 
+                                    <?php if (current_user_can('manage_options')): ?>
+                                        <a href="<?php echo admin_url('edit-tags.php?taxonomy=area_practica&post_type=despacho'); ?>">Crear áreas</a> o 
+                                        <a href="<?php echo admin_url('edit.php?post_type=despacho&page=sync-areas'); ?>">Sincronizar desde Algolia</a>
+                                    <?php endif; ?>
+                                </p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    
+                    <!-- Horarios -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 10px; color: #2c3e50;">🕐 Horarios de Atención</h4>
+                        <?php 
+                        $dias = array('lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo');
+                        $horarios = is_array($sede['horarios']) ? $sede['horarios'] : array();
+                        ?>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                            <?php foreach ($dias as $dia): ?>
+                                <div>
+                                    <label style="display: block; margin-bottom: 3px; text-transform: capitalize;"><?php echo $dia; ?></label>
+                                    <input type="text" name="sedes[<?php echo $index; ?>][horarios][<?php echo $dia; ?>]" 
+                                           value="<?php echo esc_attr($horarios[$dia] ?? ''); ?>" 
+                                           style="width: 100%; padding: 6px; font-size: 12px;">
                                 </div>
                             <?php endforeach; ?>
                         </div>
                     </div>
                     
-                    <h5 style="color: #1976d2; margin: 20px 0 15px;">🕒 Horarios Detallados</h5>
-                    
-                    <div class="sede-field">
-                        <label for="sede_horario_general_<?php echo $index; ?>">🕒 Horario General</label>
-                        <input type="text" 
-                               id="sede_horario_general_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][horario_atencion]" 
-                               value="<?php echo esc_attr($sede['horario_atencion']); ?>"
-                               placeholder="ej: L-V: 9:00-18:00, S: 9:00-14:00">
-                    </div>
-                    
-                    <div class="horarios-detalle" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-                        <?php
-                        $dias = array(
-                            'horario_lunes' => 'Lunes',
-                            'horario_martes' => 'Martes', 
-                            'horario_miercoles' => 'Miércoles',
-                            'horario_jueves' => 'Jueves',
-                            'horario_viernes' => 'Viernes',
-                            'horario_sabado' => 'Sábado',
-                            'horario_domingo' => 'Domingo'
+                    <!-- Redes Sociales -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 10px; color: #2c3e50;">🌐 Redes Sociales</h4>
+                        <?php 
+                        $redes = array(
+                            'facebook' => 'Facebook',
+                            'twitter' => 'Twitter',
+                            'linkedin' => 'LinkedIn',
+                            'instagram' => 'Instagram'
                         );
-                        
-                        foreach ($dias as $campo => $dia): ?>
-                            <div class="sede-field-small">
-                                <label for="sede_<?php echo $campo; ?>_<?php echo $index; ?>" style="font-size: 12px;"><?php echo $dia; ?></label>
-                                <input type="text" 
-                                       id="sede_<?php echo $campo; ?>_<?php echo $index; ?>" 
-                                       name="sedes[<?php echo $index; ?>][<?php echo $campo; ?>]" 
-                                       value="<?php echo esc_attr($sede[$campo]); ?>"
-                                       placeholder="9:00-18:00"
-                                       style="font-size: 12px; padding: 3px;">
+                        $redes_sociales = is_array($sede['redes_sociales']) ? $sede['redes_sociales'] : array();
+                        ?>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                            <?php foreach ($redes as $red => $label): ?>
+                                <div>
+                                    <label style="display: block; margin-bottom: 3px;"><?php echo $label; ?></label>
+                                    <input type="url" name="sedes[<?php echo $index; ?>][redes_sociales][<?php echo $red; ?>]" 
+                                           value="<?php echo esc_attr($redes_sociales[$red] ?? ''); ?>" 
+                                           style="width: 100%; padding: 6px; font-size: 12px;">
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    
+                    <!-- Estado y verificación -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 10px; color: #2c3e50;">🔍 Estado y Verificación</h4>
+                        <div class="sede-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Estado Verificación</label>
+                                <select name="sedes[<?php echo $index; ?>][estado_verificacion]" style="width: 100%; padding: 8px;">
+                                    <option value="pendiente" <?php selected($sede['estado_verificacion'], 'pendiente'); ?>>Pendiente</option>
+                                    <option value="verificado" <?php selected($sede['estado_verificacion'], 'verificado'); ?>>Verificado</option>
+                                    <option value="rechazado" <?php selected($sede['estado_verificacion'], 'rechazado'); ?>>Rechazado</option>
+                                </select>
                             </div>
-                        <?php endforeach; ?>
-                    </div>
-                    
-
-                </div>
-                
-                <!-- Fila completa para campos adicionales -->
-                <div class="sede-field" style="grid-column: 1 / -1;">
-                    <h5 style="color: #1976d2; margin: 20px 0 15px;">📄 Información Adicional</h5>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                        <div>
-                            <label for="sede_estado_verificacion_<?php echo $index; ?>">✅ Estado de Verificación</label>
-                            <select id="sede_estado_verificacion_<?php echo $index; ?>" name="sedes[<?php echo $index; ?>][estado_verificacion]">
-                                <option value="pendiente" <?php selected($sede['estado_verificacion'], 'pendiente'); ?>>⏳ Pendiente verificación</option>
-                                <option value="verificado" <?php selected($sede['estado_verificacion'], 'verificado'); ?>>✅ Verificado</option>
-                                <option value="rechazado" <?php selected($sede['estado_verificacion'], 'rechazado'); ?>>❌ Rechazado</option>
-                            </select>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Estado Registro</label>
+                                <select name="sedes[<?php echo $index; ?>][estado_registro]" style="width: 100%; padding: 8px;">
+                                    <option value="activo" <?php selected($sede['estado_registro'], 'activo'); ?>>Activo</option>
+                                    <option value="inactivo" <?php selected($sede['estado_registro'], 'inactivo'); ?>>Inactivo</option>
+                                    <option value="suspendido" <?php selected($sede['estado_registro'], 'suspendido'); ?>>Suspendido</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display: flex; align-items: center; padding-top: 25px;">
+                                    <input type="checkbox" name="sedes[<?php echo $index; ?>][is_verified]" 
+                                           value="1" <?php checked($sede['is_verified'], true); ?> 
+                                           style="margin-right: 8px;">
+                                    <strong>Verificado</strong>
+                                </label>
+                            </div>
                         </div>
                         
                         <div>
-                            <label for="sede_estado_registro_<?php echo $index; ?>">📋 Estado de Registro</label>
-                            <select id="sede_estado_registro_<?php echo $index; ?>" name="sedes[<?php echo $index; ?>][estado_registro]">
-                                <option value="activo" <?php selected($sede['estado_registro'], 'activo'); ?>>✅ Activo</option>
-                                <option value="inactivo" <?php selected($sede['estado_registro'], 'inactivo'); ?>>❌ Inactivo</option>
-                                <option value="suspendido" <?php selected($sede['estado_registro'], 'suspendido'); ?>>⏸️ Suspendido</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-bottom: 15px;">
-                        <label for="sede_foto_perfil_<?php echo $index; ?>">📸 Foto de Perfil</label>
-                        
-                        <!-- Vista previa de la imagen -->
-                        <div class="foto-perfil-preview" style="margin: 10px 0;">
-                            <?php 
-                            $foto_actual = !empty($sede['foto_perfil']) ? $sede['foto_perfil'] : 'https://lexhoy.com/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp';
-                            ?>
-                            <img id="preview_foto_<?php echo $index; ?>" 
-                                 src="<?php echo esc_url($foto_actual); ?>" 
-                                 style="width: 100px; height: 100px; object-fit: cover; border: 2px solid #ddd; border-radius: 8px; display: block; margin-bottom: 10px;"
-                                 alt="Foto de perfil">
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Observaciones</label>
+                            <textarea name="sedes[<?php echo $index; ?>][observaciones]" 
+                                      style="width: 100%; padding: 8px; height: 60px;"
+                                      placeholder="Observaciones internas sobre la sede..."><?php echo esc_textarea($sede['observaciones']); ?></textarea>
                         </div>
                         
-                        <!-- Campo oculto para la URL final -->
-                        <input type="hidden" 
-                               id="sede_foto_perfil_<?php echo $index; ?>" 
-                               name="sedes[<?php echo $index; ?>][foto_perfil]" 
-                               value="<?php echo esc_attr($sede['foto_perfil']); ?>">
-                        
-                        <!-- Input de archivo para subida -->
-                        <div style="margin-bottom: 10px;">
-                            <input type="file" 
-                                   id="sede_foto_upload_<?php echo $index; ?>" 
-                                   accept="image/*"
-                                   style="margin-bottom: 5px;"
-                                   onchange="uploadPhotoFile(<?php echo $index; ?>, this)">
-                            <small style="display: block; color: #666; margin-bottom: 5px;">
-                                🔺 Máximo 2MB - Formatos: JPG, PNG, WEBP
+                        <div style="margin-top: 15px;">
+                            <label style="display: block; margin-bottom: 10px; font-weight: bold;">🖼️ Foto de Perfil</label>
+                            <div style="display: flex; gap: 10px; align-items: flex-start;">
+                                <div style="flex: 1;">
+                                    <input type="url" 
+                                           name="sedes[<?php echo $index; ?>][foto_perfil]" 
+                                           id="foto_perfil_<?php echo $index; ?>"
+                                           value="<?php echo esc_attr($sede['foto_perfil']); ?>" 
+                                           style="width: 100%; padding: 8px;"
+                                           placeholder="https://ejemplo.com/foto.jpg">
+                                </div>
+                                <button type="button" 
+                                        class="button button-secondary upload-foto-btn"
+                                        data-target="foto_perfil_<?php echo $index; ?>"
+                                        data-preview="preview_<?php echo $index; ?>">
+                                    📁 Subir Foto
+                                </button>
+                            </div>
+                            
+                            <!-- Vista previa de la foto -->
+                            <?php if (!empty($sede['foto_perfil'])): ?>
+                                <div id="preview_<?php echo $index; ?>" style="margin-top: 10px;">
+                                    <img src="<?php echo esc_url($sede['foto_perfil']); ?>" 
+                                         style="max-width: 150px; max-height: 150px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <button type="button" 
+                                            class="button button-link-delete remove-foto-btn"
+                                            data-target="foto_perfil_<?php echo $index; ?>"
+                                            data-preview="preview_<?php echo $index; ?>"
+                                            style="display: block; margin-top: 5px; color: #dc3232;">
+                                        🗑️ Eliminar foto
+                                    </button>
+                                </div>
+                            <?php else: ?>
+                                <div id="preview_<?php echo $index; ?>" style="margin-top: 10px; display: none;">
+                                    <!-- Se llenará con JavaScript -->
+                                </div>
+                            <?php endif; ?>
+                            
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                Puedes subir una foto o pegar la URL directamente. Si no se especifica, se usará la foto predefinida del sistema.
                             </small>
                         </div>
-                        
-                        <!-- Campo manual para URL externa -->
-                        <div style="margin-bottom: 10px;">
-                            <input type="url" 
-                                   id="sede_foto_url_<?php echo $index; ?>" 
-                                   placeholder="O introduce URL externa: https://ejemplo.com/foto.jpg"
-                                   style="width: 100%;"
-                                   onchange="updatePhotoPreview(<?php echo $index; ?>, this.value)">
-                        </div>
-                        
-                        <!-- Botones de control -->
-                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                            <button type="button" 
-                                    class="button button-secondary" 
-                                    onclick="useDefaultLogo(<?php echo $index; ?>)"
-                                    style="font-size: 12px;">
-                                🔄 Foto por Defecto
-                            </button>
-                            
-                            <button type="button" 
-                                    class="button button-secondary" 
-                                    onclick="clearPhoto(<?php echo $index; ?>)"
-                                    style="font-size: 12px;">
-                                🗑️ Limpiar
-                            </button>
-                            
-                            <span id="upload_status_<?php echo $index; ?>" style="font-size: 12px; color: #28a745;"></span>
-                        </div>
-                        
-                        <small style="color: #666; display: block; margin-top: 5px;">
-                            💡 Puedes subir un archivo o usar una URL externa. Se usará la foto por defecto si no especificas ninguna.
-                        </small>
                     </div>
                     
-                    <label for="sede_observaciones_<?php echo $index; ?>">📝 Observaciones y Notas Internas</label>
-                    <textarea id="sede_observaciones_<?php echo $index; ?>" 
-                              name="sedes[<?php echo $index; ?>][observaciones]" 
-                              rows="3"
-                              placeholder="Información adicional sobre esta sede, notas internas, comentarios especiales..."><?php echo esc_textarea($sede['observaciones']); ?></textarea>
-                </div>
-                
-                <!-- Configuración de la Sede -->
-                <div class="sede-field" style="grid-column: 1 / -1;">
-                    <div class="configuracion-sede">
-                        <h5 style="color: #1976d2; margin-bottom: 15px;">⚙️ Configuración de la Sede</h5>
-                        
-                        <div class="configuracion-grid">
-                            <div class="configuracion-item">
-                                <input type="checkbox" 
-                                       id="sede_principal_<?php echo $index; ?>"
-                                       name="sedes[<?php echo $index; ?>][es_principal]" 
-                                       value="1" 
-                                       class="sede-es-principal"
-                                       <?php checked($sede['es_principal'], true); ?>>
-                                <label for="sede_principal_<?php echo $index; ?>" class="config-label config-principal">
-                                    ⭐ Sede Principal
-                                </label>
-                            </div>
-                            
-                            <div class="configuracion-item">
-                                <input type="checkbox" 
-                                       id="sede_activa_<?php echo $index; ?>"
-                                       name="sedes[<?php echo $index; ?>][activa]" 
-                                       value="1" 
-                                       <?php checked($sede['activa'], true); ?>>
-                                <label for="sede_activa_<?php echo $index; ?>" class="config-label config-activa">
-                                    ✅ Sede Activa
-                                </label>
-                            </div>
-                            
-                            <div class="configuracion-item">
-                                <input type="checkbox" 
-                                       id="sede_verificada_<?php echo $index; ?>"
-                                       name="sedes[<?php echo $index; ?>][is_verified]" 
-                                       value="1" 
-                                       <?php checked($sede['is_verified'], true); ?>>
-                                <label for="sede_verificada_<?php echo $index; ?>" class="config-label config-verificada">
-                                    🔒 Verificada
-                                </label>
-                            </div>
+                    <!-- Opciones de Estado -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
+                        <div>
+                            <label style="display: flex; align-items: center;">
+                                <input type="checkbox" name="sedes[<?php echo $index; ?>][es_principal]" 
+                                       value="1" <?php checked($sede['es_principal'], true); ?> 
+                                       style="margin-right: 8px;">
+                                <strong>Sede Principal</strong>
+                            </label>
                         </div>
-                    </div>
-                    
-                    <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px;">
-                        <small style="color: #856404;">
-                            <strong>💡 Nota:</strong> 
-                            • Solo puede haber una sede principal por despacho<br>
-                            • Las sedes inactivas no se mostrarán en el frontend<br>
-                            • La verificación afecta la visibilidad de los datos de contacto
-                        </small>
+                        <div>
+                            <label style="display: flex; align-items: center;">
+                                <input type="checkbox" name="sedes[<?php echo $index; ?>][activa]" 
+                                       value="1" <?php checked($sede['activa'], true); ?> 
+                                       style="margin-right: 8px;">
+                                <strong>Sede Activa</strong>
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+        
         <?php
     }
     
     /**
-     * Guardar datos de sedes
+     * Guardar sedes del despacho
      */
-    public function save_sedes_data($post_id) {
+    public function save_sedes($post_id) {
+        // DEBUG TEMPORAL: Log para ver si la función se ejecuta
+        error_log("=== LEXHOY DEBUG save_sedes ejecutándose para post $post_id ===");
+        error_log("POST keys: " . implode(', ', array_keys($_POST)));
+        error_log("Nonce presente: " . (isset($_POST['despacho_sedes_nonce']) ? 'SÍ' : 'NO'));
+        
         // Verificar nonce
         if (!isset($_POST['despacho_sedes_nonce']) || !wp_verify_nonce($_POST['despacho_sedes_nonce'], 'despacho_sedes_meta_box')) {
+            error_log("LEXHOY DEBUG: Nonce inválido o faltante - SALIENDO");
             return;
         }
+        
+        error_log("LEXHOY DEBUG: Nonce válido - CONTINUANDO");
         
         // Verificar permisos
         if (!current_user_can('edit_post', $post_id)) {
             return;
         }
         
-        // No guardar en autoguardado
+        // Verificar si es autoguardado
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
             return;
         }
         
-        // Solo para el post type despacho
-        if (get_post_type($post_id) !== 'despacho') {
+        // Verificar tipo de post
+        if (get_post_type($post_id) != 'despacho') {
             return;
         }
         
-        // Procesar sedes
-        $sedes_data = array();
+        error_log("LEXHOY DEBUG: ¿Hay datos de sedes en POST? " . (isset($_POST['sedes']) ? 'SÍ' : 'NO'));
+        if (isset($_POST['sedes'])) {
+            error_log("LEXHOY DEBUG: Datos sedes recibidos: " . print_r($_POST['sedes'], true));
+        }
         
         if (isset($_POST['sedes']) && is_array($_POST['sedes'])) {
+            $sedes_data = array();
+            
             foreach ($_POST['sedes'] as $index => $sede) {
-                // Validar campos obligatorios
-                if (empty($sede['nombre']) || empty($sede['persona_contacto']) || 
-                    empty($sede['email_contacto']) || empty($sede['telefono']) ||
-                    empty($sede['calle']) || empty($sede['numero']) ||
-                    empty($sede['localidad']) || empty($sede['provincia'])) {
-                    continue; // Saltar sedes incompletas
-                }
-                
-                $sede_limpia = array(
-                    // CAMPOS BÁSICOS
-                    'nombre' => sanitize_text_field($sede['nombre']),
+                // Sanitizar datos
+                $sede_clean = array(
+                    'nombre' => sanitize_text_field($sede['nombre'] ?? ''),
                     'descripcion' => sanitize_textarea_field($sede['descripcion'] ?? ''),
                     'web' => esc_url_raw($sede['web'] ?? ''),
-                    'ano_fundacion' => intval($sede['ano_fundacion'] ?? 0),
+                    'ano_fundacion' => sanitize_text_field($sede['ano_fundacion'] ?? ''),
                     'tamano_despacho' => sanitize_text_field($sede['tamano_despacho'] ?? ''),
-                    
-                    // CONTACTO
-                    'persona_contacto' => sanitize_text_field($sede['persona_contacto']),
-                    'email_contacto' => sanitize_email($sede['email_contacto']),
-                    'telefono' => sanitize_text_field($sede['telefono']),
-                    
-                    // INFORMACIÓN PROFESIONAL
+                    'persona_contacto' => sanitize_text_field($sede['persona_contacto'] ?? ''),
+                    'email_contacto' => sanitize_email($sede['email_contacto'] ?? ''),
+                    'telefono' => sanitize_text_field($sede['telefono'] ?? ''),
                     'numero_colegiado' => sanitize_text_field($sede['numero_colegiado'] ?? ''),
                     'colegio' => sanitize_text_field($sede['colegio'] ?? ''),
                     'experiencia' => sanitize_textarea_field($sede['experiencia'] ?? ''),
-                    
-                    // DIRECCIÓN
-                    'calle' => sanitize_text_field($sede['calle']),
-                    'numero' => sanitize_text_field($sede['numero']),
+                    'calle' => sanitize_text_field($sede['calle'] ?? ''),
+                    'numero' => sanitize_text_field($sede['numero'] ?? ''),
                     'piso' => sanitize_text_field($sede['piso'] ?? ''),
-                    'localidad' => sanitize_text_field($sede['localidad']),
-                    'provincia' => sanitize_text_field($sede['provincia']),
+                    'localidad' => sanitize_text_field($sede['localidad'] ?? ''),
+                    'provincia' => sanitize_text_field($sede['provincia'] ?? ''),
                     'codigo_postal' => sanitize_text_field($sede['codigo_postal'] ?? ''),
                     'pais' => sanitize_text_field($sede['pais'] ?? 'España'),
-                    
-                    // ESPECIALIDADES Y SERVICIOS
-                    'especialidades' => sanitize_text_field($sede['especialidades'] ?? ''),
-                    'areas_practica' => isset($sede['areas_practica']) && is_array($sede['areas_practica']) 
-                                       ? array_map('sanitize_text_field', $sede['areas_practica']) 
-                                       : array(),
+                    'especialidades' => sanitize_textarea_field($sede['especialidades'] ?? ''),
                     'servicios_especificos' => sanitize_textarea_field($sede['servicios_especificos'] ?? ''),
-                    'certificaciones' => sanitize_textarea_field($sede['certificaciones'] ?? ''),
-                    
-                    // HORARIOS
-                    'horario_atencion' => sanitize_text_field($sede['horario_atencion'] ?? ''),
-                    'horario_lunes' => sanitize_text_field($sede['horario_lunes'] ?? ''),
-                    'horario_martes' => sanitize_text_field($sede['horario_martes'] ?? ''),
-                    'horario_miercoles' => sanitize_text_field($sede['horario_miercoles'] ?? ''),
-                    'horario_jueves' => sanitize_text_field($sede['horario_jueves'] ?? ''),
-                    'horario_viernes' => sanitize_text_field($sede['horario_viernes'] ?? ''),
-                    'horario_sabado' => sanitize_text_field($sede['horario_sabado'] ?? ''),
-                    'horario_domingo' => sanitize_text_field($sede['horario_domingo'] ?? ''),
-                    
-                    // REDES SOCIALES
-                    'facebook' => esc_url_raw($sede['facebook'] ?? ''),
-                    'twitter' => esc_url_raw($sede['twitter'] ?? ''),
-                    'linkedin' => esc_url_raw($sede['linkedin'] ?? ''),
-                    'instagram' => esc_url_raw($sede['instagram'] ?? ''),
-                    
-                    // ESTADOS Y VERIFICACIÓN
                     'estado_verificacion' => sanitize_text_field($sede['estado_verificacion'] ?? 'pendiente'),
                     'estado_registro' => sanitize_text_field($sede['estado_registro'] ?? 'activo'),
                     'foto_perfil' => esc_url_raw($sede['foto_perfil'] ?? ''),
-                    'is_verified' => isset($sede['is_verified']) && $sede['is_verified'] === '1',
-                    
-                    // CONFIGURACIÓN DE SEDE
+                    'is_verified' => isset($sede['is_verified']) ? true : false,
                     'observaciones' => sanitize_textarea_field($sede['observaciones'] ?? ''),
-                    'es_principal' => isset($sede['es_principal']) && $sede['es_principal'] === '1',
-                    'activa' => isset($sede['activa']) && $sede['activa'] === '1',
-                    
-                    // METADATOS
-                    'fecha_creacion' => current_time('mysql'),
-                    'fecha_actualizacion' => current_time('mysql')
+                    'es_principal' => isset($sede['es_principal']) ? true : false,
+                    'activa' => isset($sede['activa']) ? true : false,
+                    'horarios' => array(),
+                    'redes_sociales' => array(),
+                    'areas_practica' => array()
                 );
                 
-                // Generar dirección completa
-                $direccion_completa = $sede_limpia['calle'] . ' ' . $sede_limpia['numero'];
-                if (!empty($sede_limpia['piso'])) {
-                    $direccion_completa .= ', ' . $sede_limpia['piso'];
+                // Procesar areas_practica (vienen como array de checkboxes)
+                if (isset($sede['areas_practica']) && is_array($sede['areas_practica'])) {
+                    $sede_clean['areas_practica'] = array_map('sanitize_text_field', $sede['areas_practica']);
+                } elseif (isset($sede['areas_practica']) && is_string($sede['areas_practica'])) {
+                    // Fallback para formato de texto separado por comas (datos de Algolia)
+                    $areas = explode(',', $sede['areas_practica']);
+                    $sede_clean['areas_practica'] = array_map('trim', $areas);
                 }
-                $direccion_completa .= ', ' . $sede_limpia['localidad'];
-                if (!empty($sede_limpia['codigo_postal'])) {
-                    $direccion_completa .= ' (' . $sede_limpia['codigo_postal'] . ')';
+                
+                // Sanitizar horarios
+                if (isset($sede['horarios']) && is_array($sede['horarios'])) {
+                    foreach ($sede['horarios'] as $dia => $horario) {
+                        $sede_clean['horarios'][$dia] = sanitize_text_field($horario);
+                    }
                 }
-                $direccion_completa .= ', ' . $sede_limpia['provincia'] . ', ' . $sede_limpia['pais'];
                 
-                $sede_limpia['direccion_completa'] = $direccion_completa;
+                // Sanitizar redes sociales
+                if (isset($sede['redes_sociales']) && is_array($sede['redes_sociales'])) {
+                    foreach ($sede['redes_sociales'] as $red => $url) {
+                        $sede_clean['redes_sociales'][$red] = esc_url_raw($url);
+                    }
+                }
                 
-                $sedes_data[] = $sede_limpia;
+                // Solo guardar si tiene nombre
+                if (!empty($sede_clean['nombre'])) {
+                    $sedes_data[] = $sede_clean;
+                }
             }
+            
+            error_log("LEXHOY DEBUG: Guardando " . count($sedes_data) . " sedes");
+            error_log("LEXHOY DEBUG: Datos finales: " . print_r($sedes_data, true));
+            
+            $result = update_post_meta($post_id, '_despacho_sedes', $sedes_data);
+            error_log("LEXHOY DEBUG: Resultado update_post_meta: " . ($result ? 'SUCCESS' : 'FAILED'));
+            
+            // Verificar que se guardó
+            $saved_sedes = get_post_meta($post_id, '_despacho_sedes', true);
+            error_log("LEXHOY DEBUG: Sedes guardadas verificación: " . count($saved_sedes) . " sedes");
+        } else {
+            error_log("LEXHOY DEBUG: No hay datos de sedes, eliminando meta");
+            delete_post_meta($post_id, '_despacho_sedes');
         }
         
-        // Asegurar que solo hay una sede principal
-        $principal_encontrada = false;
-        foreach ($sedes_data as &$sede) {
-            if ($sede['es_principal'] && !$principal_encontrada) {
-                $principal_encontrada = true;
-            } elseif ($sede['es_principal'] && $principal_encontrada) {
-                $sede['es_principal'] = false;
-            }
-        }
-        
-        // Si no hay sede principal pero hay sedes, marcar la primera como principal
-        if (!$principal_encontrada && !empty($sedes_data)) {
-            $sedes_data[0]['es_principal'] = true;
-        }
-        
-        // Guardar sedes
-        update_post_meta($post_id, '_despacho_sedes', $sedes_data);
-        
-        // Actualizar conteo de sedes
-        update_post_meta($post_id, '_despacho_num_sedes', count($sedes_data));
+        error_log("=== LEXHOY DEBUG save_sedes TERMINADO ===");
     }
     
     /**
-     * Enqueue assets para admin
-     */
-    public function enqueue_admin_assets($hook) {
-        global $post_type;
-        
-        if ($hook === 'post.php' || $hook === 'post-new.php') {
-            if ($post_type === 'despacho') {
-                wp_enqueue_script('jquery');
-            }
-        }
-    }
-    
-    /**
-     * Obtener sedes de un despacho
-     */
-    public static function get_sedes($despacho_id) {
-        $sedes = get_post_meta($despacho_id, '_despacho_sedes', true);
-        return is_array($sedes) ? $sedes : array();
-    }
-    
-    /**
-     * Obtener sede principal de un despacho
-     */
-    public static function get_sede_principal($despacho_id) {
-        $sedes = self::get_sedes($despacho_id);
-        
-        foreach ($sedes as $sede) {
-            if ($sede['es_principal'] && $sede['activa']) {
-                return $sede;
-            }
-        }
-        
-        // Si no hay sede principal pero hay sedes activas, devolver la primera
-        foreach ($sedes as $sede) {
-            if ($sede['activa']) {
-                return $sede;
-            }
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Obtener sedes activas de un despacho
-     */
-    public static function get_sedes_activas($despacho_id) {
-        $sedes = self::get_sedes($despacho_id);
-        return array_filter($sedes, function($sede) {
-            return $sede['activa'];
-        });
-    }
-    
-    /**
-     * AJAX: Añadir sede
+     * AJAX: Añadir nueva sede
      */
     public function ajax_add_sede() {
-        check_ajax_referer('lexhoy_sedes_nonce', 'nonce');
+        $index = intval($_POST['sede_index'] ?? 0);
+        $sede_data = $_POST['sede_data'] ?? array();
         
-        $post_id = intval($_POST['post_id']);
-        if (!current_user_can('edit_post', $post_id)) {
-            wp_die('Sin permisos');
+        // Si hay datos de sede (desde Algolia), mapearlos
+        if (!empty($sede_data)) {
+            $sede = array(
+                'nombre' => $sede_data['nombre'] ?? '',
+                'descripcion' => $sede_data['descripcion'] ?? '',
+                'web' => $sede_data['web'] ?? '',
+                'ano_fundacion' => $sede_data['ano_fundacion'] ?? '',
+                'tamano_despacho' => $sede_data['tamano_despacho'] ?? '',
+                'persona_contacto' => $sede_data['persona_contacto'] ?? '',
+                'email_contacto' => $sede_data['email_contacto'] ?? '',
+                'telefono' => $sede_data['telefono'] ?? '',
+                'numero_colegiado' => $sede_data['numero_colegiado'] ?? '',
+                'colegio' => $sede_data['colegio'] ?? '',
+                'experiencia' => $sede_data['experiencia'] ?? '',
+                'calle' => $sede_data['calle'] ?? '',
+                'numero' => $sede_data['numero'] ?? '',
+                'piso' => $sede_data['piso'] ?? '',
+                'localidad' => $sede_data['localidad'] ?? '',
+                'provincia' => $sede_data['provincia'] ?? '',
+                'codigo_postal' => $sede_data['codigo_postal'] ?? '',
+                'pais' => $sede_data['pais'] ?? 'España',
+                'especialidades' => $sede_data['especialidades'] ?? '',
+                'areas_practica' => $sede_data['areas_practica'] ?? array(),
+                'servicios_especificos' => $sede_data['servicios_especificos'] ?? '',
+                'estado_verificacion' => $sede_data['estado_verificacion'] ?? 'pendiente',
+                'estado_registro' => $sede_data['estado_registro'] ?? 'activo',
+                'foto_perfil' => $sede_data['foto_perfil'] ?? '',
+                'is_verified' => $sede_data['is_verified'] ?? false,
+                'observaciones' => $sede_data['observaciones'] ?? '',
+                'horarios' => $sede_data['horarios'] ?? array(),
+                'redes_sociales' => $sede_data['redes_sociales'] ?? array(),
+                'es_principal' => $sede_data['es_principal'] ?? false,
+                'activa' => $sede_data['activa'] ?? true
+            );
+        } else {
+            $sede = array();
         }
         
-        // Lógica para añadir sede...
-        wp_send_json_success(array('message' => 'Sede añadida'));
+        $this->render_sede_form($index, $sede, false);
+        wp_die();
     }
     
     /**
-     * AJAX: Remover sede
+     * Obtener sedes desde Algolia basado en el post ID
      */
-    public function ajax_remove_sede() {
-        check_ajax_referer('lexhoy_sedes_nonce', 'nonce');
-        
-        $post_id = intval($_POST['post_id']);
-        $sede_index = intval($_POST['sede_index']);
-        
-        if (!current_user_can('edit_post', $post_id)) {
-            wp_die('Sin permisos');
-        }
-        
-        // Lógica para remover sede...
-        wp_send_json_success(array('message' => 'Sede eliminada'));
-    }
-    
-    /**
-     * AJAX: Actualizar sede
-     */
-    public function ajax_update_sede() {
-        check_ajax_referer('lexhoy_sedes_nonce', 'nonce');
-        
-        $post_id = intval($_POST['post_id']);
-        if (!current_user_can('edit_post', $post_id)) {
-            wp_die('Sin permisos');
-        }
-        
-        // Lógica para actualizar sede...
-        wp_send_json_success(array('message' => 'Sede actualizada'));
-    }
-
-    /**
-     * AJAX: Subir foto de sede
-     */
-    public function ajax_upload_sede_photo() {
-        // Verificar nonce
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'upload_sede_photo')) {
-            wp_send_json_error('Nonce inválido');
-            return;
-        }
-        
-        // Verificar permisos
-        if (!current_user_can('upload_files')) {
-            wp_send_json_error('Sin permisos para subir archivos');
-            return;
-        }
-        
-        // Verificar que se envió un archivo
-        if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-            wp_send_json_error('No se recibió ningún archivo válido');
-            return;
-        }
-        
-        $file = $_FILES['file'];
-        
-        // Validar tamaño (2MB máximo)
-        $max_size = 2 * 1024 * 1024; // 2MB
-        if ($file['size'] > $max_size) {
-            wp_send_json_error('El archivo es demasiado grande. Máximo 2MB.');
-            return;
-        }
-        
-        // Validar tipo de archivo
-        $allowed_types = array('image/jpeg', 'image/jpg', 'image/png', 'image/webp');
-        $file_type = wp_check_filetype($file['name']);
-        
-        if (!in_array($file['type'], $allowed_types)) {
-            wp_send_json_error('Formato no válido. Solo se permiten JPG, PNG y WEBP.');
-            return;
-        }
-        
-        // Configurar el upload
-        $upload_overrides = array(
-            'test_form' => false,
-            'test_size' => true,
-            'test_upload' => true
-        );
-        
-        // Realizar el upload usando WordPress
-        $uploaded_file = wp_handle_upload($file, $upload_overrides);
-        
-        if (isset($uploaded_file['error'])) {
-            wp_send_json_error('Error al subir: ' . $uploaded_file['error']);
-            return;
-        }
-        
-        // Si todo va bien, devolver la URL del archivo
-        wp_send_json_success(array(
-            'url' => $uploaded_file['url'],
-            'file' => $uploaded_file['file']
-        ));
-    }
-
-    /**
-     * Cache estático para evitar recargar el JSON en la misma petición
-     */
-    private static $json_cache = null;
-    private static $json_cache_file = null;
-
-    /**
-     * Obtener sedes desde el JSON basado en el nombre del despacho - OPTIMIZADO
-     */
-    private function get_sedes_from_json($despacho_nombre) {
-        // Función deshabilitada - ya no usamos archivos JSON
-        // Usamos Algolia como fuente principal de datos
-        return array();
-    }
-    
-    /**
-     * AJAX: Cargar sedes desde JSON de forma asíncrona
-     */
-    public function ajax_cargar_sedes_json() {
-        // Verificar permisos
-        if (!current_user_can('edit_posts')) {
-            wp_die('Sin permisos');
-        }
-        
-        $despacho_nombre = sanitize_text_field($_POST['despacho_nombre'] ?? '');
-        
-        if (empty($despacho_nombre)) {
-            wp_send_json_error('Nombre de despacho requerido');
-        }
-        
-        // Buscar sedes
-        $sedes_json = $this->get_sedes_from_json($despacho_nombre);
-        
-        if (empty($sedes_json)) {
-            wp_send_json_success(array(
-                'html' => '<p style="text-align: center; color: #666; padding: 20px;">No se encontraron sedes para este despacho en el JSON.</p>',
-                'count' => 0
-            ));
-        }
-        
-        // Generar HTML para las sedes encontradas
-        ob_start();
-        ?>
-        <div class="sedes-json-grid">
-            <?php foreach ($sedes_json as $index => $sede_json): ?>
-                <div class="sede-json-card">
-                    <div class="sede-json-header">
-                        <h4><?php echo esc_html($sede_json['nombre'] ?? 'Sede sin nombre'); ?></h4>
-                        <div class="sede-json-badges">
-                            <?php if (!empty($sede_json['es_principal'])): ?>
-                                <span class="badge badge-principal">⭐ Principal</span>
-                            <?php endif; ?>
-                            <?php if (!empty($sede_json['activa'])): ?>
-                                <span class="badge badge-activa">✅ Activa</span>
-                            <?php endif; ?>
-                            <?php if (!empty($sede_json['is_verified'])): ?>
-                                <span class="badge badge-verificada">🔒 Verificada</span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    
-                    <div class="sede-json-content">
-                        <?php if (!empty($sede_json['persona_contacto'])): ?>
-                            <p><strong>👤 Contacto:</strong> <?php echo esc_html($sede_json['persona_contacto']); ?></p>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($sede_json['telefono'])): ?>
-                            <p><strong>📞 Teléfono:</strong> <?php echo esc_html($sede_json['telefono']); ?></p>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($sede_json['email_contacto'])): ?>
-                            <p><strong>📧 Email:</strong> <?php echo esc_html($sede_json['email_contacto']); ?></p>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($sede_json['localidad']) || !empty($sede_json['provincia'])): ?>
-                            <p><strong>📍 Ubicación:</strong> 
-                                <?php echo esc_html(trim($sede_json['localidad'] . ', ' . $sede_json['provincia'], ', ')); ?>
-                            </p>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($sede_json['areas_practica']) && is_array($sede_json['areas_practica'])): ?>
-                            <p><strong>⚖️ Áreas:</strong> 
-                                <?php echo esc_html(implode(', ', $sede_json['areas_practica'])); ?>
-                            </p>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <div class="sede-json-actions">
-                        <button type="button" class="button button-secondary import-sede-btn" 
-                                data-sede-index="<?php echo $index; ?>">
-                            📥 Importar a WordPress
-                        </button>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        </div>
-        
-        <script>
-        // Actualizar variable global con los datos de las sedes
-        window.sedesJsonData = <?php echo json_encode($sedes_json); ?>;
-        
-        // Re-bind import buttons
-        jQuery('.import-sede-btn').off('click').on('click', function() {
-            const sedeIndex_import = jQuery(this).data('sede-index');
-            const sede = window.sedesJsonData[sedeIndex_import];
+    private function get_sedes_from_algolia($post_id) {
+        try {
+            // Obtener el object_id de Algolia para este despacho
+            $algolia_object_id = get_post_meta($post_id, '_algolia_object_id', true);
             
-            if (sede) {
-                // Lógica de importación... (similar a la existente)
-                importarSedeDesdeJSON(sede, sedeIndex_import, jQuery(this));
+            if (empty($algolia_object_id)) {
+                return array();
             }
-        });
-        </script>
-        <?php
-        $html = ob_get_clean();
-        
-        wp_send_json_success(array(
-            'html' => $html,
-            'count' => count($sedes_json)
-        ));
+            
+            // Obtener configuración de Algolia
+            $app_id = get_option('lexhoy_despachos_algolia_app_id');
+            $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+            $index_name = get_option('lexhoy_despachos_algolia_index_name');
+            
+            if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+                return array();
+            }
+            
+            // Inicializar cliente Algolia
+            require_once(dirname(__FILE__) . '/class-lexhoy-algolia-client.php');
+            $client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
+            
+            // Obtener el registro desde Algolia
+            $record = $client->get_object($index_name, $algolia_object_id);
+            
+            if ($record && isset($record['sedes']) && is_array($record['sedes'])) {
+                return $record['sedes'];
+            }
+            
+            return array();
+        } catch (Exception $e) {
+            // En caso de cualquier error, devolver array vacío
+            return array();
+        }
     }
 } 

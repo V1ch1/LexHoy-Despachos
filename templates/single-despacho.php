@@ -75,28 +75,82 @@ get_header(); ?>
         // Obtener todos los metadatos del despacho
         $post_id = get_the_ID();
         
-        // Información básica
-        $nombre = get_post_meta($post_id, '_despacho_nombre', true);
-        $localidad = get_post_meta($post_id, '_despacho_localidad', true);
-        $provincia = get_post_meta($post_id, '_despacho_provincia', true);
-        $codigo_postal = get_post_meta($post_id, '_despacho_codigo_postal', true);
-        $direccion = get_post_meta($post_id, '_despacho_direccion', true);
-        $telefono = get_post_meta($post_id, '_despacho_telefono', true);
-        $email = get_post_meta($post_id, '_despacho_email', true);
-        $web = get_post_meta($post_id, '_despacho_web', true);
-        $descripcion = get_post_meta($post_id, '_despacho_descripcion', true);
-        $estado_verificacion = get_post_meta($post_id, '_despacho_estado_verificacion', true);
-        $is_verified = get_post_meta($post_id, '_despacho_is_verified', true);
+        // NUEVA LÓGICA: Obtener datos de sedes primero, fallback a campos legacy
+        $sedes = get_post_meta($post_id, '_despacho_sedes', true);
+        $sede_principal = null;
+        
+        // Buscar sede principal
+        if (!empty($sedes) && is_array($sedes)) {
+            foreach ($sedes as $sede) {
+                if (isset($sede['es_principal']) && $sede['es_principal']) {
+                    $sede_principal = $sede;
+                    break;
+                }
+            }
+            // Si no hay sede principal marcada, usar la primera
+            if (!$sede_principal && !empty($sedes)) {
+                $sede_principal = $sedes[0];
+            }
+        }
+        
+        // Función helper para obtener valor de sede principal o fallback
+        $get_despacho_data = function($sede_key, $legacy_key) use ($sede_principal, $post_id) {
+            // Primero intentar desde sede principal
+            if ($sede_principal && !empty($sede_principal[$sede_key])) {
+                return $sede_principal[$sede_key];
+            }
+            // Fallback a campo legacy
+            return get_post_meta($post_id, $legacy_key, true);
+        };
+        
+        // Información básica (con nueva lógica de sedes)
+        $nombre = get_the_title(); // TÍTULO DEL DESPACHO - NO de la sede
+        $localidad = $get_despacho_data('localidad', '_despacho_localidad');
+        $provincia = $get_despacho_data('provincia', '_despacho_provincia');
+        $codigo_postal = $get_despacho_data('codigo_postal', '_despacho_codigo_postal');
+        // Construir dirección completa desde múltiples campos
+        $calle = $get_despacho_data('calle', '_despacho_calle');
+        $numero = $get_despacho_data('numero', '_despacho_numero');
+        $piso = $get_despacho_data('piso', '_despacho_piso');
+        $direccion_completa = $get_despacho_data('direccion_completa', '_despacho_direccion');
+        
+        // Construir dirección si no está completa
+        if (empty($direccion_completa)) {
+            $direccion_parts = array_filter(array($calle, $numero, $piso));
+            $direccion = !empty($direccion_parts) ? implode(' ', $direccion_parts) : '';
+        } else {
+            $direccion = $direccion_completa;
+        }
+        $telefono = $get_despacho_data('telefono', '_despacho_telefono');
+        $email = $get_despacho_data('email_contacto', '_despacho_email');
+        $web = $get_despacho_data('web', '_despacho_web');
+        $descripcion = $get_despacho_data('descripcion', '_despacho_descripcion');
+        $estado_verificacion = $get_despacho_data('estado_verificacion', '_despacho_estado_verificacion');
+        $is_verified = $get_despacho_data('is_verified', '_despacho_is_verified');
         
         // Información adicional
         $especialidades = get_post_meta($post_id, '_despacho_especialidades', true);
-        $horario = get_post_meta($post_id, '_despacho_horario', true);
-        $redes_sociales = get_post_meta($post_id, '_despacho_redes_sociales', true);
-        $experiencia = get_post_meta($post_id, '_despacho_experiencia', true);
-        $tamano_despacho = get_post_meta($post_id, '_despacho_tamaño', true);
-        $ano_fundacion = get_post_meta($post_id, '_despacho_año_fundacion', true);
-        $estado_registro = get_post_meta($post_id, '_despacho_estado_registro', true);
-        $foto_perfil = get_post_meta($post_id, '_despacho_foto_perfil', true);
+        $experiencia = $get_despacho_data('experiencia', '_despacho_experiencia');
+        $tamano_despacho = $get_despacho_data('tamano_despacho', '_despacho_tamaño');
+        $ano_fundacion = $get_despacho_data('ano_fundacion', '_despacho_año_fundacion');
+        $estado_registro = $get_despacho_data('estado_registro', '_despacho_estado_registro');
+        $foto_perfil = $get_despacho_data('foto_perfil', '_despacho_foto_perfil');
+        
+        // Horarios (nueva estructura vs legacy)
+        $horario = null;
+        if ($sede_principal && isset($sede_principal['horarios']) && is_array($sede_principal['horarios'])) {
+            $horario = $sede_principal['horarios'];
+        } else {
+            $horario = get_post_meta($post_id, '_despacho_horario', true);
+        }
+        
+        // Redes sociales (nueva estructura vs legacy)
+        $redes_sociales = null;
+        if ($sede_principal && isset($sede_principal['redes_sociales']) && is_array($sede_principal['redes_sociales'])) {
+            $redes_sociales = $sede_principal['redes_sociales'];
+        } else {
+            $redes_sociales = get_post_meta($post_id, '_despacho_redes_sociales', true);
+        }
         
         // Áreas de práctica
         $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
@@ -141,17 +195,14 @@ get_header(); ?>
             
             <!-- Foto de perfil centrada -->
             <?php
-            // DEBUG: Información de la foto de perfil
-            echo "<!-- DEBUG FOTO - Post ID: {$post_id} -->";
-            echo "<!-- DEBUG FOTO - Variable \$foto_perfil: " . ($foto_perfil ? $foto_perfil : 'VACÍA') . " -->";
-            echo "<!-- DEBUG FOTO - get_post_meta directo: " . get_post_meta($post_id, '_despacho_foto_perfil', true) . " -->";
+                    // Información de la foto de perfil
             ?>
             <?php if ($foto_perfil): ?>
                 <div class="despacho-profile-photo">
                     <img src="<?php echo esc_url($foto_perfil); ?>" alt="Foto de perfil de <?php echo esc_attr($nombre ?: get_the_title()); ?>" class="profile-image">
                 </div>
             <?php else: ?>
-                <!-- DEBUG: No hay foto, usando predeterminada -->
+                <!-- Foto predeterminada -->
                 <div class="despacho-profile-photo">
                     <img src="<?php echo $is_local ? 'http://lexhoy.local' : 'https://lexhoy.com'; ?>/wp-content/uploads/2025/07/FOTO-DESPACHO-500X500.webp" alt="Foto predeterminada" class="profile-image">
                 </div>
@@ -225,10 +276,11 @@ get_header(); ?>
                     </div>
                 </div>
                 
-                <!-- Sedes del Despacho - NUEVA SECCIÓN -->
+                <!-- Sedes del Despacho - NUEVA SECCIÓN (solo si hay 2 o más sedes) -->
                 <?php 
-                $sedes = LexhoySedesManager::get_sedes_activas(get_the_ID());
-                if (!empty($sedes)): ?>
+                // Obtener sedes del nuevo formato
+                $sedes = get_post_meta($post_id, '_despacho_sedes', true);
+                if (!empty($sedes) && is_array($sedes) && count($sedes) > 1): ?>
                     <div class="despacho-section despacho-sedes">
                         <h3><i class="fas fa-building"></i> Nuestras Sedes</h3>
                         <div class="sedes-container">

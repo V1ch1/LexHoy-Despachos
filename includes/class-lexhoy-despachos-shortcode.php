@@ -284,13 +284,39 @@ class LexhoyDespachosShortcode {
                 $query->the_post();
                 $post_id = get_the_ID();
                 
+                // NUEVA LÓGICA: Leer de sedes primero, fallback a legacy
+                $sedes = get_post_meta($post_id, '_despacho_sedes', true);
+                $sede_principal = null;
+                
+                // Buscar sede principal
+                if (!empty($sedes) && is_array($sedes)) {
+                    foreach ($sedes as $sede) {
+                        if (isset($sede['es_principal']) && $sede['es_principal']) {
+                            $sede_principal = $sede;
+                            break;
+                        }
+                    }
+                    // Si no hay sede principal marcada, usar la primera
+                    if (!$sede_principal && !empty($sedes)) {
+                        $sede_principal = $sedes[0];
+                    }
+                }
+                
+                // Función helper
+                $get_data = function($sede_key, $legacy_key) use ($sede_principal, $post_id) {
+                    if ($sede_principal && !empty($sede_principal[$sede_key])) {
+                        return $sede_principal[$sede_key];
+                    }
+                    return get_post_meta($post_id, $legacy_key, true);
+                };
+                
                 $despachos[] = array(
                     'id' => $post_id,
-                    'nombre' => get_post_meta($post_id, '_despacho_nombre', true) ?: get_the_title(),
-                    'localidad' => get_post_meta($post_id, '_despacho_localidad', true),
-                    'provincia' => get_post_meta($post_id, '_despacho_provincia', true),
+                    'nombre' => get_the_title(), // SIEMPRE usar el título del despacho, NO el nombre de la sede
+                    'localidad' => $get_data('localidad', '_despacho_localidad'),
+                    'provincia' => $get_data('provincia', '_despacho_provincia'),
                     'areas_practica' => $this->get_areas_for_post($post_id),
-                    'isVerified' => get_post_meta($post_id, '_despacho_is_verified', true) === '1',
+                    'isVerified' => $get_data('is_verified', '_despacho_is_verified') === '1' || $get_data('is_verified', '_despacho_is_verified') === true,
                     'link' => get_permalink($post_id),
                     'slug' => get_post_field('post_name', $post_id)
                 );

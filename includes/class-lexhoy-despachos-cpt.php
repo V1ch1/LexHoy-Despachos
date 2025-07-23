@@ -22,7 +22,7 @@ class LexhoyDespachosCPT {
         add_action('init', array($this, 'register_post_type'));
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
         add_action('save_post', array($this, 'save_meta_boxes'), 1, 1);
-        add_action('save_post', array($this, 'test_save_post_hook'), 1, 1);
+        // Hook de test removido para producción
         
         // Redirecciones para URLs limpias
         add_action('template_redirect', array($this, 'handle_clean_urls'));
@@ -52,6 +52,11 @@ class LexhoyDespachosCPT {
         
         // Cargar estilos CSS en el admin
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_styles'));
+        
+        // NUEVO: Personalizar columnas del listado de despachos
+        add_filter('manage_despacho_posts_columns', array($this, 'add_despacho_columns'));
+        add_action('manage_despacho_posts_custom_column', array($this, 'display_despacho_columns'), 10, 2);
+        add_filter('manage_edit-despacho_sortable_columns', array($this, 'make_despacho_columns_sortable'));
         
         // Inicializar cliente de Algolia
         $this->init_algolia_client();
@@ -148,21 +153,69 @@ class LexhoyDespachosCPT {
      * Agregar meta boxes
      */
     public function add_meta_boxes() {
-        // Meta box eliminado - ahora se usa LexhoySedesManager
-        // Los campos del despacho ahora se gestionan por sede
+        // No añadimos meta box - solo se usa el sistema de gestión de sedes
     }
 
     /**
-     * Renderizar meta box - ELIMINADO
-     * Ahora se usa LexhoySedesManager para gestionar toda la información
+     * Renderizar meta box básico del despacho
      */
     public function render_meta_box($post) {
-        echo '<div style="padding: 20px; text-align: center; background: #f0f8ff; border: 2px dashed #0073aa; border-radius: 5px;">';
-        echo '<h3 style="color: #0073aa;">🏢 Gestión de Sedes Activada</h3>';
-        echo '<p>Los campos del despacho ahora se gestionan a través del <strong>Sistema de Gestión de Sedes</strong> más abajo.</p>';
-        echo '<p>Cada sede puede tener información específica: contacto, dirección, horarios, especialidades, etc.</p>';
-        echo '<p style="color: #666;"><em>El formulario anterior ha sido reemplazado por el nuevo sistema más completo.</em></p>';
-        echo '</div>';
+        // Obtener valores guardados
+        $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
+        $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
+        $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
+        $telefono = get_post_meta($post->ID, '_despacho_telefono', true);
+        $email = get_post_meta($post->ID, '_despacho_email', true);
+        $is_verified = get_post_meta($post->ID, '_despacho_is_verified', true);
+
+        // Nonce para seguridad
+        wp_nonce_field('despacho_meta_box', 'despacho_meta_box_nonce');
+        ?>
+        
+        <div class="despacho-meta-box" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <label for="despacho_nombre"><strong>Nombre del Despacho:</strong></label><br>
+                <input type="text" id="despacho_nombre" name="despacho_nombre" 
+                       value="<?php echo esc_attr($nombre); ?>" class="widefat" style="margin-top: 5px;">
+            </div>
+            
+            <div>
+                <label for="despacho_localidad"><strong>Localidad:</strong></label><br>
+                <input type="text" id="despacho_localidad" name="despacho_localidad" 
+                       value="<?php echo esc_attr($localidad); ?>" class="widefat" style="margin-top: 5px;">
+            </div>
+            
+            <div>
+                <label for="despacho_provincia"><strong>Provincia:</strong></label><br>
+                <input type="text" id="despacho_provincia" name="despacho_provincia" 
+                       value="<?php echo esc_attr($provincia); ?>" class="widefat" style="margin-top: 5px;">
+            </div>
+            
+            <div>
+                <label for="despacho_telefono"><strong>Teléfono:</strong></label><br>
+                <input type="text" id="despacho_telefono" name="despacho_telefono" 
+                       value="<?php echo esc_attr($telefono); ?>" class="widefat" style="margin-top: 5px;">
+            </div>
+            
+            <div>
+                <label for="despacho_email"><strong>Email:</strong></label><br>
+                <input type="email" id="despacho_email" name="despacho_email" 
+                       value="<?php echo esc_attr($email); ?>" class="widefat" style="margin-top: 5px;">
+            </div>
+            
+            <div style="display: flex; align-items: center; padding-top: 20px;">
+                <label>
+                    <input type="checkbox" name="despacho_is_verified" value="1" <?php checked($is_verified, '1'); ?>>
+                    <strong>Despacho Verificado</strong>
+                </label>
+            </div>
+        </div>
+        
+        <div style="margin-top: 15px; padding: 10px; background: #e7f3ff; border-left: 4px solid #0073aa;">
+            <p><strong>💡 Información:</strong> Los campos básicos del despacho también se pueden gestionar a través del sistema de sedes más abajo. Si tienes información específica por sede, úsa el gestor de sedes.</p>
+        </div>
+        
+        <?php
     }
 
     /**
@@ -456,20 +509,11 @@ class LexhoyDespachosCPT {
     }
 
     /**
-     * Test para verificar que el hook save_post funciona
+     * DESHABILITADO PARA PRODUCCIÓN: Test para verificar que el hook save_post funciona
      */
-    public function test_save_post_hook($post_id) {
-        // Solo logear si no estamos en importación masiva
-        $is_bulk_import = isset($_POST['action']) && $_POST['action'] === 'lexhoy_bulk_import_block';
-        
-        if (!$is_bulk_import) {
-            $this->custom_log("=== LexHoy TEST: save_post hook ejecutado para post {$post_id} ===");
-            $post = get_post($post_id);
-            if ($post) {
-                $this->custom_log("LexHoy TEST: Post type = {$post->post_type}");
-            }
-        }
-    }
+    // public function test_save_post_hook($post_id) {
+    //     // FUNCIÓN DE DEBUG DESHABILITADA PARA PRODUCCIÓN
+    // }
 
     /**
      * Manejar cambios de estado de post para sincronización
@@ -881,34 +925,57 @@ class LexhoyDespachosCPT {
                 return get_post_meta($post_id, $meta_key, true);
             };
 
+            // NUEVA ESTRUCTURA: Construir registro con sedes
+            $post = get_post($post_id);
+            
+            // Obtener sedes guardadas
+            $sedes_wp = get_post_meta($post_id, '_despacho_sedes', true);
+            if (!is_array($sedes_wp)) {
+                $sedes_wp = array();
+            }
+            
+            // Si no hay sedes, crear una sede con los datos legacy para compatibilidad
+            if (empty($sedes_wp)) {
+                $sedes_wp = array(
+                    array(
+                        'nombre' => $posted_or_meta('despacho_nombre', '_despacho_nombre') ?: $post->post_title,
+                        'localidad' => $posted_or_meta('despacho_localidad', '_despacho_localidad'),
+                        'provincia' => $posted_or_meta('despacho_provincia', '_despacho_provincia'),
+                        'codigo_postal' => $posted_or_meta('despacho_codigo_postal', '_despacho_codigo_postal'),
+                        'direccion_completa' => $posted_or_meta('despacho_direccion', '_despacho_direccion'),
+                        'telefono' => $posted_or_meta('despacho_telefono', '_despacho_telefono'),
+                        'email_contacto' => $posted_or_meta('despacho_email', '_despacho_email', 'sanitize_email'),
+                        'web' => $posted_or_meta('despacho_web', '_despacho_web', 'esc_url_raw'),
+                        'descripcion' => $posted_or_meta('despacho_descripcion', '_despacho_descripcion', 'sanitize_textarea_field'),
+                        'estado_verificacion' => $posted_or_meta('despacho_estado_verificacion', '_despacho_estado_verificacion'),
+                        'is_verified' => isset($_POST['despacho_is_verified']) ? true : (get_post_meta($post_id, '_despacho_is_verified', true) ? true : false),
+                        'numero_colegiado' => $posted_or_meta('despacho_numero_colegiado', '_despacho_numero_colegiado'),
+                        'colegio' => $posted_or_meta('despacho_colegio', '_despacho_colegio'),
+                        'experiencia' => $posted_or_meta('despacho_experiencia', '_despacho_experiencia'),
+                        'foto_perfil' => $posted_or_meta('despacho_foto_perfil', '_despacho_foto_perfil', 'esc_url_raw'),
+                        'es_principal' => true,
+                        'activa' => true,
+                        'areas_practica' => $areas_practica,
+                        'horarios' => isset($_POST['despacho_horario']) ? array_map('sanitize_text_field', $_POST['despacho_horario']) : (array) get_post_meta($post_id, '_despacho_horario', true),
+                        'redes_sociales' => isset($_POST['despacho_redes_sociales']) ? array_map('esc_url_raw', $_POST['despacho_redes_sociales']) : (array) get_post_meta($post_id, '_despacho_redes_sociales', true),
+                    )
+                );
+            } else {
+                // Si hay sedes, asegurar que tienen las áreas de práctica asignadas a la primera sede
+                if (!empty($sedes_wp) && (empty($sedes_wp[0]['areas_practica']) || !is_array($sedes_wp[0]['areas_practica']))) {
+                    $sedes_wp[0]['areas_practica'] = $areas_practica;
+                }
+            }
+            
             $record = array(
-                'objectID'         => get_post_meta($post_id, '_algolia_object_id', true) ?: $post_id,
-                'nombre'           => $posted_or_meta('despacho_nombre', '_despacho_nombre'),
-                'localidad'        => $posted_or_meta('despacho_localidad', '_despacho_localidad'),
-                'provincia'        => $posted_or_meta('despacho_provincia', '_despacho_provincia'),
-                'areas_practica'   => $areas_practica,
-                'codigo_postal'    => $posted_or_meta('despacho_codigo_postal', '_despacho_codigo_postal'),
-                'direccion'        => $posted_or_meta('despacho_direccion', '_despacho_direccion'),
-                'telefono'         => $posted_or_meta('despacho_telefono', '_despacho_telefono'),
-                'email'            => $posted_or_meta('despacho_email', '_despacho_email', 'sanitize_email'),
-                'web'              => $posted_or_meta('despacho_web', '_despacho_web', 'esc_url_raw'),
-                'descripcion'      => $posted_or_meta('despacho_descripcion', '_despacho_descripcion', 'sanitize_textarea_field'),
-                'estado_verificacion'=> $posted_or_meta('despacho_estado_verificacion', '_despacho_estado_verificacion'),
-                'isVerified'       => isset($_POST['despacho_is_verified']) ? true : (get_post_meta($post_id, '_despacho_is_verified', true) ? true : false),
-                // CAMPOS PROFESIONALES NUEVOS
-                'numero_colegiado' => $posted_or_meta('despacho_numero_colegiado', '_despacho_numero_colegiado'),
-                'colegio'          => $posted_or_meta('despacho_colegio', '_despacho_colegio'),
-                // OTROS CAMPOS NUEVOS
-                'especialidades'   => isset($_POST['despacho_especialidades']) ? array_filter(array_map('trim', explode(',', $_POST['despacho_especialidades']))) : array_filter(array_map('trim', explode(',', get_post_meta($post_id, '_despacho_especialidades', true) ))),
-                'horario'          => isset($_POST['despacho_horario']) ? array_map('sanitize_text_field', $_POST['despacho_horario']) : (array) get_post_meta($post_id, '_despacho_horario', true),
-                'redes_sociales'   => isset($_POST['despacho_redes_sociales']) ? array_map('esc_url_raw', $_POST['despacho_redes_sociales']) : (array) get_post_meta($post_id, '_despacho_redes_sociales', true),
-                'experiencia'      => $posted_or_meta('despacho_experiencia', '_despacho_experiencia'),
-                'tamaño_despacho'  => $posted_or_meta('despacho_tamaño', '_despacho_tamaño'),
-                'año_fundacion'    => (int) $posted_or_meta('despacho_año_fundacion', '_despacho_año_fundacion'),
-                'estado_registro'  => $posted_or_meta('despacho_estado_registro', '_despacho_estado_registro'),
-                'foto_perfil'      => $posted_or_meta('despacho_foto_perfil', '_despacho_foto_perfil', 'esc_url_raw'),
+                'objectID' => get_post_meta($post_id, '_algolia_object_id', true) ?: $post_id,
+                'nombre' => $post->post_title,
+                'descripcion' => $post->post_content,
+                'sedes' => $sedes_wp,
+                'num_sedes' => count($sedes_wp),
+                'areas_practica' => $areas_practica, // Mantener en nivel raíz para compatibilidad
                 'ultima_actualizacion' => date('d-m-Y'),
-                'slug'             => $post->post_name,
+                'slug' => $post->post_name,
             );
 
             // Sincronizar con Algolia
@@ -1446,20 +1513,18 @@ class LexhoyDespachosCPT {
     }
 
     /**
-     * Procesar un registro de Algolia directamente (sin usar get_object)
+     * Procesar un registro de Algolia directamente (con nueva estructura de sedes)
      */
     private function process_algolia_record($record) {
         try {
             $object_id = $record['objectID'];
             
-            // Verificar si el registro tiene datos mínimos
+            // NUEVA ESTRUCTURA: El registro ahora contiene un despacho con múltiples sedes
             $nombre = trim($record['nombre'] ?? '');
-            $localidad = trim($record['localidad'] ?? '');
-            $provincia = trim($record['provincia'] ?? '');
-            $has_minimal_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
+            $sedes = isset($record['sedes']) && is_array($record['sedes']) ? $record['sedes'] : array();
             
-            // Si no tiene datos mínimos, usar un título más descriptivo
-            if (!$has_minimal_data) {
+            // Verificar si tiene datos mínimos
+            if (empty($nombre) && empty($sedes)) {
                 $nombre = 'Despacho sin datos - ' . $object_id;
             }
             
@@ -1469,10 +1534,11 @@ class LexhoyDespachosCPT {
                 $slug = 'despacho-' . sanitize_title($object_id);
             }
 
-            // ¿Existe ya un despacho con este slug?
+            // ¿Existe ya un despacho con este object_id de Algolia?
             $existing = get_posts(array(
                 'post_type'   => 'despacho',
-                'name'        => $slug,
+                'meta_key'    => '_algolia_object_id',
+                'meta_value'  => $object_id,
                 'post_status' => 'any',
                 'numberposts' => 1,
                 'fields'      => 'ids'
@@ -1499,54 +1565,164 @@ class LexhoyDespachosCPT {
             // Guardar meta para mapear con Algolia
             update_post_meta($post_id, '_algolia_object_id', $object_id);
 
-            // Actualizar post si ya existía (título, contenido, etc.)
+            // Actualizar post si ya existía
             wp_update_post(array(
                 'ID'          => $post_id,
                 'post_title'  => $nombre,
                 'post_content'=> $record['descripcion'] ?? ''
             ));
 
-            // Actualizar meta datos restantes
-            update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
-            update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
-            update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
-            update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
-            update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
-            update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
-            update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
-            update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
-            update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
-            update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
-            update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? 0);
-            // CAMPOS PROFESIONALES NUEVOS
-            update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
-            update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
-            // OTROS CAMPOS NUEVOS
-            update_post_meta($post_id, '_despacho_especialidades', isset($record['especialidades']) && is_array($record['especialidades']) ? implode(',', $record['especialidades']) : '');
-            update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
-            update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
-            update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
+            // PROCESAR SEDES - Nueva funcionalidad principal
+            if (!empty($sedes)) {
+                // Guardar las sedes completas
+                update_post_meta($post_id, '_despacho_sedes', $sedes);
+                
+                // Para compatibilidad, también extraer datos de la sede principal
+                $sede_principal = null;
+                foreach ($sedes as $sede) {
+                    if (isset($sede['es_principal']) && $sede['es_principal']) {
+                        $sede_principal = $sede;
+                        break;
+                    }
+                }
+                
+                // Si no hay sede principal marcada, usar la primera
+                if (!$sede_principal && !empty($sedes)) {
+                    $sede_principal = $sedes[0];
+                }
+                
+                if ($sede_principal) {
+                    // Extraer datos de la sede principal para campos legacy
+                    update_post_meta($post_id, '_despacho_nombre', $sede_principal['nombre'] ?? $nombre);
+                    update_post_meta($post_id, '_despacho_localidad', $sede_principal['localidad'] ?? '');
+                    update_post_meta($post_id, '_despacho_provincia', $sede_principal['provincia'] ?? '');
+                    update_post_meta($post_id, '_despacho_codigo_postal', $sede_principal['codigo_postal'] ?? '');
+                    update_post_meta($post_id, '_despacho_direccion', $sede_principal['direccion_completa'] ?? '');
+                    update_post_meta($post_id, '_despacho_telefono', $sede_principal['telefono'] ?? '');
+                    update_post_meta($post_id, '_despacho_email', $sede_principal['email_contacto'] ?? '');
+                    update_post_meta($post_id, '_despacho_web', $sede_principal['web'] ?? '');
+                    update_post_meta($post_id, '_despacho_descripcion', $sede_principal['descripcion'] ?? '');
+                    update_post_meta($post_id, '_despacho_estado_verificacion', $sede_principal['estado_verificacion'] ?? 'pendiente');
+                    update_post_meta($post_id, '_despacho_is_verified', $sede_principal['is_verified'] ?? false);
+                    update_post_meta($post_id, '_despacho_numero_colegiado', $sede_principal['numero_colegiado'] ?? '');
+                    update_post_meta($post_id, '_despacho_colegio', $sede_principal['colegio'] ?? '');
+                    update_post_meta($post_id, '_despacho_experiencia', $sede_principal['experiencia'] ?? '');
+                    update_post_meta($post_id, '_despacho_foto_perfil', $sede_principal['foto_perfil'] ?? '');
+                    
+                    // NUEVA ESTRUCTURA: Procesar horarios optimizados
+                    if (isset($sede_principal['horarios']) && is_array($sede_principal['horarios'])) {
+                        update_post_meta($post_id, '_despacho_horario', $sede_principal['horarios']);
+                    } else {
+                        // Fallback: construir horarios desde campos individuales
+                        $horarios = array(
+                            'lunes' => $sede_principal['horario_lunes'] ?? '',
+                            'martes' => $sede_principal['horario_martes'] ?? '',
+                            'miercoles' => $sede_principal['horario_miercoles'] ?? '',
+                            'jueves' => $sede_principal['horario_jueves'] ?? '',
+                            'viernes' => $sede_principal['horario_viernes'] ?? '',
+                            'sabado' => $sede_principal['horario_sabado'] ?? '',
+                            'domingo' => $sede_principal['horario_domingo'] ?? ''
+                        );
+                        update_post_meta($post_id, '_despacho_horario', $horarios);
+                    }
+                    
+                    // NUEVA ESTRUCTURA: Procesar redes sociales optimizadas
+                    if (isset($sede_principal['redes_sociales']) && is_array($sede_principal['redes_sociales'])) {
+                        update_post_meta($post_id, '_despacho_redes_sociales', $sede_principal['redes_sociales']);
+                    } else {
+                        // Fallback: construir redes desde campos individuales
+                        $redes = array(
+                            'facebook' => $sede_principal['facebook'] ?? '',
+                            'twitter' => $sede_principal['twitter'] ?? '',
+                            'linkedin' => $sede_principal['linkedin'] ?? '',
+                            'instagram' => $sede_principal['instagram'] ?? ''
+                        );
+                        update_post_meta($post_id, '_despacho_redes_sociales', $redes);
+                    }
+                    
+                    // Sincronizar áreas de práctica de la sede principal
+                    if (!empty($sede_principal['areas_practica']) && is_array($sede_principal['areas_practica'])) {
+                        $term_ids = array();
+                        foreach ($sede_principal['areas_practica'] as $area_name) {
+                            $term = term_exists($area_name, 'area_practica');
+                            if (!$term) {
+                                $term = wp_insert_term($area_name, 'area_practica');
+                            }
+                            if (!is_wp_error($term)) {
+                                $term_ids[] = intval($term['term_id']);
+                            }
+                        }
+                        if ($term_ids) {
+                            wp_set_post_terms($post_id, $term_ids, 'area_practica', false);
+                        }
+                    }
+                }
+            } else {
+                // COMPATIBILIDAD: Estructura antigua (sin sedes)
+                update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
+                update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
+                update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
+                update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
+                update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
+                update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
+                update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
+                update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
+                update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
+                update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
+                update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? false);
+                update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
+                update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
+                update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
+                update_post_meta($post_id, '_despacho_foto_perfil', $record['foto_perfil'] ?? '');
+                
+                // Procesar horarios (estructura antigua o nueva)
+                if (isset($record['horarios']) && is_array($record['horarios'])) {
+                    update_post_meta($post_id, '_despacho_horario', $record['horarios']);
+                } else {
+                    update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
+                }
+                
+                // Procesar redes sociales (estructura antigua o nueva)
+                if (isset($record['redes_sociales']) && is_array($record['redes_sociales'])) {
+                    update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales']);
+                } else {
+                    $redes = array(
+                        'facebook' => $record['facebook'] ?? '',
+                        'twitter' => $record['twitter'] ?? '',
+                        'linkedin' => $record['linkedin'] ?? '',
+                        'instagram' => $record['instagram'] ?? ''
+                    );
+                    update_post_meta($post_id, '_despacho_redes_sociales', $redes);
+                }
+                
+                // Sincronizar áreas de práctica (estructura antigua)
+                if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
+                    $term_ids = array();
+                    foreach ($record['areas_practica'] as $area_name) {
+                        $term = term_exists($area_name, 'area_practica');
+                        if (!$term) {
+                            $term = wp_insert_term($area_name, 'area_practica');
+                        }
+                        if (!is_wp_error($term)) {
+                            $term_ids[] = intval($term['term_id']);
+                        }
+                    }
+                    if ($term_ids) {
+                        wp_set_post_terms($post_id, $term_ids, 'area_practica', false);
+                    }
+                }
+            }
+
+            // Campos del despacho (nivel superior)
+            update_post_meta($post_id, '_despacho_num_sedes', $record['num_sedes'] ?? count($sedes));
+            update_post_meta($post_id, '_despacho_sede_principal_id', $record['sede_principal_id'] ?? '');
+            
+            // Otros campos comunes
             update_post_meta($post_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
             update_post_meta($post_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
             update_post_meta($post_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
-            update_post_meta($post_id, '_despacho_foto_perfil', $record['foto_perfil'] ?? '');
 
-            // Sincronizar áreas de práctica (crear términos si no existen)
-            if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
-                $term_ids = array();
-                foreach ($record['areas_practica'] as $area_name) {
-                    $term = term_exists($area_name, 'area_practica');
-                    if (!$term) {
-                        $term = wp_insert_term($area_name, 'area_practica');
-                    }
-                    if (!is_wp_error($term)) {
-                        $term_ids[] = intval($term['term_id']);
-                    }
-                }
-                if ($term_ids) {
-                    wp_set_post_terms($post_id, $term_ids, 'area_practica', false);
-                }
-            }
+            $this->custom_log("IMPORT: Despacho {$nombre} procesado exitosamente con " . count($sedes) . " sedes");
 
         } catch (Exception $e) {
             $this->custom_log("ERROR en process_algolia_record: " . $e->getMessage());
@@ -2843,6 +3019,129 @@ class LexhoyDespachosCPT {
                 echo '<meta property="og:url" content="' . esc_url(get_permalink($post->ID)) . '">' . "\n";
             }
         }
+    }
+
+    /**
+     * Añadir columnas personalizadas al listado de despachos
+     */
+    public function add_despacho_columns($columns) {
+        // Mantener columnas existentes y añadir nuevas (sin duplicar "Nombre Despacho")
+        $new_columns = array();
+        $new_columns['cb'] = $columns['cb'];
+        $new_columns['title'] = $columns['title'];
+        $new_columns['despacho_localidad'] = 'Localidad';
+        $new_columns['despacho_provincia'] = 'Provincia';
+        $new_columns['despacho_telefono'] = 'Teléfono';
+        $new_columns['despacho_areas'] = 'Áreas de Práctica';
+        $new_columns['despacho_verificado'] = 'Verificado';
+        $new_columns['despacho_sedes'] = 'Sedes';
+        $new_columns['date'] = $columns['date'];
+        
+        return $new_columns;
+    }
+    
+    /**
+     * Mostrar contenido de columnas personalizadas
+     */
+    public function display_despacho_columns($column, $post_id) {
+        // Función helper más directa para debug
+        $get_value = function($legacy_key, $sede_key = null) use ($post_id) {
+            // 1. Intentar meta field legacy
+            $value = get_post_meta($post_id, $legacy_key, true);
+            if (!empty($value)) {
+                return $value;
+            }
+            
+            // 2. Intentar en sedes si se proporciona la clave
+            if ($sede_key) {
+                $sedes = get_post_meta($post_id, '_despacho_sedes', true);
+                if (!empty($sedes) && is_array($sedes)) {
+                    // Buscar sede principal
+                    foreach ($sedes as $sede) {
+                        if (!empty($sede[$sede_key]) && isset($sede['es_principal']) && $sede['es_principal']) {
+                            return $sede[$sede_key];
+                        }
+                    }
+                    // Usar primera sede si no hay principal
+                    if (!empty($sedes[0][$sede_key])) {
+                        return $sedes[0][$sede_key];
+                    }
+                }
+            }
+            
+            return '';
+        };
+        
+        switch ($column) {
+            case 'despacho_localidad':
+                $localidad = $get_value('_despacho_localidad', 'localidad');
+                echo esc_html($localidad ?: '-');
+                break;
+                
+            case 'despacho_provincia':
+                $provincia = $get_value('_despacho_provincia', 'provincia');
+                echo esc_html($provincia ?: '-');
+                break;
+                
+            case 'despacho_telefono':
+                $telefono = $get_value('_despacho_telefono', 'telefono');
+                if ($telefono) {
+                    echo '<a href="tel:' . esc_attr($telefono) . '">' . esc_html($telefono) . '</a>';
+                } else {
+                    echo '-';
+                }
+                break;
+                
+            case 'despacho_areas':
+                $areas = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+                if (!empty($areas) && !is_wp_error($areas)) {
+                    echo '<span style="font-size: 12px;">' . esc_html(implode(', ', array_slice($areas, 0, 3))) . 
+                         (count($areas) > 3 ? '...' : '') . '</span>';
+                } else {
+                    echo '<span style="color: #999;">Sin áreas</span>';
+                }
+                break;
+                
+            case 'despacho_verificado':
+                $is_verified = $get_value('_despacho_is_verified', 'is_verified');
+                if ($is_verified === '1' || $is_verified === true || $is_verified === 'verified') {
+                    echo '<span style="color: #46b450; font-weight: bold;">✅ Sí</span>';
+                } else {
+                    echo '<span style="color: #dc3232;">❌ No</span>';
+                }
+                break;
+                
+            case 'despacho_sedes':
+                $sedes = get_post_meta($post_id, '_despacho_sedes', true);
+                $num_sedes = 0;
+                
+                if (!empty($sedes) && is_array($sedes)) {
+                    // Contar solo sedes que tengan nombre (evitar sedes vacías)
+                    foreach ($sedes as $sede) {
+                        if (!empty($sede['nombre'])) {
+                            $num_sedes++;
+                        }
+                    }
+                }
+                
+                if ($num_sedes > 0) {
+                    echo '<span style="background: #0073aa; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">' . 
+                         $num_sedes . ' sede' . ($num_sedes > 1 ? 's' : '') . '</span>';
+                } else {
+                    echo '<span style="color: #999;">0 sedes</span>';
+                }
+                break;
+        }
+    }
+    
+    /**
+     * Hacer columnas ordenables
+     */
+    public function make_despacho_columns_sortable($columns) {
+        $columns['despacho_localidad'] = 'despacho_localidad';
+        $columns['despacho_provincia'] = 'despacho_provincia';
+        $columns['despacho_verificado'] = 'despacho_verificado';
+        return $columns;
     }
 
     /**
