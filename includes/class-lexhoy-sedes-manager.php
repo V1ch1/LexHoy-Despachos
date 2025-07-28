@@ -120,7 +120,7 @@ class LexhoySedesManager {
                                     'estado_verificacion' => $sede_json['estado_verificacion'] ?? 'pendiente',
                                     'estado_registro' => $sede_json['estado_registro'] ?? 'activo',
                                     'foto_perfil' => $sede_json['foto_perfil'] ?? '',
-                                    'is_verified' => $sede_json['is_verified'] ?? false,
+                                    'is_verified' => false, // FORZADO: Todas las sedes sin verificar
                                     'observaciones' => $sede_json['observaciones'] ?? '',
                                     'horarios' => $sede_json['horarios'] ?? array(),
                                     'redes_sociales' => $sede_json['redes_sociales'] ?? array(),
@@ -765,7 +765,7 @@ class LexhoySedesManager {
                     'estado_verificacion' => sanitize_text_field($sede['estado_verificacion'] ?? 'pendiente'),
                     'estado_registro' => sanitize_text_field($sede['estado_registro'] ?? 'activo'),
                     'foto_perfil' => esc_url_raw($sede['foto_perfil'] ?? ''),
-                    'is_verified' => isset($sede['is_verified']) ? true : false,
+                    'is_verified' => false, // FORZADO: Todas las sedes sin verificar
                     'observaciones' => sanitize_textarea_field($sede['observaciones'] ?? ''),
                     'es_principal' => isset($sede['es_principal']) ? true : false,
                     'activa' => isset($sede['activa']) ? true : false,
@@ -854,7 +854,7 @@ class LexhoySedesManager {
                 'estado_verificacion' => $sede_data['estado_verificacion'] ?? 'pendiente',
                 'estado_registro' => $sede_data['estado_registro'] ?? 'activo',
                 'foto_perfil' => $sede_data['foto_perfil'] ?? '',
-                'is_verified' => $sede_data['is_verified'] ?? false,
+                'is_verified' => false, // FORZADO: Todas las sedes sin verificar
                 'observaciones' => $sede_data['observaciones'] ?? '',
                 'horarios' => $sede_data['horarios'] ?? array(),
                 'redes_sociales' => $sede_data['redes_sociales'] ?? array(),

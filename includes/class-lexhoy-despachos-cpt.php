@@ -1363,28 +1363,23 @@ class LexhoyDespachosCPT {
             $this->import_in_progress = true;
             $this->custom_log("AJAX: Control de importación activado - Sincronización deshabilitada");
 
-            // Calcular qué página necesitamos obtener (cada página = 1000 registros)
+            // Obtener solo los registros necesarios para este bloque específico
             $page = $block - 1; // Página 0 = bloque 1, Página 1 = bloque 2, etc.
             
-            $this->custom_log("AJAX: Obteniendo todos los registros de Algolia para procesar bloque {$block}");
+            $this->custom_log("AJAX: Obteniendo registros paginados de Algolia para bloque {$block}");
             
-            // Obtener todos los registros usando browse_all sin filtrar
-            $result = $this->algolia_client->browse_all_unfiltered();
+            // Obtener registros paginados en lugar de todos los registros
+            $result = $this->algolia_client->get_paginated_records($page, 1000);
             
             if (!$result['success']) {
                 throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
             }
 
-            $all_hits = $result['hits'];
-            $total_hits = count($all_hits);
-            $this->custom_log("AJAX: Obtenidos {$total_hits} registros totales de Algolia");
-
-            // Extraer solo los registros para este bloque (1000 registros por bloque)
-            $start_index = ($block - 1) * 1000;
-            $hits_to_process = array_slice($all_hits, $start_index, 1000);
+            $hits_to_process = $result['hits'];
             $total_to_process = count($hits_to_process);
+            $total_hits = $result['total_hits']; // Total estimado desde Algolia
             
-            $this->custom_log("AJAX: Procesando {$total_to_process} registros del bloque {$block} (inicio en posición {$start_index})");
+            $this->custom_log("AJAX: Obtenidos {$total_to_process} registros para el bloque {$block} de {$total_hits} totales");
 
             if ($total_to_process === 0) {
                 $this->custom_log("AJAX: No hay registros para procesar en este bloque");
@@ -1415,26 +1410,19 @@ class LexhoyDespachosCPT {
 
             foreach ($hits_to_process as $index => $record) {
                 try {
-                    if (!isset($record['objectID'])) {
-                        $error_details[] = "Registro sin objectID en posición " . $index;
-                        continue;
+                    // Validación robusta del registro
+                    $validation_result = $this->validate_algolia_record($record, $index);
+                    if (!$validation_result['valid']) {
+                        $error_details[] = $validation_result['error'];
+                        if ($validation_result['skip']) {
+                            $skipped_records++;
+                            continue;
+                        } else {
+                            continue; // Error grave, saltar registro
+                        }
                     }
 
                     $objectID = $record['objectID'];
-                    
-                    // Filtrar registros vacíos o generados automáticamente sin datos
-                    $nombre = trim($record['nombre'] ?? '');
-                    $localidad = trim($record['localidad'] ?? '');
-                    $provincia = trim($record['provincia'] ?? '');
-                    $is_generated = strpos($objectID, '_dashboard_generated_id') !== false;
-                    $has_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
-                    
-                    // Saltar registros generados automáticamente sin datos
-                    if ($is_generated && !$has_data) {
-                        $skipped_records++;
-                        $this->custom_log("AJAX: Registro {$objectID} es generado automáticamente sin datos, saltando");
-                        continue;
-                    }
                     
                     $this->custom_log("AJAX: Procesando registro {$objectID}...");
 
@@ -1562,8 +1550,9 @@ class LexhoyDespachosCPT {
                 throw new Exception('No se pudo crear/obtener el post de WordPress.');
             }
 
-            // Guardar meta para mapear con Algolia
-            update_post_meta($post_id, '_algolia_object_id', $object_id);
+            // Preparar todas las actualizaciones de metadatos en lote
+            $meta_updates = array();
+            $meta_updates['_algolia_object_id'] = $object_id;
 
             // Actualizar post si ya existía
             wp_update_post(array(
@@ -1593,21 +1582,21 @@ class LexhoyDespachosCPT {
                 
                 if ($sede_principal) {
                     // Extraer datos de la sede principal para campos legacy
-                    update_post_meta($post_id, '_despacho_nombre', $sede_principal['nombre'] ?? $nombre);
-                    update_post_meta($post_id, '_despacho_localidad', $sede_principal['localidad'] ?? '');
-                    update_post_meta($post_id, '_despacho_provincia', $sede_principal['provincia'] ?? '');
-                    update_post_meta($post_id, '_despacho_codigo_postal', $sede_principal['codigo_postal'] ?? '');
-                    update_post_meta($post_id, '_despacho_direccion', $sede_principal['direccion_completa'] ?? '');
-                    update_post_meta($post_id, '_despacho_telefono', $sede_principal['telefono'] ?? '');
-                    update_post_meta($post_id, '_despacho_email', $sede_principal['email_contacto'] ?? '');
-                    update_post_meta($post_id, '_despacho_web', $sede_principal['web'] ?? '');
-                    update_post_meta($post_id, '_despacho_descripcion', $sede_principal['descripcion'] ?? '');
-                    update_post_meta($post_id, '_despacho_estado_verificacion', $sede_principal['estado_verificacion'] ?? 'pendiente');
-                    update_post_meta($post_id, '_despacho_is_verified', $sede_principal['is_verified'] ?? false);
-                    update_post_meta($post_id, '_despacho_numero_colegiado', $sede_principal['numero_colegiado'] ?? '');
-                    update_post_meta($post_id, '_despacho_colegio', $sede_principal['colegio'] ?? '');
-                    update_post_meta($post_id, '_despacho_experiencia', $sede_principal['experiencia'] ?? '');
-                    update_post_meta($post_id, '_despacho_foto_perfil', $sede_principal['foto_perfil'] ?? '');
+                    $meta_updates['_despacho_nombre'] = $sede_principal['nombre'] ?? $nombre;
+                    $meta_updates['_despacho_localidad'] = $sede_principal['localidad'] ?? '';
+                    $meta_updates['_despacho_provincia'] = $sede_principal['provincia'] ?? '';
+                    $meta_updates['_despacho_codigo_postal'] = $sede_principal['codigo_postal'] ?? '';
+                    $meta_updates['_despacho_direccion'] = $sede_principal['direccion_completa'] ?? '';
+                    $meta_updates['_despacho_telefono'] = $sede_principal['telefono'] ?? '';
+                    $meta_updates['_despacho_email'] = $sede_principal['email_contacto'] ?? '';
+                    $meta_updates['_despacho_web'] = $sede_principal['web'] ?? '';
+                    $meta_updates['_despacho_descripcion'] = $sede_principal['descripcion'] ?? '';
+                    $meta_updates['_despacho_estado_verificacion'] = $sede_principal['estado_verificacion'] ?? 'pendiente';
+                    $meta_updates['_despacho_is_verified'] = false; // FORZADO: Todos sin verificar
+                    $meta_updates['_despacho_numero_colegiado'] = $sede_principal['numero_colegiado'] ?? '';
+                    $meta_updates['_despacho_colegio'] = $sede_principal['colegio'] ?? '';
+                    $meta_updates['_despacho_experiencia'] = $sede_principal['experiencia'] ?? '';
+                    $meta_updates['_despacho_foto_perfil'] = $sede_principal['foto_perfil'] ?? '';
                     
                     // NUEVA ESTRUCTURA: Procesar horarios optimizados
                     if (isset($sede_principal['horarios']) && is_array($sede_principal['horarios'])) {
@@ -1669,7 +1658,7 @@ class LexhoyDespachosCPT {
                 update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
                 update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
                 update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
-                update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? false);
+                update_post_meta($post_id, '_despacho_is_verified', false); // FORZADO: Todos sin verificar
                 update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
                 update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
                 update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
@@ -1714,13 +1703,18 @@ class LexhoyDespachosCPT {
             }
 
             // Campos del despacho (nivel superior)
-            update_post_meta($post_id, '_despacho_num_sedes', $record['num_sedes'] ?? count($sedes));
-            update_post_meta($post_id, '_despacho_sede_principal_id', $record['sede_principal_id'] ?? '');
+            $meta_updates['_despacho_num_sedes'] = $record['num_sedes'] ?? count($sedes);
+            $meta_updates['_despacho_sede_principal_id'] = $record['sede_principal_id'] ?? '';
             
             // Otros campos comunes
-            update_post_meta($post_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
-            update_post_meta($post_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
-            update_post_meta($post_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
+            $meta_updates['_despacho_tamaño'] = $record['tamaño_despacho'] ?? '';
+            $meta_updates['_despacho_año_fundacion'] = $record['año_fundacion'] ?? 0;
+            $meta_updates['_despacho_estado_registro'] = $record['estado_registro'] ?? 'activo';
+
+            // EJECUTAR TODAS LAS ACTUALIZACIONES DE METADATOS EN LOTE
+            foreach ($meta_updates as $meta_key => $meta_value) {
+                update_post_meta($post_id, $meta_key, $meta_value);
+            }
 
             $this->custom_log("IMPORT: Despacho {$nombre} procesado exitosamente con " . count($sedes) . " sedes");
 
@@ -2295,6 +2289,7 @@ class LexhoyDespachosCPT {
         let totalBlocks = 0;
         let processedRecords = 0;
         let totalRecords = 0;
+        let consecutiveErrors = 0;
 
         function startBulkImport() {
             if (importInProgress) {
@@ -2363,6 +2358,7 @@ class LexhoyDespachosCPT {
                 },
                 success: function(response) {
                     if (response.success) {
+                        consecutiveErrors = 0; // Reset error counter on success
                         const data = response.data;
                         processedRecords += data.processed;
                         
@@ -2399,15 +2395,37 @@ class LexhoyDespachosCPT {
                         // Procesar siguiente bloque después de una pausa corta
                         setTimeout(processNextBlock, 1000);
                     } else {
+                        consecutiveErrors++;
                         logMessage(`❌ Error en bloque ${currentBlock}: ${response.data}`);
-                        // Continuar con el siguiente bloque a pesar del error
-                        setTimeout(processNextBlock, 2000);
+                        
+                        if (consecutiveErrors >= 3) {
+                            logMessage(`🛑 Deteniendo importación: Demasiados errores de servidor consecutivos (${consecutiveErrors})`);
+                            logMessage(`💡 Sugerencia: El servidor puede estar sobrecargado o hay problemas con los datos`);
+                            finishImport();
+                            return;
+                        }
+                        
+                        logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}/3`);
+                        logMessage(`⏭️ Reintentando con el siguiente bloque en 3 segundos...`);
+                        currentBlock++;
+                        setTimeout(processNextBlock, 3000);
                     }
                 },
-                error: function() {
-                    logMessage(`❌ Error de conexión en bloque ${currentBlock}`);
-                    // Continuar con el siguiente bloque a pesar del error
-                    setTimeout(processNextBlock, 2000);
+                error: function(xhr, status, error) {
+                    consecutiveErrors++;
+                    logMessage(`❌ Error de conexión en bloque ${currentBlock}: ${status} - ${error}`);
+                    
+                    if (consecutiveErrors >= 3) {
+                        logMessage(`🛑 Deteniendo importación: Demasiados errores de conexión consecutivos (${consecutiveErrors})`);
+                        logMessage(`💡 Sugerencia: Verifica la conexión a internet y el estado del servidor Algolia`);
+                        finishImport();
+                        return;
+                    }
+                    
+                    logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}/3`);
+                    logMessage(`⏭️ Reintentando con el siguiente bloque en 3 segundos...`);
+                    currentBlock++;
+                    setTimeout(processNextBlock, 3000);
                 }
             });
         }
@@ -3417,6 +3435,100 @@ class LexhoyDespachosCPT {
         } catch (Exception $e) {
             echo "❌ Error general: " . $e->getMessage() . "\n";
         }
+    }
+
+    /**
+     * Validar un registro de Algolia antes de procesarlo
+     */
+    private function validate_algolia_record($record, $index) {
+        // Validación básica de estructura
+        if (!is_array($record)) {
+            return [
+                'valid' => false,
+                'skip' => false,
+                'error' => "Registro en posición {$index} no es un array válido"
+            ];
+        }
+
+        // Validar objectID obligatorio
+        if (!isset($record['objectID']) || empty(trim($record['objectID']))) {
+            return [
+                'valid' => false,
+                'skip' => false,
+                'error' => "Registro en posición {$index} sin objectID válido"
+            ];
+        }
+
+        $objectID = trim($record['objectID']);
+        
+        // Validar que el objectID no sea solo espacios o caracteres extraños
+        if (strlen($objectID) < 3) {
+            return [
+                'valid' => false,
+                'skip' => false,
+                'error' => "ObjectID '{$objectID}' en posición {$index} es demasiado corto"
+            ];
+        }
+
+        // Filtrar registros vacíos o generados automáticamente sin datos
+        $nombre = trim($record['nombre'] ?? '');
+        $localidad = trim($record['localidad'] ?? '');
+        $provincia = trim($record['provincia'] ?? '');
+        
+        // Verificar si es un registro generado automáticamente
+        $is_generated = strpos($objectID, '_dashboard_generated_id') !== false;
+        $has_basic_data = !empty($nombre) || !empty($localidad) || !empty($provincia);
+        
+        // Verificar si tiene datos de sedes (estructura nueva)
+        $has_sede_data = false;
+        if (isset($record['sedes']) && is_array($record['sedes'])) {
+            foreach ($record['sedes'] as $sede) {
+                if (!empty(trim($sede['nombre'] ?? '')) || 
+                    !empty(trim($sede['localidad'] ?? '')) || 
+                    !empty(trim($sede['provincia'] ?? ''))) {
+                    $has_sede_data = true;
+                    break;
+                }
+            }
+        }
+        
+        $has_any_data = $has_basic_data || $has_sede_data;
+        
+        // Saltar registros generados automáticamente sin datos útiles
+        if ($is_generated && !$has_any_data) {
+            return [
+                'valid' => false,
+                'skip' => true,
+                'error' => "Registro {$objectID} es generado automáticamente sin datos útiles"
+            ];
+        }
+        
+        // Validar registros completamente vacíos
+        if (!$has_any_data && empty(trim($record['descripcion'] ?? ''))) {
+            return [
+                'valid' => false,
+                'skip' => true,
+                'error' => "Registro {$objectID} no contiene datos útiles"
+            ];
+        }
+
+        // Validar estructura de sedes si existe
+        if (isset($record['sedes'])) {
+            if (!is_array($record['sedes'])) {
+                return [
+                    'valid' => false,
+                    'skip' => false,
+                    'error' => "Registro {$objectID} tiene campo 'sedes' con formato inválido"
+                ];
+            }
+        }
+
+        // Si pasa todas las validaciones
+        return [
+            'valid' => true,
+            'skip' => false,
+            'error' => null
+        ];
     }
 }
 

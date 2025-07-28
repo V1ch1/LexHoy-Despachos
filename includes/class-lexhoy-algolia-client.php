@@ -626,6 +626,133 @@ class LexhoyAlgoliaClient {
     }
 
     /**
+     * Obtener registros paginados de Algolia (optimizado para importación por bloques)
+     */
+    public function get_paginated_records($page = 0, $hits_per_page = 1000) {
+        try {
+            $this->custom_log("ALGOLIA: get_paginated_records - Página {$page}, {$hits_per_page} registros por página");
+            
+            $url = "https://{$this->app_id}-dsn.algolia.net/1/indexes/{$this->index_name}/browse";
+            $headers = [
+                'X-Algolia-API-Key: ' . $this->admin_api_key,
+                'X-Algolia-Application-Id: ' . $this->app_id,
+                'Content-Type: application/json'
+            ];
+
+            // Si es la primera página, obtener el cursor inicial
+            $cursor = null;
+            if ($page > 0) {
+                // Para páginas posteriores, necesitamos obtener el cursor correspondiente
+                // Esto es una limitación de la API browse de Algolia
+                // Tendremos que iterar hasta la página deseada
+                $current_page = 0;
+                
+                while ($current_page < $page) {
+                    $params = ['hitsPerPage' => $hits_per_page];
+                    if ($cursor) {
+                        $params['cursor'] = $cursor;
+                    }
+                    
+                    $full_url = $url . '?' . http_build_query($params);
+                    
+                    $ch = curl_init();
+                    curl_setopt($ch, CURLOPT_URL, $full_url);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+                    $response = curl_exec($ch);
+                    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+
+                    if ($http_code !== 200) {
+                        throw new Exception('Error HTTP ' . $http_code . ' al navegar a página ' . $current_page);
+                    }
+
+                    $data = json_decode($response, true);
+                    if (!isset($data['cursor'])) {
+                        // No hay más páginas
+                        break;
+                    }
+                    
+                    $cursor = $data['cursor'];
+                    $current_page++;
+                    
+                    // Pausa para no sobrecargar la API
+                    usleep(50000); // 50ms
+                }
+            }
+
+            // Ahora obtener la página específica
+            $params = ['hitsPerPage' => $hits_per_page];
+            if ($cursor) {
+                $params['cursor'] = $cursor;
+            }
+            
+            $full_url = $url . '?' . http_build_query($params);
+            
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $full_url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch);
+            curl_close($ch);
+
+            if ($curl_error) {
+                throw new Exception('Error cURL: ' . $curl_error);
+            }
+
+            if ($http_code !== 200) {
+                throw new Exception('Error HTTP ' . $http_code);
+            }
+
+            $data = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('Error JSON: ' . json_last_error_msg());
+            }
+
+            if (!isset($data['hits']) || !is_array($data['hits'])) {
+                throw new Exception('Formato de respuesta inválido');
+            }
+
+            // Estimar el total usando el número de página actual y registros obtenidos
+            $hits_count = count($data['hits']);
+            $estimated_total = ($page * $hits_per_page) + $hits_count;
+            
+            // Si hay cursor, significa que hay más páginas
+            if (isset($data['cursor']) && !empty($data['cursor'])) {
+                $estimated_total += $hits_per_page; // Estimación conservadora
+            }
+
+            $this->custom_log("ALGOLIA: Página {$page} obtenida - {$hits_count} registros, total estimado: {$estimated_total}");
+
+            return [
+                'success' => true,
+                'hits' => $data['hits'],
+                'total_hits' => $estimated_total,
+                'current_page' => $page,
+                'has_more' => isset($data['cursor']) && !empty($data['cursor'])
+            ];
+
+        } catch (Exception $e) {
+            $this->custom_log("ALGOLIA ERROR en get_paginated_records: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error al obtener registros paginados: ' . $e->getMessage(),
+                'error' => 'exception'
+            ];
+        }
+    }
+
+    /**
      * Obtener el App ID
      */
     public function get_app_id() {

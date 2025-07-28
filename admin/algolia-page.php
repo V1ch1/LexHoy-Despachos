@@ -65,10 +65,10 @@ function lexhoy_ajax_delete_batch() {
     check_ajax_referer('lexhoy_delete_batch', 'nonce');
     
     // Configuración SUPER optimizada
-    set_time_limit(120); // 2 minutos por lote
+    set_time_limit(180); // 3 minutos por lote (más tiempo para estabilidad)
     ini_set('memory_limit', '512M');
     
-    $batch_size = 200; // Lotes MUCHO más grandes
+    $batch_size = 40; // Balance entre velocidad y estabilidad
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
     
     // Obtener lote actual
@@ -111,21 +111,18 @@ function lexhoy_ajax_delete_batch() {
         }
     }
     
-    // Verificar si quedan más despachos
-    $remaining = get_posts(array(
-        'post_type' => 'despacho',
-        'post_status' => 'any',
-        'numberposts' => 1,
-        'fields' => 'ids'
-    ));
+    // CORREGIDO: Verificación más precisa de registros restantes
+    $remaining_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'despacho'");
     
     wp_send_json_success(array(
         'deleted' => $deleted,
         'errors' => $errors,
         'error_details' => $error_details,
         'processed' => count($despachos),
-        'has_more' => !empty($remaining),
-        'next_offset' => $offset + $batch_size
+        'has_more' => $remaining_count > 0,
+        'remaining_count' => $remaining_count,
+        'next_offset' => $offset + $batch_size,
+        'batch_size' => $batch_size
     ));
 }
 
@@ -654,8 +651,8 @@ function lexhoy_despachos_algolia_page() {
             
             <p><strong>🔧 Proceso optimizado:</strong></p>
             <ul style="list-style: disc; margin-left: 20px;">
-                <li>✅ Procesamiento por lotes de 50 despachos</li>
-                <li>✅ Sin timeout - cada lote se procesa independientemente</li>
+                <li>✅ Procesamiento por lotes de 40 despachos (optimizado para velocidad)</li>
+                <li>✅ Timeout de 60 segundos por lote - estable y confiable</li>
                 <li>✅ Progreso en tiempo real</li>
                 <li>✅ Manejo de errores mejorado</li>
                 <li>✅ Limpieza de metadatos optimizada</li>
@@ -742,6 +739,7 @@ function lexhoy_despachos_algolia_page() {
         let deletedCount = 0;
         let errorCount = 0;
         let currentOffset = 0;
+        let consecutiveErrors = 0;
 
         function startOptimizedDelete() {
             if (deleteInProgress) return;
@@ -754,6 +752,7 @@ function lexhoy_despachos_algolia_page() {
             deletedCount = 0;
             errorCount = 0;
             currentOffset = 0;
+            consecutiveErrors = 0; // Contador de errores consecutivos
             
             // UI updates
             document.getElementById('btn-delete-all').disabled = true;
@@ -787,55 +786,113 @@ function lexhoy_despachos_algolia_page() {
         }
 
                  function processBatch() {
-             const batchNum = Math.floor(currentOffset / 200) + 1;
-             const totalBatches = Math.ceil(totalToDelete / 200);
+             const batchNum = Math.floor(currentOffset / 40) + 1;
+             const totalBatches = Math.ceil(totalToDelete / 40);
              
-             logMessage(`🚀 Procesando SUPER-lote ${batchNum} de ${totalBatches} (200 despachos por lote)...`);
+             logMessage(`🚀 Procesando lote ${batchNum} de ${totalBatches} (40 despachos por lote)...`);
             
-            jQuery.post(ajaxurl, {
-                action: 'lexhoy_delete_batch',
-                nonce: '<?php echo wp_create_nonce('lexhoy_delete_batch'); ?>',
-                offset: currentOffset
-            }, function(response) {
-                if (response.success) {
-                    const data = response.data;
-                    deletedCount += data.deleted;
-                    errorCount += data.errors;
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                timeout: 60000, // 60 segundos timeout (CORREGIDO)
+                data: {
+                    action: 'lexhoy_delete_batch',
+                    nonce: '<?php echo wp_create_nonce('lexhoy_delete_batch'); ?>',
+                    offset: currentOffset
+                },
+                success: function(response) {
+                    if (response.success) {
+                        const data = response.data;
+                        deletedCount += data.deleted;
+                        errorCount += data.errors;
+                        
+                        // Resetear errores consecutivos en caso de éxito
+                        consecutiveErrors = 0;
+                        
+                        logMessage(`   ✅ Eliminados: ${data.deleted}, ❌ Errores: ${data.errors}`);
+                        logMessage(`   📊 Restantes en BD: ${data.remaining_count || 'calculando...'}`);
+                        
+                        if (data.error_details.length > 0) {
+                            data.error_details.forEach(error => {
+                                logMessage(`      ⚠️ ${error}`);
+                            });
+                        }
+                        
+                        // Update progress
+                        const processed = deletedCount + errorCount;
+                        const percentage = Math.round((processed / totalToDelete) * 100);
+                        
+                        document.querySelector('.progress-fill').style.width = percentage + '%';
+                        document.getElementById('progress-text').textContent = 
+                            `Eliminados: ${deletedCount.toLocaleString()} | Errores: ${errorCount} | Total: ${processed.toLocaleString()}/${totalToDelete.toLocaleString()}`;
+                        document.getElementById('progress-percentage').textContent = percentage + '%';
+                        
+                        // CORREGIDO: Verificar múltiples condiciones para parar
+                        if (data.has_more && data.remaining_count > 0 && data.deleted > 0) {
+                            currentOffset = data.next_offset;
+                            // Continue with next batch after smaller delay
+                            setTimeout(processBatch, 800); // Pausa optimizada para velocidad
+                        } else {
+                            // Finished! (por cualquiera de estas razones)
+                            if (data.remaining_count === 0) {
+                                logMessage('✅ ¡Borrado masivo completado! No quedan registros en la BD.');
+                            } else if (data.deleted === 0) {
+                                logMessage('⚠️ Proceso detenido: No se eliminaron registros en este lote.');
+                            } else {
+                                logMessage('✅ ¡Borrado masivo completado!');
+                            }
+                            showSummary();
+                            finishDelete();
+                        }
+                    } else {
+                        consecutiveErrors++;
+                        logMessage(`❌ Error en lote ${batchNum}: ${response.data}`);
+                        logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}`);
+                        
+                        // Si hay demasiados errores consecutivos, detenerse
+                        if (consecutiveErrors >= 5) {
+                            logMessage('🛑 Deteniendo proceso: Demasiados errores consecutivos (5+)');
+                            logMessage('💡 Sugerencia: El servidor puede estar sobrecargado. Inténtalo más tarde.');
+                            showSummary();
+                            finishDelete();
+                            return;
+                        }
+                        
+                        // Continue with next batch despite error
+                        currentOffset += 40;
+                        if (currentOffset < totalToDelete) {
+                            logMessage('⏭️ Continuando con el siguiente lote...');
+                            setTimeout(processBatch, 2000); // Pausa más larga tras error
+                        } else {
+                            logMessage('⚠️ Se alcanzó el final tras errores');
+                            finishDelete();
+                        }
+                    }
+                },
+                error: function(xhr, status, error) {
+                    consecutiveErrors++;
+                    logMessage(`❌ Error de conexión en lote ${batchNum}: ${status} - ${error}`);
+                    logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}`);
                     
-                    logMessage(`   ✅ Eliminados: ${data.deleted}, ❌ Errores: ${data.errors}`);
-                    
-                    if (data.error_details.length > 0) {
-                        data.error_details.forEach(error => {
-                            logMessage(`      ⚠️ ${error}`);
-                        });
+                    if (status === 'timeout') {
+                        logMessage('⏰ Timeout - el lote tardó demasiado');
                     }
                     
-                    // Update progress
-                    const processed = deletedCount + errorCount;
-                    const percentage = Math.round((processed / totalToDelete) * 100);
-                    
-                    document.querySelector('.progress-fill').style.width = percentage + '%';
-                    document.getElementById('progress-text').textContent = 
-                        `Eliminados: ${deletedCount.toLocaleString()} | Errores: ${errorCount} | Total: ${processed.toLocaleString()}/${totalToDelete.toLocaleString()}`;
-                    document.getElementById('progress-percentage').textContent = percentage + '%';
-                    
-                                         if (data.has_more) {
-                         currentOffset = data.next_offset;
-                         // Continue with next batch after smaller delay
-                         setTimeout(processBatch, 100);
-                     } else {
-                        // Finished!
-                        logMessage('✅ ¡Borrado masivo completado!');
+                    // Si hay demasiados errores consecutivos, detenerse
+                    if (consecutiveErrors >= 5) {
+                        logMessage('🛑 Deteniendo proceso: Demasiados errores de conexión consecutivos (5+)');
+                        logMessage('💡 Sugerencia: El servidor puede estar sobrecargado. Inténtalo más tarde.');
                         showSummary();
                         finishDelete();
+                        return;
                     }
-                } else {
-                    logMessage(`❌ Error en lote ${batchNum}: ${response.data}`);
-                    // Continue with next batch despite error
-                    currentOffset += 50;
+                    
+                    currentOffset += 40;
                     if (currentOffset < totalToDelete) {
-                        setTimeout(processBatch, 1000);
+                        logMessage('⏭️ Reintentando con el siguiente lote en 3 segundos...');
+                        setTimeout(processBatch, 3000);
                     } else {
+                        logMessage('⚠️ Se alcanzó el final tras errores de conexión');
                         finishDelete();
                     }
                 }
