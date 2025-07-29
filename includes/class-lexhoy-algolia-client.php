@@ -47,6 +47,85 @@ class LexhoyAlgoliaClient {
     }
 
     /**
+     * Ejecuta una petición cURL con reintentos automáticos
+     */
+    private function execute_with_retry($ch, $max_retries = 3, $retry_delay = 2) {
+        $retries = 0;
+        $last_error = '';
+        
+        while ($retries < $max_retries) {
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch);
+            
+            // Si la petición fue exitosa, devolver resultado
+            if (!$curl_error && ($http_code >= 200 && $http_code < 300)) {
+                return [
+                    'success' => true,
+                    'response' => $response,
+                    'http_code' => $http_code,
+                    'retries' => $retries
+                ];
+            }
+            
+            // Determinar si el error es recuperable
+            $is_recoverable = $this->is_recoverable_error($curl_error, $http_code);
+            
+            $retries++;
+            $last_error = $curl_error ?: "HTTP {$http_code}";
+            
+            $this->custom_log("RETRY: Intento {$retries}/{$max_retries} falló: {$last_error}");
+            
+            // Si no es recuperable o hemos agotado los reintentos, salir
+            if (!$is_recoverable || $retries >= $max_retries) {
+                break;
+            }
+            
+            // Esperar antes del siguiente intento (backoff exponencial)
+            $delay = $retry_delay * pow(2, $retries - 1);
+            $this->custom_log("RETRY: Esperando {$delay} segundos antes del siguiente intento");
+            sleep($delay);
+        }
+        
+        return [
+            'success' => false,
+            'response' => null,
+            'http_code' => $http_code ?? 0,
+            'error' => $last_error,
+            'retries' => $retries
+        ];
+    }
+    
+    /**
+     * Determina si un error es recuperable y vale la pena reintentar
+     */
+    private function is_recoverable_error($curl_error, $http_code) {
+        // Errores de red recuperables
+        $recoverable_curl_errors = [
+            'Operation timed out',
+            'Connection timed out',
+            'Couldn\'t connect to server',
+            'Transfer closed with outstanding read data remaining',
+            'Connection reset by peer',
+            'Temporary failure in name resolution'
+        ];
+        
+        foreach ($recoverable_curl_errors as $error_pattern) {
+            if (strpos($curl_error, $error_pattern) !== false) {
+                return true;
+            }
+        }
+        
+        // Códigos HTTP recuperables
+        $recoverable_http_codes = [429, 500, 502, 503, 504];
+        if (in_array($http_code, $recoverable_http_codes)) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
      * Obtener el nombre del índice
      */
     public function get_index_name() {
@@ -71,10 +150,16 @@ class LexhoyAlgoliaClient {
                 'X-Algolia-API-Key: ' . $this->admin_api_key,
                 'X-Algolia-Application-Id: ' . $this->app_id
             ));
-            // Deshabilitar verificación SSL temporalmente para resolver timeout
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Aumentado para verificación robusta
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20); // Más tiempo para establecer conexión
+            curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1); // Mantener conexión activa
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Seguir redirects
+            curl_setopt($ch, CURLOPT_MAXREDIRS, 3); // Máximo 3 redirects
+            curl_setopt($ch, CURLOPT_USERAGENT, 'LexHoy-Despachos/1.0 WordPress Plugin');
+            // Configuración SSL mejorada para mayor seguridad
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            curl_setopt($ch, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
 
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -355,37 +440,40 @@ class LexhoyAlgoliaClient {
                 curl_setopt($ch, CURLOPT_URL, $full_url);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-                // Deshabilitar verificación SSL temporalmente para resolver timeout
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Aumentado para importaciones masivas
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20); // Tiempo para establecer conexión
+                curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1); // Mantener conexión activa
+                curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 300); // Mantener conexión por 5 minutos
+                curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 30); // Intervalo de keepalive
+                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Seguir redirects
+                curl_setopt($ch, CURLOPT_MAXREDIRS, 3); // Máximo 3 redirects
+                curl_setopt($ch, CURLOPT_USERAGENT, 'LexHoy-Despachos/1.0 WordPress Plugin');
+                // Configuración SSL mejorada
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+                curl_setopt($ch, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
 
-                $response = curl_exec($ch);
-                $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $curl_error = curl_error($ch);
+                // Usar sistema de reintentos automáticos
+                $result = $this->execute_with_retry($ch);
                 curl_close($ch);
 
-                $this->custom_log('ALGOLIA HTTP Code: ' . $http_code);
-                $this->custom_log('ALGOLIA cURL Error: ' . ($curl_error ?: 'ninguno'));
-                $this->custom_log('ALGOLIA Response (primeros 500 chars): ' . substr($response, 0, 500));
+                $this->custom_log('ALGOLIA HTTP Code: ' . $result['http_code']);
+                $this->custom_log('ALGOLIA Reintentos: ' . $result['retries']);
+                $this->custom_log('ALGOLIA Response (primeros 500 chars): ' . substr($result['response'] ?: '', 0, 500));
 
-                if ($curl_error) {
-                    error_log('LexHoy: Error cURL en browse_all_with_cursor: ' . $curl_error);
+                if (!$result['success']) {
+                    $error_msg = $result['error'] ?: 'Error desconocido';
+                    error_log('LexHoy: Error en browse_all_with_cursor tras ' . $result['retries'] . ' reintentos: ' . $error_msg);
                     return [
                         'success' => false,
-                        'message' => 'Error de conexión: ' . $curl_error,
-                        'error' => 'curl_error'
+                        'message' => 'Error de conexión tras reintentos: ' . $error_msg,
+                        'error' => 'connection_failed',
+                        'retries' => $result['retries']
                     ];
                 }
 
-                if ($http_code !== 200) {
-                    error_log('LexHoy: HTTP Error en browse_all_with_cursor: ' . $http_code . ' - ' . $response);
-                    return [
-                        'success' => false,
-                        'message' => 'Error de Algolia (HTTP ' . $http_code . ')',
-                        'error' => 'http_error'
-                    ];
-                }
+                $response = $result['response'];
+                $http_code = $result['http_code'];
 
                 $data = json_decode($response, true);
                 if (json_last_error() !== JSON_ERROR_NONE) {
@@ -661,7 +749,7 @@ class LexhoyAlgoliaClient {
                     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
                     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 10); // Timeout más agresivo para navegación
 
                     $response = curl_exec($ch);
                     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -699,7 +787,7 @@ class LexhoyAlgoliaClient {
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Timeout aumentado para bloques problemáticos
 
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -1024,15 +1112,19 @@ class LexhoyAlgoliaClient {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 15); // Reducido de 30 a 15 segundos
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10); // Timeout de conexión de 10 segundos
-            curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 300); // Cache DNS por 5 minutos
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Aumentado para importaciones masivas
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20); // Más tiempo para establecer conexión
+            curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 600); // Cache DNS por 10 minutos
             curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1); // Mantener conexión activa
-            curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 60); // Mantener conexión por 60 segundos
-            curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 60); // Intervalo de keepalive
-            // Deshabilitar verificación SSL temporalmente para resolver timeout
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 300); // Mantener conexión por 5 minutos
+            curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 30); // Intervalo de keepalive optimizado
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Seguir redirects
+            curl_setopt($ch, CURLOPT_MAXREDIRS, 3); // Máximo 3 redirects
+            curl_setopt($ch, CURLOPT_USERAGENT, 'LexHoy-Despachos/1.0 WordPress Plugin'); // User agent identificable
+            // Mejorar configuración SSL para mayor estabilidad
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            curl_setopt($ch, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
 
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -1147,11 +1239,18 @@ class LexhoyAlgoliaClient {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10); // Reducido a 10 segundos
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5); // Timeout de conexión de 5 segundos
-            // Deshabilitar verificación SSL temporalmente para resolver timeout
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Aumentado para importaciones masivas
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20); // Más tiempo para establecer conexión
+            curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1); // Mantener conexión activa
+            curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 300); // Mantener conexión por 5 minutos
+            curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 30); // Intervalo de keepalive
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Seguir redirects
+            curl_setopt($ch, CURLOPT_MAXREDIRS, 3); // Máximo 3 redirects
+            curl_setopt($ch, CURLOPT_USERAGENT, 'LexHoy-Despachos/1.0 WordPress Plugin');
+            // Configuración SSL mejorada
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            curl_setopt($ch, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
 
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -1373,26 +1472,39 @@ class LexhoyAlgoliaClient {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Aumentado para importaciones masivas
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20); // Más tiempo para establecer conexión
+            curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1); // Mantener conexión activa
+            curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 300); // Mantener conexión por 5 minutos
+            curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 30); // Intervalo de keepalive
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Seguir redirects
+            curl_setopt($ch, CURLOPT_MAXREDIRS, 3); // Máximo 3 redirects
+            curl_setopt($ch, CURLOPT_USERAGENT, 'LexHoy-Despachos/1.0 WordPress Plugin');
+            // Configuración SSL mejorada
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            curl_setopt($ch, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
 
-            $response = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curl_error = curl_error($ch);
+            // Usar sistema de reintentos automáticos
+            $result = $this->execute_with_retry($ch);
             curl_close($ch);
 
-            $this->custom_log('ALGOLIA HTTP Code: ' . $http_code);
-            $this->custom_log('ALGOLIA Response (primeros 300 chars): ' . substr($response, 0, 300));
+            $this->custom_log('ALGOLIA HTTP Code: ' . $result['http_code']);
+            $this->custom_log('ALGOLIA Reintentos: ' . $result['retries']);
+            $this->custom_log('ALGOLIA Response (primeros 300 chars): ' . substr($result['response'] ?: '', 0, 300));
 
-            if ($curl_error) {
+            if (!$result['success']) {
+                $error_msg = $result['error'] ?: 'Error desconocido';
                 return [
                     'success' => false,
-                    'message' => 'Error de conexión: ' . $curl_error,
-                    'error' => 'curl_error'
+                    'message' => 'Error de conexión tras reintentos: ' . $error_msg,
+                    'error' => 'connection_failed',
+                    'retries' => $result['retries']
                 ];
             }
+
+            $response = $result['response'];
+            $http_code = $result['http_code'];
 
             if ($http_code !== 200) {
                 return [

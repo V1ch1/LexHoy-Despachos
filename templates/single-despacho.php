@@ -157,6 +157,37 @@ get_header(); ?>
         
         // Auto-detectar entorno para fotos
         $is_local = (strpos($_SERVER['HTTP_HOST'], 'lexhoy.local') !== false);
+        
+        // Función auxiliar para verificar si todos los horarios están vacíos
+        function horarios_todos_vacios($horarios) {
+            if (!$horarios || !is_array($horarios)) {
+                return true;
+            }
+            foreach ($horarios as $horario) {
+                if (!empty(trim($horario))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        
+        // Función auxiliar para verificar si todas las redes sociales están vacías
+        function redes_sociales_todas_vacias($redes) {
+            if (!$redes || !is_array($redes)) {
+                return true;
+            }
+            foreach ($redes as $red) {
+                if (!empty(trim($red))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        
+        // Función auxiliar para verificar si la información del despacho está vacía
+        function informacion_despacho_vacia($tamano, $ano_fundacion) {
+            return empty(trim($tamano)) && empty(trim($ano_fundacion));
+        }
         ?>
         
         <!-- Cabecera del despacho - NUEVA ESTRUCTURA RESPONSIVE -->
@@ -372,7 +403,7 @@ get_header(); ?>
                 <?php endif; ?>
                 
                 <!-- Horario - IDÉNTICO a las tarjetas del buscador -->
-                <?php if ($horario && is_array($horario)): ?>
+                <?php if ($horario && is_array($horario) && !horarios_todos_vacios($horario)): ?>
                     <div class="despacho-section">
                         <h3><i class="fas fa-clock"></i> Horario de Atención</h3>
                         <div class="schedule-grid">
@@ -436,28 +467,24 @@ get_header(); ?>
                 <?php endif; ?>
                 
                 <!-- Información adicional - IDÉNTICO al estilo del buscador -->
-                <div class="despacho-section">
-                    <h3><i class="fas fa-building"></i> Información del Despacho</h3>
-                    
-                    <?php if ($tamano_despacho): ?>
-                        <p><strong>Tamaño:</strong> <?php echo esc_html($tamano_despacho); ?></p>
-                    <?php endif; ?>
-                    
-                    <?php if ($ano_fundacion): ?>
-                        <p><strong>Año de fundación:</strong> <?php echo esc_html($ano_fundacion); ?></p>
-                    <?php endif; ?>
-                    
-                    <?php if ($estado_registro): ?>
-                        <p>
-                            <span class="registration-status <?php echo esc_attr($estado_registro); ?>">
-                                <?php echo esc_html(ucfirst($estado_registro)); ?>
-                            </span>
-                        </p>
-                    <?php endif; ?>
-                </div>
+                <?php if (!informacion_despacho_vacia($tamano_despacho, $ano_fundacion)): ?>
+                    <div class="despacho-section">
+                        <h3><i class="fas fa-building"></i> Información del Despacho</h3>
+                        
+                        <?php if ($tamano_despacho): ?>
+                            <p><strong>Tamaño:</strong> <?php echo esc_html($tamano_despacho); ?></p>
+                        <?php endif; ?>
+                        
+                        <?php if ($ano_fundacion): ?>
+                            <p><strong>Año de fundación:</strong> <?php echo esc_html($ano_fundacion); ?></p>
+                        <?php endif; ?>
+                        
+                        <?php // Estado de registro eliminado ya que no aporta valor al cliente ?>
+                    </div>
+                <?php endif; ?>
                 
                 <!-- Redes sociales - IDÉNTICO al estilo del buscador -->
-                <?php if ($redes_sociales && is_array($redes_sociales)): ?>
+                <?php if ($redes_sociales && is_array($redes_sociales) && !redes_sociales_todas_vacias($redes_sociales)): ?>
                     <div class="despacho-section">
                         <h3><i class="fas fa-share-alt"></i> Redes Sociales</h3>
                         <div class="social-links">

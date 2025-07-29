@@ -43,6 +43,11 @@ class LexhoyDespachosCPT {
         // NUEVO: Handlers AJAX para importación masiva
         add_action('wp_ajax_lexhoy_get_algolia_count', array($this, 'ajax_get_algolia_count'));
         add_action('wp_ajax_lexhoy_bulk_import_block', array($this, 'ajax_bulk_import_block'));
+        add_action('wp_ajax_lexhoy_check_block_status', array($this, 'ajax_check_block_status'));
+        add_action('wp_ajax_lexhoy_import_sub_block', array($this, 'ajax_import_sub_block'));
+        add_action('wp_ajax_lexhoy_connection_diagnostic', array($this, 'ajax_connection_diagnostic'));
+        add_action('wp_ajax_lexhoy_complete_partial_block', array($this, 'ajax_complete_partial_block'));
+        add_action('wp_ajax_lexhoy_complete_partial_microbatch', array($this, 'ajax_complete_partial_microbatch'));
 
         // Registrar taxonomía de áreas de práctica
         add_action('init', array($this, 'register_taxonomies'));
@@ -1316,17 +1321,18 @@ class LexhoyDespachosCPT {
             // Intentar primero con el método simple
             $total_algolia = $this->algolia_client->get_total_count_simple();
             
-            // Si falla, intentar con el método sin filtrar
+            // Si falla, usar estimación rápida en lugar de cargar todos los registros
             if ($total_algolia === 0) {
-                $this->custom_log('AJAX: Método simple falló, intentando con browse_all_unfiltered...');
-                $result = $this->algolia_client->browse_all_unfiltered();
+                $this->custom_log('AJAX: Método simple falló, usando estimación rápida...');
+                // Obtener solo la primera página para estimar el total
+                $result = $this->algolia_client->get_paginated_records(0, 1000);
                 
                 if (!$result['success']) {
-                    throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
+                    throw new Exception('Error al obtener estimación de Algolia: ' . $result['message']);
                 }
                 
-                $all_hits = $result['hits'];
-                $total_algolia = count($all_hits);
+                $total_algolia = $result['total_hits']; // Usar la estimación de total_hits
+                $this->custom_log('AJAX: Usando estimación de total_hits desde get_paginated_records');
             }
             
             $this->custom_log("AJAX: Total encontrado: {$total_algolia} registros");
@@ -1353,6 +1359,17 @@ class LexhoyDespachosCPT {
         $block_size = 1000; // Cambiado a 1000 para coincidir con el límite de Algolia
 
         $this->custom_log("AJAX: Iniciando importación del bloque {$block} (overwrite: " . ($overwrite ? 'SI' : 'NO') . ")");
+
+        // Límites optimizados para importación masiva - MEJORADOS
+        if ($block >= 8) {
+            set_time_limit(300); // 5 minutos para bloques complejos (aumentado desde 180s)
+            ini_set('memory_limit', '1024M'); // 1GB para bloques complejos (aumentado desde 512M)
+            $this->custom_log("AJAX: Aplicando límites EXTENDIDOS para bloque problemático {$block} (300s, 1GB)");
+        } else {
+            set_time_limit(300); // 5 minutos para todos los bloques (aumentado desde 240s) 
+            ini_set('memory_limit', '1024M'); // 1GB para todos los bloques (aumentado desde 768M)
+            $this->custom_log("AJAX: Aplicando límites ESTÁNDAR para bloque {$block} (300s, 1GB)");
+        }
 
         try {
             if (!$this->algolia_client) {
@@ -1408,12 +1425,26 @@ class LexhoyDespachosCPT {
             $skipped_records = 0;
             $error_details = array();
 
+            // LOGGING MEJORADO: Información del bloque al inicio
+            $current_memory = round(memory_get_usage(true) / 1024 / 1024, 2);
+            $peak_memory = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
+            $this->custom_log("AJAX BLOQUE {$block}: INICIO - Memoria actual: {$current_memory}MB, Pico: {$peak_memory}MB");
+            $this->custom_log("AJAX BLOQUE {$block}: Total a procesar: {$total_to_process} registros");
+
             foreach ($hits_to_process as $index => $record) {
                 try {
+                    // LOGGING MEJORADO: Progreso cada 100 registros
+                    if (($index % 100) === 0) {
+                        $progress_percent = round(($index / $total_to_process) * 100, 1);
+                        $current_memory = round(memory_get_usage(true) / 1024 / 1024, 2);
+                        $this->custom_log("AJAX BLOQUE {$block}: Progreso {$progress_percent}% ({$index}/{$total_to_process}) - Memoria: {$current_memory}MB");
+                    }
+
                     // Validación robusta del registro
                     $validation_result = $this->validate_algolia_record($record, $index);
                     if (!$validation_result['valid']) {
                         $error_details[] = $validation_result['error'];
+                        $this->custom_log("AJAX BLOQUE {$block}: ERROR validación registro {$index}: {$validation_result['error']}");
                         if ($validation_result['skip']) {
                             $skipped_records++;
                             continue;
@@ -1424,7 +1455,10 @@ class LexhoyDespachosCPT {
 
                     $objectID = $record['objectID'];
                     
-                    $this->custom_log("AJAX: Procesando registro {$objectID}...");
+                    // LOGGING MEJORADO: Solo log cada 50 registros para reducir verbosidad
+                    if (($index % 50) === 0) {
+                        $this->custom_log("AJAX BLOQUE {$block}: Procesando registro {$index}: {$objectID}");
+                    }
 
                     // Verificar si el despacho ya existe
                     $existing_post = get_posts(array(
@@ -1439,25 +1473,29 @@ class LexhoyDespachosCPT {
                     if ($existing_post && !$overwrite) {
                         // Ya existe y no queremos sobrescribir
                         $skipped_records++;
-                        $this->custom_log("AJAX: Registro {$objectID} ya existe, saltando");
                         continue;
                     } elseif ($existing_post) {
                         $updated_records++;
-                        $this->custom_log("AJAX: Actualizando registro existente {$objectID}");
                     } else {
                         $created_records++;
-                        $this->custom_log("AJAX: Creando nuevo registro {$objectID}");
                     }
 
                     // Procesar el registro directamente sin usar get_object
                     $this->process_algolia_record($record);
                     
                     $imported_records++;
-                    $this->custom_log("AJAX: Registro {$objectID} procesado exitosamente");
+
+                    // Pausa cada 50 registros en bloques problemáticos
+                    if ($block >= 8 && ($imported_records % 50) === 0) {
+                        $current_memory = round(memory_get_usage(true) / 1024 / 1024, 2);
+                        $this->custom_log("AJAX BLOQUE {$block}: Pausa preventiva (procesados: {$imported_records}/{$total_to_process}) - Memoria: {$current_memory}MB");
+                        usleep(100000); // 100ms de pausa
+                    }
 
                 } catch (Exception $e) {
-                    $error_msg = "Error en registro " . $index . " (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
+                    $error_msg = "BLOQUE {$block} - Error en registro {$index} (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
                     $error_details[] = $error_msg;
+                    $this->custom_log("AJAX BLOQUE {$block}: ERROR CRÍTICO en registro {$index}: {$error_msg}");
                     $this->custom_log("AJAX ERROR: {$error_msg}");
                 }
             }
@@ -1466,13 +1504,42 @@ class LexhoyDespachosCPT {
             $this->import_in_progress = false;
             $this->custom_log("AJAX: Control de importación desactivado");
 
-            $this->custom_log("AJAX: Bloque {$block} completado - Procesados: {$imported_records}, Creados: {$created_records}, Actualizados: {$updated_records}, Saltados: {$skipped_records}, Errores: " . count($error_details));
-
+            // LOGGING FINAL DEL BLOQUE - MEJORADO
+            $final_memory = round(memory_get_usage(true) / 1024 / 1024, 2);
+            $peak_memory = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
+            
             // Calcular información de paginación
             $total_records_estimate = $total_hits;
             $total_blocks = ceil($total_hits / 1000);
             $processed_so_far = ($block * 1000);
             $is_last_block = $block >= $total_blocks || $total_to_process < 1000;
+            
+            // GUARDAR CHECKPOINT para recuperación
+            $checkpoint_data = array(
+                'last_successful_block' => $block,
+                'last_successful_record' => $processed_so_far,
+                'total_processed' => $processed_so_far,
+                'total_created' => $created_records,
+                'total_updated' => $updated_records,
+                'total_skipped' => $skipped_records,
+                'total_errors' => count($error_details),
+                'timestamp' => current_time('mysql'),
+                'memory_peak' => $peak_memory
+            );
+            update_option('lexhoy_import_checkpoint', $checkpoint_data);
+
+            $this->custom_log("AJAX BLOQUE {$block}: COMPLETADO - Procesados: {$imported_records}/{$total_to_process}, Creados: {$created_records}, Actualizados: {$updated_records}, Saltados: {$skipped_records}, Errores: " . count($error_details));
+            $this->custom_log("AJAX BLOQUE {$block}: MEMORIA - Final: {$final_memory}MB, Pico: {$peak_memory}MB");
+            
+            if (count($error_details) > 0) {
+                $this->custom_log("AJAX BLOQUE {$block}: ERRORES DETECTADOS:");
+                foreach (array_slice($error_details, 0, 5) as $error) { // Solo los primeros 5 errores
+                    $this->custom_log("  - {$error}");
+                }
+                if (count($error_details) > 5) {
+                    $this->custom_log("  - ... y " . (count($error_details) - 5) . " errores más");
+                }
+            }
 
             wp_send_json_success(array(
                 'processed' => $imported_records,
@@ -1486,7 +1553,9 @@ class LexhoyDespachosCPT {
                 'processed_so_far' => $processed_so_far,
                 'current_block' => $block,
                 'total_blocks' => $total_blocks,
-                'block_size' => 1000
+                'block_size' => 1000,
+                'memory_usage' => $final_memory,
+                'memory_peak' => $peak_memory
             ));
 
         } catch (Exception $e) {
@@ -1494,9 +1563,37 @@ class LexhoyDespachosCPT {
             $this->import_in_progress = false;
             $this->custom_log("AJAX: Control de importación desactivado por error");
             
-            $error_msg = 'Error al importar bloque: ' . $e->getMessage();
-            $this->custom_log("AJAX FATAL ERROR: {$error_msg}");
-            wp_send_json_error($error_msg);
+            // LOGGING DETALLADO DE ERROR FATAL
+            $error_memory = round(memory_get_usage(true) / 1024 / 1024, 2);
+            $peak_memory = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
+            
+            $error_msg = 'Error FATAL en bloque ' . $block . ': ' . $e->getMessage();
+            $this->custom_log("AJAX BLOQUE {$block}: ERROR FATAL - {$error_msg}");
+            $this->custom_log("AJAX BLOQUE {$block}: ERROR - Memoria al fallar: {$error_memory}MB, Pico: {$peak_memory}MB");
+            $this->custom_log("AJAX BLOQUE {$block}: ERROR - Registros procesados antes del fallo: {$imported_records}");
+            $this->custom_log("AJAX BLOQUE {$block}: ERROR - Stack trace: " . $e->getTraceAsString());
+            
+            // GUARDAR CHECKPOINT DE ERROR para debugging
+            $error_checkpoint = array(
+                'failed_block' => $block,
+                'error_message' => $e->getMessage(),
+                'error_line' => $e->getLine(),
+                'error_file' => $e->getFile(),
+                'memory_at_error' => $error_memory,
+                'memory_peak' => $peak_memory,
+                'records_processed_before_error' => $imported_records,
+                'timestamp' => current_time('mysql'),
+                'trace' => $e->getTraceAsString()
+            );
+            update_option('lexhoy_import_error_checkpoint', $error_checkpoint);
+            
+            wp_send_json_error(array(
+                'message' => $error_msg,
+                'block' => $block,
+                'memory_usage' => $error_memory,
+                'memory_peak' => $peak_memory,
+                'processed_before_error' => $imported_records
+            ));
         }
     }
 
@@ -2238,14 +2335,47 @@ class LexhoyDespachosCPT {
         </div>
 
         <div class="card" style="max-width: 600px; margin-top: 20px;">
+            <h2>🔧 Diagnóstico de Conexión</h2>
+            <p>Si tienes problemas de conexión, ejecuta este diagnóstico para identificar la causa.</p>
+            
+            <button type="button" class="button button-secondary" onclick="runConnectionDiagnostic()" id="diagnostic-btn">
+                🔍 Ejecutar Diagnóstico
+            </button>
+            
+            <div id="diagnostic-results" style="margin-top: 15px; display: none;">
+                <h4>Resultados del Diagnóstico:</h4>
+                <pre id="diagnostic-output" style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-size: 12px; max-height: 300px; overflow-y: auto;"></pre>
+            </div>
+        </div>
+
+        <div class="card" style="max-width: 600px; margin-top: 20px;">
+            <h2>🎯 Importación Granular del Bloque 8</h2>
+            <p><strong>⚠️ Usa esto solo si el bloque 8 falla en la importación masiva.</strong></p>
+            <p>Esta herramienta importa el bloque 8 en micro-lotes de 50 registros con pausas entre cada uno.</p>
+            
+            <button type="button" class="button button-warning" onclick="importBlock8Granular()" id="granular-btn">
+                🧩 Importar Bloque 8 Granular
+            </button>
+            
+            <div id="granular-progress" style="margin-top: 15px; display: none;">
+                <div class="progress-bar" style="width: 100%; background-color: #f1f1f1; border-radius: 4px;">
+                    <div id="granular-bar" style="width: 0%; height: 25px; background-color: #007cba; border-radius: 4px; transition: width 0.3s;"></div>
+                </div>
+                <p id="granular-status">Preparando...</p>
+                <textarea id="granular-log" readonly style="width: 100%; height: 200px; margin-top: 10px; font-family: monospace; font-size: 12px;"></textarea>
+            </div>
+        </div>
+
+        <div class="card" style="max-width: 600px; margin-top: 20px;">
             <h2>🚀 Iniciar Importación por Bloques</h2>
-            <p>La importación se realizará en <strong>bloques de 1000 registros</strong> para optimizar el rendimiento y evitar timeouts.</p>
-            <p><strong>📋 Proceso:</strong></p>
+            <p>La importación se realizará en <strong>bloques de 1000 registros</strong> con sistema de auto-recuperación.</p>
+            <p><strong>📋 Proceso Mejorado:</strong></p>
             <ul>
-                <li>Cada bloque procesa hasta 1000 registros de Algolia</li>
-                <li>Se filtran automáticamente los registros vacíos</li>
-                <li>La sincronización con Algolia se deshabilita durante la importación</li>
-                <li>Progreso en tiempo real con estadísticas detalladas</li>
+                <li>✅ <strong>Auto-recuperación:</strong> Si un bloque falla, se divide automáticamente en micro-lotes de 100 registros</li>
+                <li>✅ <strong>Continuidad:</strong> No se detiene por bloques problemáticos</li>
+                <li>✅ <strong>Filtrado automático:</strong> Se saltan registros vacíos</li>
+                <li>✅ <strong>Timeouts optimizados:</strong> 5 minutos por bloque, 45 segundos por micro-lote</li>
+                <li>✅ <strong>Progreso detallado:</strong> Estadísticas en tiempo real</li>
             </ul>
             
             <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" id="bulk-import-form">
@@ -2259,8 +2389,15 @@ class LexhoyDespachosCPT {
                     </label>
                 </p>
                 
+                <p>
+                    <label>
+                        <input type="checkbox" name="conservative_mode" id="conservative_mode" value="1" />
+                        <strong>Modo Conservador:</strong> Usar micro-lotes de 100 registros desde el inicio (más lento pero más seguro)
+                    </label>
+                </p>
+                
                 <button type="button" class="button button-primary" onclick="startBulkImport()">
-                    🔄 Iniciar Importación Masiva
+                    🔄 Iniciar Importación Robusta
                 </button>
             </form>
         </div>
@@ -2277,10 +2414,52 @@ class LexhoyDespachosCPT {
             </div>
         </div>
 
+        <!-- Nueva sección: Importación Controlada por Bloques -->
+        <div class="card" style="max-width: 800px; margin-top: 30px;">
+            <h2>🎯 Importación Controlada por Bloques</h2>
+            <p>Importa bloques específicos individualmente para mayor control y precisión.</p>
+            
+            <div id="controlled-import-section">
+                <button type="button" class="button" onclick="loadBlockStatus()">
+                    📊 Cargar Estado de Bloques
+                </button>
+                
+                <div id="block-status-container" style="margin-top: 20px; display: none;">
+                    <h3>Estado de Bloques (1000 registros cada uno):</h3>
+                    <div id="blocks-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 20px 0;">
+                        <!-- Los bloques se cargarán aquí dinámicamente -->
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <label>
+                            <input type="checkbox" id="overwrite-controlled" />
+                            Sobrescribir despachos existentes
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="controlled-import-log" style="background: #f1f1f1; padding: 15px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; margin-top: 20px; display: none;"></div>
+        </div>
+
         <style>
         .card { background: white; padding: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04); }
         .form-table th { width: 200px; }
         #import-log { white-space: pre-wrap; }
+        .block-card { 
+            border: 2px solid #ddd; 
+            border-radius: 8px; 
+            padding: 15px; 
+            text-align: center; 
+            cursor: pointer; 
+            transition: all 0.3s ease;
+        }
+        .block-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .block-pending { border-color: #ffc107; background-color: #fff3cd; }
+        .block-imported { border-color: #28a745; background-color: #d4edda; }
+        .block-failed { border-color: #dc3545; background-color: #f8d7da; }
+        .block-importing { border-color: #007cff; background-color: #cce7ff; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         </style>
 
         <script>
@@ -2291,23 +2470,194 @@ class LexhoyDespachosCPT {
         let totalRecords = 0;
         let consecutiveErrors = 0;
 
+        function runConnectionDiagnostic() {
+            const btn = document.getElementById('diagnostic-btn');
+            const results = document.getElementById('diagnostic-results');
+            const output = document.getElementById('diagnostic-output');
+            
+            btn.disabled = true;
+            btn.textContent = '🔄 Ejecutando diagnóstico...';
+            results.style.display = 'none';
+            output.textContent = '';
+            
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                timeout: 30000,
+                data: {
+                    action: 'lexhoy_connection_diagnostic',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_connection_diagnostic"); ?>'
+                },
+                success: function(response) {
+                    btn.disabled = false;
+                    btn.textContent = '🔍 Ejecutar Diagnóstico';
+                    results.style.display = 'block';
+                    
+                    if (response.success) {
+                        output.textContent = formatDiagnosticResults(response.data);
+                    } else {
+                        output.textContent = 'ERROR: ' + JSON.stringify(response.data, null, 2);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    btn.disabled = false;
+                    btn.textContent = '🔍 Ejecutar Diagnóstico';
+                    results.style.display = 'block';
+                    output.textContent = `ERROR DE CONEXIÓN:\nStatus: ${status}\nError: ${error}\nResponse: ${xhr.responseText}`;
+                }
+            });
+        }
+
+        function formatDiagnosticResults(data) {
+            let text = '=== DIAGNÓSTICO DE CONEXIÓN ALGOLIA ===\n\n';
+            
+            // Configuración
+            text += '📋 CONFIGURACIÓN:\n';
+            Object.keys(data.config || {}).forEach(key => {
+                text += `  ${key}: ${data.config[key]}\n`;
+            });
+            
+            // Extensiones PHP
+            text += '\n🔧 EXTENSIONES PHP:\n';
+            Object.keys(data.php_extensions || {}).forEach(key => {
+                text += `  ${key}: ${data.php_extensions[key]}\n`;
+            });
+            
+            // Configuración PHP
+            text += '\n⚙️ CONFIGURACIÓN PHP:\n';
+            Object.keys(data.php_config || {}).forEach(key => {
+                text += `  ${key}: ${data.php_config[key]}\n`;
+            });
+            
+            // Conectividad
+            text += '\n🌐 TESTS DE CONECTIVIDAD:\n';
+            Object.keys(data.connectivity || {}).forEach(key => {
+                text += `  ${key}: ${data.connectivity[key]}\n`;
+            });
+            
+            if (data.error) {
+                text += '\n❌ ERROR: ' + data.error;
+            }
+            
+            return text;
+        }
+
+        function importBlock8Granular() {
+            const btn = document.getElementById('granular-btn');
+            const progress = document.getElementById('granular-progress');
+            const bar = document.getElementById('granular-bar');
+            const status = document.getElementById('granular-status');
+            const log = document.getElementById('granular-log');
+            
+            btn.disabled = true;
+            btn.textContent = '🔄 Importando...';
+            progress.style.display = 'block';
+            log.value = '';
+            
+            const microBatchSize = 50; // Micro-lotes de 50 registros
+            const totalMicroBatches = Math.ceil(1000 / microBatchSize); // 20 micro-lotes
+            let currentMicroBatch = 1;
+            let successfulBatches = 0;
+            let failedBatches = 0;
+            
+            function logGranular(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                log.value += `[${timestamp}] ${message}\n`;
+                log.scrollTop = log.scrollHeight;
+            }
+            
+            logGranular('🧩 Iniciando importación granular del bloque 8...');
+            logGranular(`📦 Dividiendo 1000 registros en ${totalMicroBatches} micro-lotes de ${microBatchSize} registros`);
+            
+            function processNextMicroBatch() {
+                if (currentMicroBatch > totalMicroBatches) {
+                    // Completado
+                    btn.disabled = false;
+                    btn.textContent = '🧩 Importar Bloque 8 Granular';
+                    status.textContent = `✅ Completado: ${successfulBatches} exitosos, ${failedBatches} fallidos`;
+                    bar.style.width = '100%';
+                    logGranular(`✅ Importación granular completada!`);
+                    logGranular(`📊 Resumen: ${successfulBatches}/${totalMicroBatches} micro-lotes exitosos`);
+                    return;
+                }
+                
+                const startIndex = (currentMicroBatch - 1) * microBatchSize;
+                const endIndex = Math.min(startIndex + microBatchSize - 1, 999);
+                const progress = Math.round((currentMicroBatch / totalMicroBatches) * 100);
+                
+                bar.style.width = progress + '%';
+                status.textContent = `Procesando micro-lote ${currentMicroBatch}/${totalMicroBatches} (${progress}%)`;
+                logGranular(`🔄 Micro-lote ${currentMicroBatch}/${totalMicroBatches}: registros ${startIndex}-${endIndex}`);
+                
+                jQuery.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    timeout: 30000, // Solo 30 segundos para micro-lotes
+                    data: {
+                        action: 'lexhoy_import_sub_block',
+                        nonce: '<?php echo wp_create_nonce("lexhoy_import_sub_block"); ?>',
+                        block_num: 8,
+                        sub_block: currentMicroBatch,
+                        start_index: startIndex,
+                        end_index: endIndex,
+                        overwrite: 1 // Siempre sobrescribir en modo granular
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            successfulBatches++;
+                            const data = response.data;
+                            logGranular(`✅ Micro-lote ${currentMicroBatch}: ${data.processed} procesados, ${data.created} creados, ${data.updated} actualizados`);
+                        } else {
+                            failedBatches++;
+                            logGranular(`❌ Micro-lote ${currentMicroBatch} falló: ${response.data}`);
+                        }
+                        
+                        currentMicroBatch++;
+                        // Pausa de 2 segundos entre micro-lotes para no sobrecargar el servidor
+                        setTimeout(processNextMicroBatch, 2000);
+                    },
+                    error: function(xhr, status, error) {
+                        failedBatches++;
+                        logGranular(`❌ Error en micro-lote ${currentMicroBatch}: ${status} - ${error}`);
+                        
+                        currentMicroBatch++;
+                        // Pausa más larga tras error
+                        setTimeout(processNextMicroBatch, 5000);
+                    }
+                });
+            }
+            
+            processNextMicroBatch();
+        }
+
         function startBulkImport() {
             if (importInProgress) {
                 alert('Ya hay una importación en curso.');
                 return;
             }
 
+            const conservativeMode = document.getElementById('conservative_mode').checked;
+            
             importInProgress = true;
             document.getElementById('import-progress').style.display = 'block';
             document.querySelector('#bulk-import-form button').disabled = true;
             document.querySelector('#bulk-import-form button').textContent = '⏳ Importando...';
 
-            logMessage('🚀 Iniciando importación masiva por bloques de 1000...');
+            if (conservativeMode) {
+                logMessage('🛡️ MODO CONSERVADOR ACTIVADO: Usando micro-lotes de 100 registros desde el inicio');
+                logMessage('🚀 Iniciando importación robusta con auto-recuperación...');
+                startConservativeImport();
+                return;
+            } else {
+                logMessage('🚀 Iniciando importación robusta con auto-recuperación...');
+                logMessage('💡 Los bloques problemáticos se dividirán automáticamente en micro-lotes');
+            }
             
             // Primero obtener el total de registros
             jQuery.ajax({
                 url: ajaxurl,
                 type: 'POST',
+                timeout: 90000, // 90 segundos timeout para importaciones masivas
                 data: {
                     action: 'lexhoy_get_algolia_count',
                     nonce: '<?php echo wp_create_nonce("lexhoy_get_count"); ?>'
@@ -2350,6 +2700,7 @@ class LexhoyDespachosCPT {
             jQuery.ajax({
                 url: ajaxurl,
                 type: 'POST',
+                timeout: 600000, // 10 minutos timeout para bloques problemáticos (aumentado)
                 data: {
                     action: 'lexhoy_bulk_import_block',
                     nonce: '<?php echo wp_create_nonce("lexhoy_bulk_import_block"); ?>',
@@ -2359,6 +2710,10 @@ class LexhoyDespachosCPT {
                 success: function(response) {
                     if (response.success) {
                         consecutiveErrors = 0; // Reset error counter on success
+                        // Resetear contador de reintentos para este bloque específico
+                        if (window.blockRetryCount && window.blockRetryCount[currentBlock]) {
+                            delete window.blockRetryCount[currentBlock];
+                        }
                         const data = response.data;
                         processedRecords += data.processed;
                         
@@ -2398,14 +2753,14 @@ class LexhoyDespachosCPT {
                         consecutiveErrors++;
                         logMessage(`❌ Error en bloque ${currentBlock}: ${response.data}`);
                         
-                        if (consecutiveErrors >= 3) {
+                        if (consecutiveErrors >= 5) {
                             logMessage(`🛑 Deteniendo importación: Demasiados errores de servidor consecutivos (${consecutiveErrors})`);
                             logMessage(`💡 Sugerencia: El servidor puede estar sobrecargado o hay problemas con los datos`);
                             finishImport();
                             return;
                         }
                         
-                        logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}/3`);
+                        logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}/5`);
                         logMessage(`⏭️ Reintentando con el siguiente bloque en 3 segundos...`);
                         currentBlock++;
                         setTimeout(processNextBlock, 3000);
@@ -2415,14 +2770,43 @@ class LexhoyDespachosCPT {
                     consecutiveErrors++;
                     logMessage(`❌ Error de conexión en bloque ${currentBlock}: ${status} - ${error}`);
                     
-                    if (consecutiveErrors >= 3) {
+                    // SISTEMA MEJORADO DE AUTO-RECUPERACIÓN
+                    if (status === 'timeout' || error.includes('Internal Server Error') || error.includes('500') || status === 'error') {
+                        logMessage(`⚠️ BLOQUE ${currentBlock} PROBLEMÁTICO DETECTADO: ${status} - ${error}`);
+                        
+                        // Inicializar contador de reintentos si no existe
+                        if (!window.blockRetryCount) window.blockRetryCount = {};
+                        if (!window.blockRetryCount[currentBlock]) window.blockRetryCount[currentBlock] = 0;
+                        
+                        window.blockRetryCount[currentBlock]++;
+                        
+                        // FASE 1: Reintentos simples (hasta 2 veces) 
+                        if (window.blockRetryCount[currentBlock] <= 2) {
+                            const waitTime = Math.pow(2, window.blockRetryCount[currentBlock]) * 3000; // Backoff exponencial: 6s, 12s
+                            logMessage(`🔄 REINTENTO ${window.blockRetryCount[currentBlock]}/2 para bloque ${currentBlock} en ${waitTime/1000}s...`);
+                            setTimeout(() => {
+                                // NO incrementar currentBlock, reintentar el mismo
+                                consecutiveErrors--; // Reducir contador para este reintento
+                                processNextBlock();
+                            }, waitTime);
+                            return;
+                        }
+                        
+                        // FASE 2: Si fallan los reintentos, dividir en micro-lotes
+                        logMessage(`🔧 Reintentos agotados. Activando modo de recuperación automática...`);
+                        logMessage(`📦 Dividiendo bloque ${currentBlock} en micro-lotes de 100 registros...`);
+                        processBlockInMicroBatches(currentBlock);
+                        return;
+                    }
+                    
+                    if (consecutiveErrors >= 5) {
                         logMessage(`🛑 Deteniendo importación: Demasiados errores de conexión consecutivos (${consecutiveErrors})`);
                         logMessage(`💡 Sugerencia: Verifica la conexión a internet y el estado del servidor Algolia`);
                         finishImport();
                         return;
                     }
                     
-                    logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}/3`);
+                    logMessage(`⚠️ Errores consecutivos: ${consecutiveErrors}/5`);
                     logMessage(`⏭️ Reintentando con el siguiente bloque en 3 segundos...`);
                     currentBlock++;
                     setTimeout(processNextBlock, 3000);
@@ -2437,6 +2821,167 @@ class LexhoyDespachosCPT {
             log.scrollTop = log.scrollHeight;
         }
 
+        function processBlockInMicroBatches(blockNum) {
+            const microBatchSize = 100; // Micro-lotes más pequeños de 100 registros
+            const totalMicroBatches = Math.ceil(1000 / microBatchSize); // 10 micro-lotes
+            let currentMicroBatch = 1;
+            let microBatchSuccesses = 0;
+            let microBatchFailures = 0;
+            
+            logMessage(`🔧 MODO RECUPERACIÓN: Procesando ${totalMicroBatches} micro-lotes de ${microBatchSize} registros para bloque ${blockNum}`);
+            
+            function processNextMicroBatch() {
+                if (currentMicroBatch > totalMicroBatches) {
+                    const successRate = Math.round((microBatchSuccesses / totalMicroBatches) * 100);
+                    logMessage(`✅ Bloque ${blockNum} completado en modo recuperación: ${microBatchSuccesses}/${totalMicroBatches} micro-lotes exitosos (${successRate}%)`);
+                    
+                    if (microBatchSuccesses > 0) {
+                        consecutiveErrors = 0; // Reset errores si hubo algo de éxito
+                    }
+                    
+                    currentBlock++;
+                    setTimeout(processNextBlock, 3000); // Pausa más larga antes del siguiente bloque
+                    return;
+                }
+                
+                const startIndex = (currentMicroBatch - 1) * microBatchSize;
+                const endIndex = Math.min(startIndex + microBatchSize - 1, 999);
+                
+                logMessage(`🔄 Micro-lote ${currentMicroBatch}/${totalMicroBatches} del bloque ${blockNum} (registros ${startIndex}-${endIndex})`);
+                
+                jQuery.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    timeout: 45000, // 45 segundos timeout más conservador
+                    data: {
+                        action: 'lexhoy_import_sub_block',
+                        nonce: '<?php echo wp_create_nonce("lexhoy_import_sub_block"); ?>',
+                        block_num: blockNum,
+                        sub_block: currentMicroBatch,
+                        start_index: startIndex,
+                        end_index: endIndex,
+                        overwrite: document.querySelector('input[name="overwrite_existing"]').checked ? 1 : 0
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            microBatchSuccesses++;
+                            const data = response.data;
+                            logMessage(`✅ Micro-lote ${currentMicroBatch}/${totalMicroBatches}: ${data.processed} procesados`);
+                        } else {
+                            microBatchFailures++;
+                            logMessage(`❌ Micro-lote ${currentMicroBatch}/${totalMicroBatches} falló: ${response.data}`);
+                        }
+                        
+                        currentMicroBatch++;
+                        setTimeout(processNextMicroBatch, 1500); // Pausa entre micro-lotes para dar respiro al servidor
+                    },
+                    error: function(xhr, status, error) {
+                        microBatchFailures++;
+                        logMessage(`❌ Error en micro-lote ${currentMicroBatch}/${totalMicroBatches}: ${status} - ${error}`);
+                        
+                        // Si falla un micro-lote, intentamos continuar con el siguiente
+                        currentMicroBatch++;
+                        setTimeout(processNextMicroBatch, 3000); // Pausa más larga tras error
+                    }
+                });
+            }
+            
+            processNextMicroBatch();
+        }
+
+        function startConservativeImport() {
+            // En modo conservador, cada "bloque" es en realidad un micro-lote de 100 registros
+            const microBatchSize = 100;
+            let currentMicroBatch = 1;
+            let totalMicroBatches = 0;
+            let successfulMicroBatches = 0;
+            let failedMicroBatches = 0;
+            
+            // Primero obtener el total de registros para calcular micro-lotes
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                timeout: 90000,
+                data: {
+                    action: 'lexhoy_get_algolia_count',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_get_count"); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        totalRecords = response.data.total;
+                        totalMicroBatches = Math.ceil(totalRecords / microBatchSize);
+                        logMessage(`📊 Total de registros en Algolia: ${totalRecords.toLocaleString()}`);
+                        logMessage(`🧩 Se procesarán ${totalMicroBatches} micro-lotes de ${microBatchSize} registros`);
+                        
+                        processNextConservativeBatch();
+                    } else {
+                        logMessage('❌ Error al obtener el conteo: ' + response.data);
+                        finishImport();
+                    }
+                },
+                error: function() {
+                    logMessage('❌ Error de conexión al obtener el conteo');
+                    finishImport();
+                }
+            });
+            
+            function processNextConservativeBatch() {
+                if (currentMicroBatch > totalMicroBatches) {
+                    const successRate = Math.round((successfulMicroBatches / totalMicroBatches) * 100);
+                    logMessage(`✅ ¡Importación conservadora completada!`);
+                    logMessage(`📊 Resumen: ${successfulMicroBatches}/${totalMicroBatches} micro-lotes exitosos (${successRate}%)`);
+                    finishImport();
+                    return;
+                }
+                
+                const blockNum = Math.ceil(currentMicroBatch / 10); // Simular número de bloque para logs
+                const startIndex = (currentMicroBatch - 1) * microBatchSize;
+                const endIndex = Math.min(startIndex + microBatchSize - 1, totalRecords - 1);
+                const progress = Math.round((currentMicroBatch / totalMicroBatches) * 100);
+                
+                document.getElementById('progress-bar').style.width = progress + '%';
+                document.getElementById('progress-text').textContent = 
+                    `Modo Conservador: ${currentMicroBatch}/${totalMicroBatches} micro-lotes (${progress}%)`;
+                
+                logMessage(`🔄 Micro-lote ${currentMicroBatch}/${totalMicroBatches} (registros ${startIndex}-${endIndex})`);
+                
+                jQuery.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    timeout: 45000, // 45 segundos por micro-lote
+                    data: {
+                        action: 'lexhoy_import_sub_block',
+                        nonce: '<?php echo wp_create_nonce("lexhoy_import_sub_block"); ?>',
+                        block_num: blockNum,
+                        sub_block: currentMicroBatch,
+                        start_index: startIndex,
+                        end_index: endIndex,
+                        overwrite: document.querySelector('input[name="overwrite_existing"]').checked ? 1 : 0
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            successfulMicroBatches++;
+                            const data = response.data;
+                            logMessage(`✅ Micro-lote ${currentMicroBatch}: ${data.processed} procesados, ${data.created} creados, ${data.updated} actualizados`);
+                        } else {
+                            failedMicroBatches++;
+                            logMessage(`❌ Micro-lote ${currentMicroBatch} falló: ${response.data}`);
+                        }
+                        
+                        currentMicroBatch++;
+                        setTimeout(processNextConservativeBatch, 1000); // Pausa de 1 segundo entre micro-lotes
+                    },
+                    error: function(xhr, status, error) {
+                        failedMicroBatches++;
+                        logMessage(`❌ Error en micro-lote ${currentMicroBatch}: ${status} - ${error}`);
+                        
+                        currentMicroBatch++;
+                        setTimeout(processNextConservativeBatch, 2000); // Pausa más larga tras error
+                    }
+                });
+            }
+        }
+
         function finishImport() {
             importInProgress = false;
             document.querySelector('#bulk-import-form button').disabled = false;
@@ -2446,6 +2991,603 @@ class LexhoyDespachosCPT {
             setTimeout(() => {
                 location.reload();
             }, 3000);
+        }
+
+        // ============ FUNCIONES PARA IMPORTACIÓN CONTROLADA ============
+        
+        function loadBlockStatus() {
+            const container = document.getElementById('block-status-container');
+            const grid = document.getElementById('blocks-grid');
+            
+            container.style.display = 'block';
+            grid.innerHTML = '<p>🔄 Cargando estado de bloques...</p>';
+            
+            // Obtener el total de registros para calcular bloques
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                timeout: 15000, // 15 segundos timeout para carga de estado
+                data: {
+                    action: 'lexhoy_get_algolia_count',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_get_count"); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        const totalRecords = response.data.total;
+                        const totalBlocks = Math.ceil(totalRecords / 1000);
+                        
+                        checkBlocksStatus(totalBlocks, totalRecords);
+                    } else {
+                        grid.innerHTML = '<p>❌ Error al obtener información de Algolia: ' + response.data + '</p>';
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.log('Error en loadBlockStatus:', status, error);
+                    if (status === 'timeout') {
+                        grid.innerHTML = '<p>❌ Timeout al conectar con Algolia. <button onclick="loadBlockStatus()" class="button">🔄 Reintentar</button></p>';
+                    } else {
+                        grid.innerHTML = '<p>❌ Error de conexión (' + status + '). <button onclick="loadBlockStatus()" class="button">🔄 Reintentar</button></p>';
+                    }
+                }
+            });
+        }
+        
+        function checkBlocksStatus(totalBlocks, totalRecords) {
+            const grid = document.getElementById('blocks-grid');
+            grid.innerHTML = '';
+            
+            // Crear cards para cada bloque
+            for (let blockNum = 1; blockNum <= totalBlocks; blockNum++) {
+                const startRecord = (blockNum - 1) * 1000 + 1;
+                const endRecord = Math.min(blockNum * 1000, totalRecords);
+                
+                const blockCard = document.createElement('div');
+                blockCard.className = 'block-card block-pending';
+                blockCard.id = `block-${blockNum}`;
+                blockCard.innerHTML = `
+                    <h4>📦 Bloque ${blockNum}</h4>
+                    <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                    <p><small>⏳ Pendiente</small></p>
+                    <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Verificar Estado</button>
+                    <button onclick="importSingleBlock(${blockNum})" class="button button-primary">🚀 Importar</button>
+                `;
+                
+                grid.appendChild(blockCard);
+            }
+            
+            // No verificar automáticamente - control manual total
+        }
+        
+        function checkSingleBlockStatus(blockNum, startRecord, endRecord) {
+            // Verificar cuántos registros de este bloque ya están en WordPress
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'lexhoy_check_block_status',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_check_block"); ?>',
+                    block: blockNum,
+                    start_record: startRecord,
+                    end_record: endRecord
+                },
+                success: function(response) {
+                    const blockCard = document.getElementById(`block-${blockNum}`);
+                    
+                    if (response.success) {
+                        const data = response.data;
+                        const imported = data.imported_count;
+                        const total = data.total_in_block;
+                        
+                        if (imported === 0) {
+                            // Bloque pendiente
+                            blockCard.className = 'block-card block-pending';
+                            blockCard.innerHTML = `
+                                <h4>📦 Bloque ${blockNum}</h4>
+                                <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                                <p><small>⏳ Pendiente (0/${total})</small></p>
+                                <button onclick="importSingleBlock(${blockNum})" class="button button-primary">🚀 Importar</button>
+                                <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Actualizar</button>
+                            `;
+                        } else if (imported === total) {
+                            // Bloque completamente importado
+                            blockCard.className = 'block-card block-imported';
+                            blockCard.innerHTML = `
+                                <h4>📦 Bloque ${blockNum}</h4>
+                                <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                                <p><small>✅ Importado (${imported}/${total})</small></p>
+                                <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reimportar</button>
+                                <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Actualizar</button>
+                            `;
+                        } else {
+                            // Bloque parcialmente importado (posible fallo)
+                            blockCard.className = 'block-card block-failed';
+                            blockCard.innerHTML = `
+                                <h4>📦 Bloque ${blockNum}</h4>
+                                <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                                <p><small>⚠️ Parcial (${imported}/${total})</small></p>
+                                <button onclick="completePartialBlock(${blockNum})" class="button button-primary">✅ Completar Pendientes</button>
+                                <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reimportar Todo</button>
+                                <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Actualizar</button>
+                            `;
+                        }
+                    } else {
+                        // Todos los bloques problemáticos - mostrar opción de sub-bloques
+                        blockCard.className = 'block-card block-failed';
+                        blockCard.innerHTML = `
+                            <h4>📦 Bloque ${blockNum} (Problemático)</h4>
+                            <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                            <p><small>❌ Error al verificar</small></p>
+                            <button onclick="importSingleBlock(${blockNum})" class="button">🚀 Intentar Normal</button>
+                            <button onclick="showSubBlocks(${blockNum})" class="button button-primary">🔧 Dividir en Sub-bloques</button>
+                            <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Reintentar</button>
+                        `;
+                    }
+                },
+                error: function() {
+                    const blockCard = document.getElementById(`block-${blockNum}`);
+                    
+                    // Todos los bloques problemáticos - mostrar opción de sub-bloques
+                    blockCard.className = 'block-card block-failed';
+                    blockCard.innerHTML = `
+                        <h4>📦 Bloque ${blockNum} (Problemático)</h4>
+                        <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                        <p><small>❌ Error de conexión</small></p>
+                        <button onclick="importSingleBlock(${blockNum})" class="button">🚀 Intentar Normal</button>
+                        <button onclick="showSubBlocks(${blockNum})" class="button button-primary">🔧 Dividir en Sub-bloques</button>
+                        <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Reintentar</button>
+                    `;
+                }
+            });
+        }
+        
+        function checkAndUpdateBlock(blockNum, startRecord, endRecord) {
+            const blockCard = document.getElementById(`block-${blockNum}`);
+            
+            // Mostrar estado de verificación
+            blockCard.innerHTML = `
+                <h4>📦 Bloque ${blockNum}</h4>
+                <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                <p><small>🔄 Verificando estado...</small></p>
+            `;
+            
+            checkSingleBlockStatus(blockNum, startRecord, endRecord);
+        }
+        
+        function importSingleBlock(blockNum) {
+            const blockCard = document.getElementById(`block-${blockNum}`);
+            const log = document.getElementById('controlled-import-log');
+            const overwrite = document.getElementById('overwrite-controlled').checked;
+            
+            // Mostrar log y marcar bloque como importando
+            log.style.display = 'block';
+            blockCard.className = 'block-card block-importing';
+            blockCard.innerHTML = `
+                <h4>📦 Bloque ${blockNum}</h4>
+                <p>🔄 Importando...</p>
+                <p><small>⏳ En proceso</small></p>
+            `;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] 🚀 Iniciando importación del bloque ${blockNum}...\n`;
+            log.scrollTop = log.scrollHeight;
+            
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'lexhoy_bulk_import_block',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_bulk_import_block"); ?>',
+                    block: blockNum,
+                    overwrite: overwrite ? 1 : 0
+                },
+                timeout: 300000, // 5 minutos timeout para importación individual
+                success: function(response) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    
+                    if (response.success) {
+                        const data = response.data;
+                        log.textContent += `[${timestamp}] ✅ Bloque ${blockNum} completado:\n`;
+                        log.textContent += `   • Procesados: ${data.processed}\n`;
+                        log.textContent += `   • Creados: ${data.created}\n`;
+                        log.textContent += `   • Actualizados: ${data.updated}\n`;
+                        log.textContent += `   • Saltados: ${data.skipped || 0}\n`;
+                        log.textContent += `   • Errores: ${data.errors}\n\n`;
+                        
+                        if (data.error_details && data.error_details.length > 0) {
+                            data.error_details.forEach(error => {
+                                log.textContent += `   ⚠️ ${error}\n`;
+                            });
+                            log.textContent += '\n';
+                        }
+                        
+                        // Marcar como importado exitosamente
+                        blockCard.className = 'block-card block-imported';
+                        blockCard.innerHTML = `
+                            <h4>📦 Bloque ${blockNum}</h4>
+                            <p>✅ Completado</p>
+                            <p><small>Procesados: ${data.processed}</small></p>
+                        `;
+                    } else {
+                        log.textContent += `[${timestamp}] ❌ Error en bloque ${blockNum}: ${response.data}\n\n`;
+                        
+                        // Marcar como fallido
+                        blockCard.className = 'block-card block-failed';
+                        blockCard.innerHTML = `
+                            <h4>📦 Bloque ${blockNum}</h4>
+                            <p>❌ Error</p>
+                            <p><small>Ver log para detalles</small></p>
+                            <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reintentar</button>
+                        `;
+                    }
+                    
+                    log.scrollTop = log.scrollHeight;
+                },
+                error: function(xhr, status, error) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    log.textContent += `[${timestamp}] ❌ Error de conexión en bloque ${blockNum}: ${status} - ${error}\n\n`;
+                    
+                    // Marcar como fallido
+                    blockCard.className = 'block-card block-failed';
+                    blockCard.innerHTML = `
+                        <h4>📦 Bloque ${blockNum}</h4>
+                        <p>❌ Error de conexión</p>
+                        <p><small>${status}</small></p>
+                        <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reintentar</button>
+                    `;
+                    
+                    log.scrollTop = log.scrollHeight;
+                }
+            });
+        }
+
+        // ============ FUNCIÓN PARA COMPLETAR REGISTROS PENDIENTES ============
+        
+        function completePartialBlock(blockNum) {
+            const blockCard = document.getElementById(`block-${blockNum}`);
+            const log = document.getElementById('controlled-import-log');
+            
+            log.style.display = 'block';
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] 🎯 Completando registros pendientes del bloque ${blockNum}...\n`;
+            
+            // Cambiar estado visual del bloque
+            blockCard.className = 'block-card block-importing';
+            blockCard.innerHTML = `
+                <h4>📦 Bloque ${blockNum}</h4>
+                <p>⏳ Completando registros pendientes...</p>
+                <div class="loading-spinner">🔄</div>
+            `;
+            
+            // Ejecutar la función de completado
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                timeout: 900000, // 15 minutos timeout para completar pendientes
+                data: {
+                    action: 'lexhoy_complete_partial_block',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_complete_partial_block"); ?>',
+                    block: blockNum,
+                    overwrite: document.getElementById('overwrite-controlled').checked ? 1 : 0
+                },
+                success: function(response) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    
+                    if (response.success) {
+                        const data = response.data;
+                        log.textContent += `[${timestamp}] ✅ Bloque ${blockNum} completado exitosamente:\n`;
+                        log.textContent += `   • Total en Algolia: ${data.total_from_algolia}\n`;
+                        log.textContent += `   • Ya existían en WP: ${data.existing_in_wp}\n`;
+                        log.textContent += `   • Registros pendientes procesados: ${data.pending_processed}\n`;
+                        log.textContent += `   • Nuevos creados: ${data.created}\n`;
+                        log.textContent += `   • Errores: ${data.errors}\n`;
+                        log.textContent += `   • Memoria usada: ${data.memory_usage}MB\n\n`;
+                        
+                        if (data.error_details && data.error_details.length > 0) {
+                            log.textContent += `   ⚠️ Errores encontrados:\n`;
+                            data.error_details.forEach(error => {
+                                log.textContent += `     - ${error}\n`;
+                            });
+                            log.textContent += '\n';
+                        }
+                        
+                        // Marcar bloque como completado
+                        blockCard.className = 'block-card block-imported';
+                        const startRecord = (blockNum - 1) * 1000 + 1;
+                        const endRecord = blockNum * 1000;
+                        const totalCompleto = data.existing_in_wp + data.pending_processed;
+                        blockCard.innerHTML = `
+                            <h4>📦 Bloque ${blockNum}</h4>
+                            <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                            <p><small>✅ Completado (${totalCompleto}/${data.total_from_algolia})</small></p>
+                            <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reimportar</button>
+                            <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Actualizar</button>
+                        `;
+                        
+                    } else {
+                        log.textContent += `[${timestamp}] ❌ Error al completar bloque ${blockNum}: ${response.data}\n\n`;
+                        
+                        // Marcar como fallido
+                        blockCard.className = 'block-card block-failed';
+                        const startRecord = (blockNum - 1) * 1000 + 1;
+                        const endRecord = blockNum * 1000;
+                        blockCard.innerHTML = `
+                            <h4>📦 Bloque ${blockNum}</h4>
+                            <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                            <p><small>❌ Error al completar</small></p>
+                            <button onclick="completePartialBlock(${blockNum})" class="button button-primary">🔄 Reintentar Completado</button>
+                            <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reimportar Todo</button>
+                            <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Actualizar</button>
+                        `;
+                    }
+                    
+                    log.scrollTop = log.scrollHeight;
+                },
+                error: function(xhr, status, error) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    log.textContent += `[${timestamp}] ❌ Error de conexión al completar bloque ${blockNum}: ${status} - ${error}\n\n`;
+                    
+                    // DETECCIÓN AUTOMÁTICA DE TIMEOUT → MICRO-LOTES
+                    if (status === 'timeout' || error.includes('Internal Server Error') || error.includes('500')) {
+                        log.textContent += `[${timestamp}] 🔧 Detectado problema de timeout. Activando modo micro-lotes automáticamente...\n`;
+                        log.textContent += `[${timestamp}] 📦 Dividiendo registros pendientes en micro-lotes de 50...\n\n`;
+                        
+                        // Activar procesamiento por micro-lotes automáticamente
+                        completePartialBlockWithMicroBatches(blockNum);
+                        return;
+                    }
+                    
+                    // Para otros errores, mostrar opciones de reintento
+                    blockCard.className = 'block-card block-failed';
+                    const startRecord = (blockNum - 1) * 1000 + 1;
+                    const endRecord = blockNum * 1000;
+                    blockCard.innerHTML = `
+                        <h4>📦 Bloque ${blockNum}</h4>
+                        <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                        <p><small>❌ Error al completar</small></p>
+                        <button onclick="completePartialBlock(${blockNum})" class="button button-primary">🔄 Reintentar</button>
+                        <button onclick="completePartialBlockWithMicroBatches(${blockNum})" class="button">📦 Micro-lotes</button>
+                        <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reimportar Todo</button>
+                    `;
+                    
+                    log.scrollTop = log.scrollHeight;
+                }
+            });
+        }
+
+        // ============ FUNCIÓN PARA COMPLETAR PENDIENTES CON MICRO-LOTES ============
+        
+        function completePartialBlockWithMicroBatches(blockNum) {
+            const blockCard = document.getElementById(`block-${blockNum}`);
+            const log = document.getElementById('controlled-import-log');
+            
+            log.style.display = 'block';
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] 🔧 Completando registros pendientes del bloque ${blockNum} con micro-lotes...\n`;
+            
+            // Cambiar estado visual del bloque
+            blockCard.className = 'block-card block-importing';
+            blockCard.innerHTML = `
+                <h4>📦 Bloque ${blockNum} - Micro-lotes</h4>
+                <p>⏳ Procesando registros pendientes en lotes pequeños...</p>
+                <div id="microbatch-progress-${blockNum}">Preparando...</div>
+            `;
+            
+            let currentMicroBatch = 1;
+            let totalProcessed = 0;
+            let totalCreated = 0;
+            let totalErrors = 0;
+            let microBatchSize = 50; // Lotes pequeños de 50 registros
+            let totalPending = 0;
+            
+            function processNextMicroBatch() {
+                const startIndex = (currentMicroBatch - 1) * microBatchSize;
+                const endIndex = startIndex + microBatchSize - 1;
+                
+                jQuery.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    timeout: 120000, // 2 minutos por micro-lote
+                    data: {
+                        action: 'lexhoy_complete_partial_microbatch',
+                        nonce: '<?php echo wp_create_nonce("lexhoy_complete_partial_microbatch"); ?>',
+                        block: blockNum,
+                        batch_num: currentMicroBatch,
+                        start_index: startIndex,
+                        end_index: endIndex,
+                        overwrite: document.getElementById('overwrite-controlled').checked ? 1 : 0
+                    },
+                    success: function(response) {
+                        const timestamp = new Date().toLocaleTimeString();
+                        
+                        if (response.success) {
+                            const data = response.data;
+                            totalPending = data.total_pending || totalPending;
+                            totalProcessed += data.processed;
+                            totalCreated += data.created;
+                            totalErrors += data.errors;
+                            
+                            const progress = totalPending > 0 ? Math.round((totalProcessed / totalPending) * 100) : 0;
+                            
+                            log.textContent += `[${timestamp}] ✅ Micro-lote ${currentMicroBatch}: ${data.processed} procesados\n`;
+                            
+                            // Actualizar progreso visual
+                            const progressDiv = document.getElementById(`microbatch-progress-${blockNum}`);
+                            if (progressDiv) {
+                                progressDiv.innerHTML = `
+                                    Progreso: ${progress}% (${totalProcessed}/${totalPending} pendientes)<br>
+                                    Micro-lote ${currentMicroBatch} completado: ${data.processed} procesados
+                                `;
+                            }
+                            
+                            // Verificar si terminamos
+                            if (data.processed === 0 || totalProcessed >= totalPending) {
+                                // Proceso completado
+                                log.textContent += `[${timestamp}] ✅ ¡Completado! Total procesados: ${totalProcessed}, Creados: ${totalCreated}, Errores: ${totalErrors}\n\n`;
+                                
+                                blockCard.className = 'block-card block-imported';
+                                const startRecord = (blockNum - 1) * 1000 + 1;
+                                const endRecord = blockNum * 1000;
+                                blockCard.innerHTML = `
+                                    <h4>📦 Bloque ${blockNum}</h4>
+                                    <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()}</p>
+                                    <p><small>✅ Completado via micro-lotes (${totalProcessed} procesados)</small></p>
+                                    <button onclick="importSingleBlock(${blockNum})" class="button">🔄 Reimportar</button>
+                                    <button onclick="checkAndUpdateBlock(${blockNum}, ${startRecord}, ${endRecord})" class="button">🔍 Actualizar</button>
+                                `;
+                                return;
+                            }
+                            
+                            // Continuar con el siguiente micro-lote
+                            currentMicroBatch++;
+                            setTimeout(processNextMicroBatch, 1000); // Pausa de 1 segundo entre micro-lotes
+                            
+                        } else {
+                            log.textContent += `[${timestamp}] ❌ Error en micro-lote ${currentMicroBatch}: ${response.data}\n`;
+                            totalErrors++;
+                            
+                            // Intentar continuar con el siguiente micro-lote
+                            currentMicroBatch++;
+                            setTimeout(processNextMicroBatch, 2000);
+                        }
+                        
+                        log.scrollTop = log.scrollHeight;
+                    },
+                    error: function(xhr, status, error) {
+                        const timestamp = new Date().toLocaleTimeString();
+                        log.textContent += `[${timestamp}] ❌ Error de conexión en micro-lote ${currentMicroBatch}: ${status} - ${error}\n`;
+                        totalErrors++;
+                        
+                        // Intentar continuar con el siguiente micro-lote incluso si hay error
+                        currentMicroBatch++;
+                        setTimeout(processNextMicroBatch, 3000);
+                        
+                        log.scrollTop = log.scrollHeight;
+                    }
+                });
+            }
+            
+            // Iniciar el primer micro-lote
+            processNextMicroBatch();
+        }
+
+        // ============ FUNCIONES PARA SUB-BLOQUES DEL BLOQUE 8 ============
+        
+        function showSubBlocks(blockNum) {
+            const blockCard = document.getElementById(`block-${blockNum}`);
+            const log = document.getElementById('controlled-import-log');
+            
+            // Calcular los rangos de registros para este bloque
+            const startRecord = (blockNum - 1) * 1000 + 1;
+            const endRecord = blockNum * 1000;
+            
+            log.style.display = 'block';
+            log.textContent += `[${new Date().toLocaleTimeString()}] 🔧 Dividiendo bloque ${blockNum} en sub-bloques de 250 registros...\n`;
+            
+            // Crear interfaz de sub-bloques
+            blockCard.className = 'block-card block-importing';
+            blockCard.innerHTML = `
+                <h4>📦 Bloque ${blockNum} - Sub-bloques</h4>
+                <p>Registros ${startRecord.toLocaleString()}-${endRecord.toLocaleString()} divididos en 4 sub-bloques</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;">
+                    <button id="sub-block-${blockNum}-1" onclick="importSubBlock(${blockNum}, 1, 0, 249)" class="button button-primary">
+                        🔹 Sub-bloque 1<br><small>Registros ${startRecord}-${startRecord + 249}</small>
+                    </button>
+                    <button id="sub-block-${blockNum}-2" onclick="importSubBlock(${blockNum}, 2, 250, 499)" class="button button-primary">
+                        🔹 Sub-bloque 2<br><small>Registros ${startRecord + 250}-${startRecord + 499}</small>
+                    </button>
+                    <button id="sub-block-${blockNum}-3" onclick="importSubBlock(${blockNum}, 3, 500, 749)" class="button button-primary">
+                        🔹 Sub-bloque 3<br><small>Registros ${startRecord + 500}-${startRecord + 749}</small>
+                    </button>
+                    <button id="sub-block-${blockNum}-4" onclick="importSubBlock(${blockNum}, 4, 750, 999)" class="button button-primary">
+                        🔹 Sub-bloque 4<br><small>Registros ${startRecord + 750}-${endRecord}</small>
+                    </button>
+                </div>
+                <p><small>💡 Importa cada sub-bloque individualmente para identificar dónde está el problema</small></p>
+            `;
+            
+            log.textContent += `[${new Date().toLocaleTimeString()}] ✅ Sub-bloques del bloque ${blockNum} creados. Importa uno por uno para identificar el problema.\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function importSubBlock(blockNum, subBlock, startIndex, endIndex) {
+            const button = document.getElementById(`sub-block-${blockNum}-${subBlock}`);
+            const log = document.getElementById('controlled-import-log');
+            const overwrite = document.getElementById('overwrite-controlled').checked;
+            
+            // Actualizar estado del botón
+            button.disabled = true;
+            button.innerHTML = `🔄 Importando...<br><small>Sub-bloque ${subBlock}</small>`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] 🚀 Iniciando importación de sub-bloque ${subBlock} del bloque ${blockNum} (índices ${startIndex}-${endIndex})...\n`;
+            log.scrollTop = log.scrollHeight;
+            
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'lexhoy_import_sub_block',
+                    nonce: '<?php echo wp_create_nonce("lexhoy_import_sub_block"); ?>',
+                    block_num: blockNum,
+                    sub_block: subBlock,
+                    start_index: startIndex,
+                    end_index: endIndex,
+                    overwrite: overwrite ? 1 : 0
+                },
+                timeout: 30000, // 30 segundos timeout
+                success: function(response) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    
+                    if (response.success) {
+                        const data = response.data;
+                        log.textContent += `[${timestamp}] ✅ Sub-bloque ${subBlock} completado:\n`;
+                        log.textContent += `   • Procesados: ${data.processed}\n`;
+                        log.textContent += `   • Creados: ${data.created}\n`;
+                        log.textContent += `   • Actualizados: ${data.updated}\n`;
+                        log.textContent += `   • Saltados: ${data.skipped || 0}\n`;
+                        log.textContent += `   • Errores: ${data.errors}\n\n`;
+                        
+                        if (data.error_details && data.error_details.length > 0) {
+                            data.error_details.forEach(error => {
+                                log.textContent += `   ⚠️ ${error}\n`;
+                            });
+                            log.textContent += '\n';
+                        }
+                        
+                        // Marcar sub-bloque como completado
+                        button.disabled = false;
+                        button.className = 'button';
+                        button.style.backgroundColor = '#28a745';
+                        button.style.color = 'white';
+                        button.innerHTML = `✅ Completado<br><small>${data.processed} procesados</small>`;
+                        
+                    } else {
+                        log.textContent += `[${timestamp}] ❌ Error en sub-bloque ${subBlock}: ${response.data}\n\n`;
+                        
+                        // Marcar sub-bloque como fallido
+                        button.disabled = false;
+                        button.className = 'button';
+                        button.style.backgroundColor = '#dc3545';
+                        button.style.color = 'white';
+                        button.innerHTML = `❌ Error<br><small>Ver log</small>`;
+                    }
+                    
+                    log.scrollTop = log.scrollHeight;
+                },
+                error: function(xhr, status, error) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    log.textContent += `[${timestamp}] ❌ Error de conexión en sub-bloque ${subBlock}: ${status} - ${error}\n\n`;
+                    
+                    // Marcar sub-bloque como fallido
+                    button.disabled = false;
+                    button.className = 'button';
+                    button.style.backgroundColor = '#dc3545';
+                    button.style.color = 'white';
+                    button.innerHTML = `❌ Timeout<br><small>Reintentar</small>`;
+                    
+                    log.scrollTop = log.scrollHeight;
+                }
+            });
         }
         </script>
         <?php
@@ -3438,6 +4580,70 @@ class LexhoyDespachosCPT {
     }
 
     /**
+     * AJAX: Verificar estado de un bloque específico
+     */
+    public function ajax_check_block_status() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_check_block', 'nonce');
+
+        $block = isset($_POST['block']) ? intval($_POST['block']) : 1;
+        $start_record = isset($_POST['start_record']) ? intval($_POST['start_record']) : 1;
+        $end_record = isset($_POST['end_record']) ? intval($_POST['end_record']) : 1000;
+
+        try {
+            // Para verificar si un bloque está importado, necesitamos obtener 
+            // los objectIDs que deberían estar en ese bloque
+            $page = $block - 1;
+            $result = $this->algolia_client->get_paginated_records($page, 1000);
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
+            }
+
+            $algolia_object_ids = array();
+            foreach ($result['hits'] as $hit) {
+                if (isset($hit['objectID'])) {
+                    $algolia_object_ids[] = $hit['objectID'];
+                }
+            }
+
+            if (empty($algolia_object_ids)) {
+                wp_send_json_success(array(
+                    'imported_count' => 0,
+                    'total_in_block' => 0,
+                    'status' => 'empty'
+                ));
+                return;
+            }
+
+            // Verificar cuántos de esos objectIDs ya están en WordPress
+            global $wpdb;
+            $object_ids_string = "'" . implode("','", array_map('esc_sql', $algolia_object_ids)) . "'";
+            
+            $imported_count = $wpdb->get_var(
+                "SELECT COUNT(*) FROM {$wpdb->postmeta} pm 
+                 INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID 
+                 WHERE pm.meta_key = '_algolia_object_id' 
+                 AND pm.meta_value IN ({$object_ids_string})
+                 AND p.post_type = 'despacho'
+                 AND p.post_status = 'publish'"
+            );
+
+            wp_send_json_success(array(
+                'imported_count' => intval($imported_count),
+                'total_in_block' => count($algolia_object_ids),
+                'status' => intval($imported_count) === count($algolia_object_ids) ? 'complete' : 'partial'
+            ));
+
+        } catch (Exception $e) {
+            wp_send_json_error('Error al verificar estado del bloque: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Validar un registro de Algolia antes de procesarlo
      */
     private function validate_algolia_record($record, $index) {
@@ -3529,6 +4735,624 @@ class LexhoyDespachosCPT {
             'skip' => false,
             'error' => null
         ];
+    }
+
+    /**
+     * AJAX: Importar sub-bloque específico del bloque 8 problemático
+     */
+    public function ajax_import_sub_block() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_import_sub_block', 'nonce');
+
+        $block_num = isset($_POST['block_num']) ? intval($_POST['block_num']) : 8;
+        $sub_block = isset($_POST['sub_block']) ? intval($_POST['sub_block']) : 1;
+        $start_index = isset($_POST['start_index']) ? intval($_POST['start_index']) : 0;
+        $end_index = isset($_POST['end_index']) ? intval($_POST['end_index']) : 249;
+        $overwrite = isset($_POST['overwrite']) ? boolval($_POST['overwrite']) : false;
+
+        $this->custom_log("AJAX: Iniciando importación de sub-bloque {$sub_block} del bloque {$block_num} (índices {$start_index}-{$end_index})");
+
+        // Límites optimizados para sub-bloques
+        set_time_limit(120); // Más tiempo para sub-bloques
+        ini_set('memory_limit', '512M'); // Más memoria para sub-bloques
+
+        try {
+            if (!$this->algolia_client) {
+                throw new Exception('Cliente de Algolia no inicializado.');
+            }
+
+            // Activar control de importación
+            $this->import_in_progress = true;
+            
+            // Obtener todos los registros del bloque específico (página = block_num - 1)
+            $page = $block_num - 1;
+            $result = $this->algolia_client->get_paginated_records($page, 1000);
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros del bloque ' . $block_num . ': ' . $result['message']);
+            }
+
+            $all_hits = $result['hits'];
+            
+            // Extraer solo el sub-bloque específico
+            $sub_hits = array_slice($all_hits, $start_index, $end_index - $start_index + 1);
+            $total_to_process = count($sub_hits);
+            
+            $this->custom_log("AJAX: Obtenidos {$total_to_process} registros para sub-bloque {$sub_block}");
+
+            if ($total_to_process === 0) {
+                $this->import_in_progress = false;
+                wp_send_json_success(array(
+                    'processed' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'error_details' => []
+                ));
+                return;
+            }
+
+            $imported_records = 0;
+            $created_records = 0;
+            $updated_records = 0;
+            $skipped_records = 0;
+            $error_details = array();
+
+            foreach ($sub_hits as $index => $record) {
+                try {
+                    // Validación robusta del registro
+                    $validation_result = $this->validate_algolia_record($record, $start_index + $index);
+                    if (!$validation_result['valid']) {
+                        $error_details[] = $validation_result['error'];
+                        if ($validation_result['skip']) {
+                            $skipped_records++;
+                            continue;
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    $objectID = $record['objectID'];
+                    
+                    $this->custom_log("AJAX SUB-BLOQUE: Procesando registro {$objectID}...");
+
+                    // Verificar si el despacho ya existe
+                    $existing_post = get_posts(array(
+                        'post_type' => 'despacho',
+                        'meta_key' => 'algolia_object_id',
+                        'meta_value' => $objectID,
+                        'post_status' => 'any',
+                        'numberposts' => 1,
+                        'fields' => 'ids'
+                    ));
+
+                    if ($existing_post && !$overwrite) {
+                        $skipped_records++;
+                        $this->custom_log("AJAX SUB-BLOQUE: Registro {$objectID} ya existe, saltando");
+                        continue;
+                    } elseif ($existing_post) {
+                        $updated_records++;
+                        $this->custom_log("AJAX SUB-BLOQUE: Actualizando registro existente {$objectID}");
+                    } else {
+                        $created_records++;
+                        $this->custom_log("AJAX SUB-BLOQUE: Creando nuevo registro {$objectID}");
+                    }
+
+                    // Procesar el registro con timeout interno
+                    $this->process_algolia_record($record);
+                    
+                    $imported_records++;
+                    $this->custom_log("AJAX SUB-BLOQUE: Registro {$objectID} procesado exitosamente");
+
+                    // Pausa cada 10 registros
+                    if (($imported_records % 10) === 0) {
+                        $this->custom_log("AJAX SUB-BLOQUE: Pausa preventiva (procesados: {$imported_records})");
+                        usleep(200000); // 200ms
+                    }
+
+                } catch (Exception $e) {
+                    $error_msg = "Error en registro " . ($start_index + $index) . " (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
+                    $error_details[] = $error_msg;
+                    $this->custom_log("AJAX SUB-BLOQUE ERROR: {$error_msg}");
+                }
+            }
+
+            // Desactivar control de importación
+            $this->import_in_progress = false;
+            
+            $this->custom_log("AJAX SUB-BLOQUE: Sub-bloque {$sub_block} completado - Procesados: {$imported_records}, Creados: {$created_records}, Actualizados: {$updated_records}, Saltados: {$skipped_records}, Errores: " . count($error_details));
+
+            wp_send_json_success(array(
+                'processed' => $imported_records,
+                'created' => $created_records,
+                'updated' => $updated_records,
+                'skipped' => $skipped_records,
+                'errors' => count($error_details),
+                'error_details' => $error_details,
+                'sub_block' => $sub_block,
+                'start_index' => $start_index,
+                'end_index' => $end_index
+            ));
+
+        } catch (Exception $e) {
+            $this->import_in_progress = false;
+            $error_msg = 'Error al importar sub-bloque: ' . $e->getMessage();
+            $this->custom_log("AJAX SUB-BLOQUE FATAL ERROR: {$error_msg}");
+            wp_send_json_error($error_msg);
+        }
+    }
+
+    /**
+     * AJAX: Diagnóstico de conexión con Algolia
+     */
+    public function ajax_connection_diagnostic() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_connection_diagnostic', 'nonce');
+
+        $diagnostics = array();
+        
+        try {
+            // Verificar configuración básica
+            $app_id = get_option('lexhoy_despachos_algolia_app_id');
+            $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
+            $index_name = get_option('lexhoy_despachos_algolia_index_name');
+            
+            $diagnostics['config'] = array(
+                'app_id' => !empty($app_id) ? 'Configurado' : 'Faltante',
+                'admin_api_key' => !empty($admin_api_key) ? 'Configurado (' . strlen($admin_api_key) . ' chars)' : 'Faltante',
+                'index_name' => !empty($index_name) ? $index_name : 'Faltante'
+            );
+            
+            if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
+                throw new Exception('Configuración de Algolia incompleta');
+            }
+            
+            // Verificar extensiones PHP
+            $diagnostics['php_extensions'] = array(
+                'curl' => extension_loaded('curl') ? 'Disponible' : 'NO DISPONIBLE',
+                'json' => extension_loaded('json') ? 'Disponible' : 'NO DISPONIBLE',
+                'openssl' => extension_loaded('openssl') ? 'Disponible' : 'NO DISPONIBLE'
+            );
+            
+            // Verificar configuración PHP
+            $diagnostics['php_config'] = array(
+                'max_execution_time' => ini_get('max_execution_time') . ' segundos',
+                'memory_limit' => ini_get('memory_limit'),
+                'allow_url_fopen' => ini_get('allow_url_fopen') ? 'Habilitado' : 'Deshabilitado',
+                'user_agent' => ini_get('user_agent') ?: 'No configurado'
+            );
+            
+            // Test de conectividad básica
+            $diagnostics['connectivity'] = array();
+            
+            // Test 1: Resolución DNS
+            $algolia_host = "{$app_id}.algolia.net";
+            $ip = gethostbyname($algolia_host);
+            $diagnostics['connectivity']['dns_resolution'] = 
+                ($ip !== $algolia_host) ? "OK ({$ip})" : "FALLO - No se puede resolver {$algolia_host}";
+            
+            // Test 2: Conectividad básica con timeout corto
+            $test_url = "https://{$algolia_host}/1/indexes";
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $test_url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'X-Algolia-API-Key: ' . $admin_api_key,
+                'X-Algolia-Application-Id: ' . $app_id
+            ));
+            curl_setopt($ch, CURLOPT_NOBODY, true); // Solo HEAD request
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Para test inicial
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            
+            $start_time = microtime(true);
+            curl_exec($ch);
+            $end_time = microtime(true);
+            
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch);
+            $response_time = round(($end_time - $start_time) * 1000, 2);
+            
+            curl_close($ch);
+            
+            if ($curl_error) {
+                $diagnostics['connectivity']['basic_connection'] = "FALLO - {$curl_error}";
+            } else {
+                $diagnostics['connectivity']['basic_connection'] = "OK - HTTP {$http_code} en {$response_time}ms";
+            }
+            
+            // Test 3: Verificación con SSL habilitado
+            if (!$curl_error) {
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, $test_url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                    'X-Algolia-API-Key: ' . $admin_api_key,
+                    'X-Algolia-Application-Id: ' . $app_id
+                ));
+                curl_setopt($ch, CURLOPT_NOBODY, true);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true); // SSL habilitado
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+                
+                $start_time = microtime(true);
+                curl_exec($ch);
+                $end_time = microtime(true);
+                
+                $http_code_ssl = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $curl_error_ssl = curl_error($ch);
+                $response_time_ssl = round(($end_time - $start_time) * 1000, 2);
+                
+                curl_close($ch);
+                
+                if ($curl_error_ssl) {
+                    $diagnostics['connectivity']['ssl_connection'] = "FALLO - {$curl_error_ssl}";
+                } else {
+                    $diagnostics['connectivity']['ssl_connection'] = "OK - HTTP {$http_code_ssl} en {$response_time_ssl}ms";
+                }
+            }
+            
+            // Test 4: Verificación de credenciales
+            if (!$this->algolia_client) {
+                $this->algolia_client = new LexhoyAlgoliaClient($app_id, $admin_api_key, '', $index_name);
+            }
+            
+            $credentials_ok = $this->algolia_client->verify_credentials();
+            $diagnostics['connectivity']['credentials'] = $credentials_ok ? 'VÁLIDAS' : 'INVÁLIDAS O ERROR';
+            
+            // Test 5: Test de obtención de datos simple
+            if ($credentials_ok) {
+                $count_result = $this->algolia_client->get_total_count();
+                $diagnostics['connectivity']['data_access'] = 
+                    ($count_result > 0) ? "OK - {$count_result} registros encontrados" : "FALLO - No se pueden obtener datos";
+            }
+            
+            wp_send_json_success($diagnostics);
+            
+        } catch (Exception $e) {
+            $diagnostics['error'] = $e->getMessage();
+            wp_send_json_error($diagnostics);
+        }
+    }
+
+    /**
+     * AJAX: Completar registros pendientes de un bloque parcial
+     */
+    public function ajax_complete_partial_block() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_complete_partial_block', 'nonce');
+
+        $block = isset($_POST['block']) ? intval($_POST['block']) : 1;
+        $overwrite = isset($_POST['overwrite']) ? boolval($_POST['overwrite']) : false;
+
+        $this->custom_log("AJAX: Iniciando completado de registros pendientes del bloque {$block}");
+
+        // Límites optimizados para completar pendientes
+        set_time_limit(600); // 10 minutos para función de completado
+        ini_set('memory_limit', '1024M');
+        $this->custom_log("AJAX COMPLETADO: Límites establecidos - 600s timeout, 1024M memoria");
+
+        try {
+            if (!$this->algolia_client) {
+                throw new Exception('Cliente de Algolia no inicializado.');
+            }
+
+            $this->import_in_progress = true;
+
+            // Obtener todos los registros del bloque desde Algolia
+            $page = $block - 1;
+            $result = $this->algolia_client->get_paginated_records($page, 1000);
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
+            }
+
+            $all_hits = $result['hits'];
+            $total_from_algolia = count($all_hits);
+            
+            $this->custom_log("AJAX COMPLETADO: Obtenidos {$total_from_algolia} registros de Algolia para bloque {$block}");
+
+            // MÉTODO SUPER OPTIMIZADO: Usar consulta directa a DB en lotes
+            global $wpdb;
+            $this->custom_log("AJAX COMPLETADO: Verificando existencia de {$total_from_algolia} registros con consulta optimizada...");
+            
+            // Extraer todos los objectIDs de Algolia
+            $algolia_object_ids = array();
+            foreach ($all_hits as $record) {
+                $algolia_object_ids[] = $record['objectID'];
+            }
+            
+            // Consulta directa y rápida a la DB para obtener objectIDs existentes
+            $placeholders = implode(',', array_fill(0, count($algolia_object_ids), '%s'));
+            $query = $wpdb->prepare("
+                SELECT meta_value 
+                FROM {$wpdb->postmeta} pm
+                INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                WHERE pm.meta_key = 'algolia_object_id'
+                AND pm.meta_value IN ($placeholders)
+                AND p.post_type = 'despacho'
+                AND p.post_status != 'trash'
+            ", $algolia_object_ids);
+            
+            $existing_object_ids = $wpdb->get_col($query);
+            $existing_count = count($existing_object_ids);
+            
+            $this->custom_log("AJAX COMPLETADO: {$existing_count} de {$total_from_algolia} registros ya existen en WordPress");
+            
+            // Convertir a array asociativo para búsqueda rápida
+            $existing_ids_lookup = array_flip($existing_object_ids);
+            
+            // Filtrar solo los registros que NO existen
+            $pending_records = array();
+            foreach ($all_hits as $record) {
+                if (!isset($existing_ids_lookup[$record['objectID']])) {
+                    $pending_records[] = $record;
+                }
+            }
+
+            $pending_count = count($pending_records);
+            $this->custom_log("AJAX COMPLETADO: {$pending_count} registros pendientes por procesar");
+
+            if ($pending_count === 0) {
+                $this->import_in_progress = false;
+                wp_send_json_success(array(
+                    'processed' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'error_details' => [],
+                    'message' => 'No hay registros pendientes. El bloque ya está completo.',
+                    'total_from_algolia' => $total_from_algolia,
+                    'existing_in_wp' => $existing_count,
+                    'pending' => $pending_count
+                ));
+                return;
+            }
+
+            // Procesar solo los registros pendientes
+            $imported_records = 0;
+            $created_records = 0;
+            $updated_records = 0;
+            $skipped_records = 0;
+            $error_details = array();
+
+            foreach ($pending_records as $index => $record) {
+                try {
+                    // Progreso cada 25 registros
+                    if (($index % 25) === 0) {
+                        $progress_percent = round(($index / $pending_count) * 100, 1);
+                        $current_memory = round(memory_get_usage(true) / 1024 / 1024, 2);
+                        $this->custom_log("AJAX COMPLETADO BLOQUE {$block}: Progreso {$progress_percent}% ({$index}/{$pending_count}) - Memoria: {$current_memory}MB");
+                    }
+
+                    $validation_result = $this->validate_algolia_record($record, $index);
+                    if (!$validation_result['valid']) {
+                        $error_details[] = $validation_result['error'];
+                        $this->custom_log("AJAX COMPLETADO: ERROR validación registro pendiente {$index}: {$validation_result['error']}");
+                        if ($validation_result['skip']) {
+                            $skipped_records++;
+                            continue;
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    $objectID = $record['objectID'];
+
+                    // Procesar el registro
+                    $this->process_algolia_record($record);
+                    $created_records++; // Todos los pendientes son nuevos
+                    $imported_records++;
+
+                    // Log cada 50 registros
+                    if (($imported_records % 50) === 0) {
+                        $this->custom_log("AJAX COMPLETADO BLOQUE {$block}: {$imported_records} registros pendientes procesados");
+                    }
+
+                } catch (Exception $e) {
+                    $error_msg = "COMPLETADO BLOQUE {$block} - Error en registro pendiente {$index} (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
+                    $error_details[] = $error_msg;
+                    $this->custom_log("AJAX COMPLETADO: ERROR CRÍTICO: {$error_msg}");
+                }
+            }
+
+            $this->import_in_progress = false;
+
+            $final_memory = round(memory_get_usage(true) / 1024 / 1024, 2);
+            $this->custom_log("AJAX COMPLETADO BLOQUE {$block}: FINALIZADO - {$imported_records} registros pendientes procesados, {$created_records} creados, {$skipped_records} saltados, " . count($error_details) . " errores");
+
+            wp_send_json_success(array(
+                'processed' => $imported_records,
+                'created' => $created_records,
+                'updated' => $updated_records,
+                'skipped' => $skipped_records,
+                'errors' => count($error_details),
+                'error_details' => $error_details,
+                'message' => "Completado: {$imported_records} registros pendientes procesados",
+                'total_from_algolia' => $total_from_algolia,
+                'existing_in_wp' => $existing_count,
+                'pending_processed' => $imported_records,
+                'memory_usage' => $final_memory
+            ));
+
+        } catch (Exception $e) {
+            $this->import_in_progress = false;
+            $error_msg = 'Error al completar registros pendientes del bloque ' . $block . ': ' . $e->getMessage();
+            $this->custom_log("AJAX COMPLETADO FATAL ERROR: {$error_msg}");
+            wp_send_json_error($error_msg);
+        }
+    }
+
+    /**
+     * AJAX: Completar registros pendientes en micro-lotes (para casos de timeout)
+     */
+    public function ajax_complete_partial_microbatch() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos suficientes para realizar esta acción.');
+        }
+
+        check_ajax_referer('lexhoy_complete_partial_microbatch', 'nonce');
+
+        $block = isset($_POST['block']) ? intval($_POST['block']) : 1;
+        $batch_num = isset($_POST['batch_num']) ? intval($_POST['batch_num']) : 1;
+        $start_index = isset($_POST['start_index']) ? intval($_POST['start_index']) : 0;
+        $end_index = isset($_POST['end_index']) ? intval($_POST['end_index']) : 49;
+        $overwrite = isset($_POST['overwrite']) ? boolval($_POST['overwrite']) : false;
+
+        $this->custom_log("AJAX: Iniciando micro-lote {$batch_num} para completar pendientes del bloque {$block} (índices {$start_index}-{$end_index})");
+
+        // Límites conservadores para micro-lotes
+        set_time_limit(120); // 2 minutos por micro-lote
+        ini_set('memory_limit', '512M');
+
+        try {
+            if (!$this->algolia_client) {
+                throw new Exception('Cliente de Algolia no inicializado.');
+            }
+
+            $this->import_in_progress = true;
+
+            // Obtener todos los registros del bloque desde Algolia
+            $page = $block - 1;
+            $result = $this->algolia_client->get_paginated_records($page, 1000);
+            
+            if (!$result['success']) {
+                throw new Exception('Error al obtener registros de Algolia: ' . $result['message']);
+            }
+
+            $all_hits = $result['hits'];
+            
+            // Si es el primer micro-lote, necesitamos identificar todos los pendientes
+            if ($batch_num === 1) {
+                // Usar consulta optimizada para obtener existentes
+                global $wpdb;
+                $algolia_object_ids = array();
+                foreach ($all_hits as $record) {
+                    $algolia_object_ids[] = $record['objectID'];
+                }
+                
+                $placeholders = implode(',', array_fill(0, count($algolia_object_ids), '%s'));
+                $query = $wpdb->prepare("
+                    SELECT meta_value 
+                    FROM {$wpdb->postmeta} pm
+                    INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                    WHERE pm.meta_key = 'algolia_object_id'
+                    AND pm.meta_value IN ($placeholders)
+                    AND p.post_type = 'despacho'
+                    AND p.post_status != 'trash'
+                ", $algolia_object_ids);
+                
+                $existing_object_ids = $wpdb->get_col($query);
+                $existing_ids_lookup = array_flip($existing_object_ids);
+                
+                // Filtrar solo los registros que NO existen
+                $pending_records = array();
+                foreach ($all_hits as $record) {
+                    if (!isset($existing_ids_lookup[$record['objectID']])) {
+                        $pending_records[] = $record;
+                    }
+                }
+                
+                // Guardar los pendientes para los siguientes micro-lotes
+                update_option("lexhoy_pending_records_block_{$block}", $pending_records);
+                
+            } else {
+                // Recuperar los pendientes calculados anteriormente
+                $pending_records = get_option("lexhoy_pending_records_block_{$block}", array());
+            }
+
+            $total_pending = count($pending_records);
+            $this->custom_log("AJAX MICRO-LOTE: {$total_pending} registros pendientes total para bloque {$block}");
+
+            // Extraer solo el micro-lote específico
+            $microbatch_records = array_slice($pending_records, $start_index, $end_index - $start_index + 1);
+            $microbatch_count = count($microbatch_records);
+            
+            $this->custom_log("AJAX MICRO-LOTE: Procesando {$microbatch_count} registros en micro-lote {$batch_num}");
+
+            if ($microbatch_count === 0) {
+                $this->import_in_progress = false;
+                wp_send_json_success(array(
+                    'processed' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'error_details' => [],
+                    'batch_num' => $batch_num,
+                    'total_pending' => $total_pending
+                ));
+                return;
+            }
+
+            // Procesar solo este micro-lote
+            $imported_records = 0;
+            $created_records = 0;
+            $updated_records = 0;
+            $skipped_records = 0;
+            $error_details = array();
+
+            foreach ($microbatch_records as $index => $record) {
+                try {
+                    $validation_result = $this->validate_algolia_record($record, $start_index + $index);
+                    if (!$validation_result['valid']) {
+                        $error_details[] = $validation_result['error'];
+                        if ($validation_result['skip']) {
+                            $skipped_records++;
+                            continue;
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    // Procesar el registro
+                    $this->process_algolia_record($record);
+                    $created_records++;
+                    $imported_records++;
+
+                } catch (Exception $e) {
+                    $error_msg = "MICRO-LOTE BLOQUE {$block}-{$batch_num} - Error en registro " . ($start_index + $index) . " (ID: " . ($record['objectID'] ?? 'sin ID') . "): " . $e->getMessage();
+                    $error_details[] = $error_msg;
+                    $this->custom_log("AJAX MICRO-LOTE ERROR: {$error_msg}");
+                }
+            }
+
+            $this->import_in_progress = false;
+
+            $this->custom_log("AJAX MICRO-LOTE: Micro-lote {$batch_num} completado - {$imported_records} procesados, {$created_records} creados, {$skipped_records} saltados, " . count($error_details) . " errores");
+
+            wp_send_json_success(array(
+                'processed' => $imported_records,
+                'created' => $created_records,
+                'updated' => $updated_records,
+                'skipped' => $skipped_records,
+                'errors' => count($error_details),
+                'error_details' => $error_details,
+                'batch_num' => $batch_num,
+                'start_index' => $start_index,
+                'end_index' => $end_index,
+                'total_pending' => $total_pending
+            ));
+
+        } catch (Exception $e) {
+            $this->import_in_progress = false;
+            $error_msg = 'Error en micro-lote ' . $batch_num . ' del bloque ' . $block . ': ' . $e->getMessage();
+            $this->custom_log("AJAX MICRO-LOTE FATAL ERROR: {$error_msg}");
+            wp_send_json_error($error_msg);
+        }
     }
 }
 
