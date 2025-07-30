@@ -46,6 +46,7 @@ class LexhoyDespachosCPT {
         add_action('wp_ajax_lexhoy_bulk_import_block', array($this, 'ajax_bulk_import_block'));
         add_action('wp_ajax_lexhoy_check_block_status', array($this, 'ajax_check_block_status'));
         add_action('wp_ajax_lexhoy_import_sub_block', array($this, 'ajax_import_sub_block'));
+        add_action('wp_ajax_lexhoy_clean_duplicates', array($this, 'ajax_clean_duplicates'));
         add_action('wp_ajax_lexhoy_connection_diagnostic', array($this, 'ajax_connection_diagnostic'));
         add_action('wp_ajax_lexhoy_complete_partial_block', array($this, 'ajax_complete_partial_block'));
         add_action('wp_ajax_lexhoy_complete_partial_microbatch', array($this, 'ajax_complete_partial_microbatch'));
@@ -1751,6 +1752,7 @@ class LexhoyDespachosCPT {
 
     /**
      * Procesar un registro de Algolia directamente (con nueva estructura de sedes)
+     * MEJORADO: Verificación robusta de duplicados
      */
     private function process_algolia_record($record) {
         try {
@@ -1771,8 +1773,11 @@ class LexhoyDespachosCPT {
                 $slug = 'despacho-' . sanitize_title($object_id);
             }
 
-            // ¿Existe ya un despacho con este object_id de Algolia?
-            $existing = get_posts(array(
+            // VERIFICACIÓN ROBUSTA DE DUPLICADOS - Múltiples criterios
+            $existing_post_id = null;
+            
+            // 1. Buscar por object_id de Algolia (más confiable)
+            $existing_by_object_id = get_posts(array(
                 'post_type'   => 'despacho',
                 'meta_key'    => '_algolia_object_id',
                 'meta_value'  => $object_id,
@@ -1780,9 +1785,30 @@ class LexhoyDespachosCPT {
                 'numberposts' => 1,
                 'fields'      => 'ids'
             ));
+            
+            if ($existing_by_object_id) {
+                $existing_post_id = (int) $existing_by_object_id[0];
+                $this->custom_log("IMPORT: Despacho con object_id '{$object_id}' ya existe (ID: {$existing_post_id})");
+            } else {
+                // 2. Buscar por slug (fallback)
+                $existing_by_slug = get_posts(array(
+                    'post_type'   => 'despacho',
+                    'name'        => $slug,
+                    'post_status' => 'any',
+                    'numberposts' => 1,
+                    'fields'      => 'ids'
+                ));
+                
+                if ($existing_by_slug) {
+                    $existing_post_id = (int) $existing_by_slug[0];
+                    $this->custom_log("IMPORT: Despacho con slug '{$slug}' ya existe (ID: {$existing_post_id}) - actualizando object_id");
+                }
+            }
 
-            if ($existing) {
-                $post_id = (int) $existing[0];
+            if ($existing_post_id) {
+                $post_id = $existing_post_id;
+                // Actualizar el object_id si no lo tenía
+                update_post_meta($post_id, '_algolia_object_id', $object_id);
             } else {
                 // Crear nuevo post
                 $post_id = wp_insert_post(array(
@@ -1792,6 +1818,12 @@ class LexhoyDespachosCPT {
                     'post_status' => 'publish',
                     'post_name'   => $slug
                 ));
+                
+                if (is_wp_error($post_id)) {
+                    throw new Exception('Error al crear post: ' . $post_id->get_error_message());
+                }
+                
+                $this->custom_log("IMPORT: Nuevo despacho creado (ID: {$post_id}, object_id: {$object_id})");
             }
 
             // Verificar que se obtuvo un ID válido
@@ -1970,6 +2002,95 @@ class LexhoyDespachosCPT {
         } catch (Exception $e) {
             $this->custom_log("ERROR en process_algolia_record: " . $e->getMessage());
             throw $e;
+        }
+    }
+
+    /**
+     * Limpiar duplicados existentes basado en object_id de Algolia
+     * Útil para limpiar después de importaciones con timeouts
+     */
+    public function clean_duplicates() {
+        global $wpdb;
+        
+        $this->custom_log("CLEANUP: Iniciando limpieza de duplicados...");
+        
+        try {
+            // Encontrar duplicados por object_id
+            $duplicates_query = "
+                SELECT pm.meta_value as object_id, COUNT(*) as count, GROUP_CONCAT(p.ID) as post_ids
+                FROM {$wpdb->postmeta} pm
+                INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                WHERE pm.meta_key = '_algolia_object_id'
+                AND p.post_type = 'despacho'
+                AND p.post_status != 'trash'
+                GROUP BY pm.meta_value
+                HAVING COUNT(*) > 1
+            ";
+            
+            $duplicates = $wpdb->get_results($duplicates_query);
+            
+            if (empty($duplicates)) {
+                $this->custom_log("CLEANUP: No se encontraron duplicados");
+                return array(
+                    'success' => true,
+                    'message' => 'No se encontraron duplicados',
+                    'cleaned' => 0
+                );
+            }
+            
+            $cleaned_count = 0;
+            $errors = array();
+            
+            foreach ($duplicates as $duplicate) {
+                $object_id = $duplicate->object_id;
+                $post_ids = explode(',', $duplicate->post_ids);
+                $count = count($post_ids);
+                
+                $this->custom_log("CLEANUP: Encontrados {$count} duplicados para object_id '{$object_id}'");
+                
+                // Mantener el más reciente (ID más alto) y eliminar los demás
+                sort($post_ids, SORT_NUMERIC);
+                $keep_id = array_pop($post_ids); // El más reciente
+                $delete_ids = $post_ids; // Los más antiguos
+                
+                foreach ($delete_ids as $delete_id) {
+                    $delete_id = (int) $delete_id;
+                    
+                    // Verificar que el post existe y es un despacho
+                    $post = get_post($delete_id);
+                    if (!$post || $post->post_type !== 'despacho') {
+                        continue;
+                    }
+                    
+                    // Eliminar el post (va a la papelera)
+                    $result = wp_delete_post($delete_id, false); // false = no eliminar permanentemente
+                    
+                    if ($result) {
+                        $cleaned_count++;
+                        $this->custom_log("CLEANUP: Eliminado duplicado ID {$delete_id} (mantenido ID {$keep_id})");
+                    } else {
+                        $errors[] = "Error al eliminar duplicado ID {$delete_id}";
+                    }
+                }
+            }
+            
+            $this->custom_log("CLEANUP: Limpieza completada. {$cleaned_count} duplicados eliminados");
+            
+            return array(
+                'success' => true,
+                'message' => "Limpieza completada. {$cleaned_count} duplicados eliminados",
+                'cleaned' => $cleaned_count,
+                'errors' => $errors
+            );
+            
+        } catch (Exception $e) {
+            $this->custom_log("CLEANUP ERROR: " . $e->getMessage());
+            return array(
+                'success' => false,
+                'message' => 'Error en limpieza: ' . $e->getMessage(),
+                'cleaned' => 0,
+                'errors' => array($e->getMessage())
+            );
         }
     }
 
@@ -4764,6 +4885,31 @@ class LexhoyDespachosCPT {
             
         } catch (Exception $e) {
             echo "❌ Error general: " . $e->getMessage() . "\n";
+        }
+    }
+
+    /**
+     * AJAX: Limpiar duplicados existentes
+     */
+    public function ajax_clean_duplicates() {
+        try {
+            // Verificar permisos
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error('Permisos insuficientes');
+                return;
+            }
+
+            // Ejecutar limpieza
+            $result = $this->clean_duplicates();
+            
+            if ($result['success']) {
+                wp_send_json_success($result);
+            } else {
+                wp_send_json_error($result);
+            }
+
+        } catch (Exception $e) {
+            wp_send_json_error('Error en limpieza de duplicados: ' . $e->getMessage());
         }
     }
 

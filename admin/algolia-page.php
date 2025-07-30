@@ -520,6 +520,15 @@ function lexhoy_despachos_algolia_page() {
                 </button>
                 <div id="areas-fix-result" style="margin-top: 10px;"></div>
             </div>
+            
+            <div>
+                <h3>🧹 Limpiar Duplicados</h3>
+                <p>Elimina despachos duplicados que puedan haberse creado por timeouts en importaciones:</p>
+                <button id="btn-clean-duplicates" class="button button-secondary" onclick="cleanDuplicates()">
+                    🧹 Limpiar Duplicados
+                </button>
+                <div id="clean-duplicates-result" style="margin-top: 10px;"></div>
+            </div>
         </div>
 
         <script>
@@ -561,6 +570,50 @@ function lexhoy_despachos_algolia_page() {
             }).fail(function() {
                 btn.disabled = false;
                 btn.textContent = '🔧 Reparar Áreas de Despachos';
+                result.innerHTML = `
+                    <div style="background: #fdcfcf; border: 1px solid #e74c3c; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <p><strong>❌ Error de conexión</strong></p>
+                    </div>
+                `;
+            });
+        }
+        
+        function cleanDuplicates() {
+            const btn = document.getElementById('btn-clean-duplicates');
+            const result = document.getElementById('clean-duplicates-result');
+            
+            btn.disabled = true;
+            btn.textContent = '🔄 Limpiando...';
+            result.innerHTML = '<p style="color: #0073aa;">Buscando y eliminando duplicados...</p>';
+            
+            jQuery.post(ajaxurl, {
+                action: 'lexhoy_clean_duplicates',
+                nonce: '<?php echo wp_create_nonce('lexhoy_clean_duplicates'); ?>'
+            }, function(response) {
+                btn.disabled = false;
+                btn.textContent = '🧹 Limpiar Duplicados';
+                
+                if (response.success) {
+                    result.innerHTML = `
+                        <div style="background: #d1eddd; border: 1px solid #00a32a; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                            <p><strong>✅ Limpieza completada:</strong></p>
+                            <ul>
+                                <li>🧹 Duplicados eliminados: ${response.data.cleaned}</li>
+                                <li>📊 Estado: ${response.data.message}</li>
+                            </ul>
+                            <p><strong>Nota:</strong> Los duplicados se han movido a la papelera, no se han eliminado permanentemente.</p>
+                        </div>
+                    `;
+                } else {
+                    result.innerHTML = `
+                        <div style="background: #ffeaa7; border: 1px solid #f39c12; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                            <p><strong>❌ Error:</strong> ${response.data}</p>
+                        </div>
+                    `;
+                }
+            }).fail(function() {
+                btn.disabled = false;
+                btn.textContent = '🧹 Limpiar Duplicados';
                 result.innerHTML = `
                     <div style="background: #fdcfcf; border: 1px solid #e74c3c; padding: 10px; border-radius: 4px; margin-top: 10px;">
                         <p><strong>❌ Error de conexión</strong></p>
