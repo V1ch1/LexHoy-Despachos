@@ -32,6 +32,7 @@ class LexhoyDespachosCPT {
         
         // Acciones para Algolia
         add_action('save_post_despacho', array($this, 'sync_to_algolia'), 20, 3);
+        add_action('save_post', array($this, 'sync_to_algolia'), 20, 3); // Hook adicional más confiable
         add_action('before_delete_post', array($this, 'delete_from_algolia'));
         add_action('wp_trash_post', array($this, 'delete_from_algolia'));
         add_action('trash_despacho', array($this, 'delete_from_algolia'));
@@ -171,7 +172,6 @@ class LexhoyDespachosCPT {
         $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
         $telefono = get_post_meta($post->ID, '_despacho_telefono', true);
         $email = get_post_meta($post->ID, '_despacho_email', true);
-        $is_verified = get_post_meta($post->ID, '_despacho_is_verified', true);
 
         // Nonce para seguridad
         wp_nonce_field('despacho_meta_box', 'despacho_meta_box_nonce');
@@ -208,12 +208,7 @@ class LexhoyDespachosCPT {
                        value="<?php echo esc_attr($email); ?>" class="widefat" style="margin-top: 5px;">
             </div>
             
-            <div style="display: flex; align-items: center; padding-top: 20px;">
-                <label>
-                    <input type="checkbox" name="despacho_is_verified" value="1" <?php checked($is_verified, '1'); ?>>
-                    <strong>Despacho Verificado</strong>
-                </label>
-            </div>
+
         </div>
         
         <div style="margin-top: 15px; padding: 10px; background: #e7f3ff; border-left: 4px solid #0073aa;">
@@ -238,7 +233,6 @@ class LexhoyDespachosCPT {
         $web = get_post_meta($post->ID, '_despacho_web', true);
         $descripcion = get_post_meta($post->ID, '_despacho_descripcion', true);
         $estado_verificacion = get_post_meta($post->ID, '_despacho_estado_verificacion', true);
-        $is_verified = get_post_meta($post->ID, '_despacho_is_verified', true);
 
         // NUEVOS CAMPOS
         $especialidades = get_post_meta($post->ID, '_despacho_especialidades', true);
@@ -328,17 +322,10 @@ class LexhoyDespachosCPT {
             <p>
                 <label for="despacho_estado_verificacion">Estado de Verificación:</label><br>
                 <select id="despacho_estado_verificacion" name="despacho_estado_verificacion" class="widefat">
-                    <option value="pendiente" <?php selected($estado_verificacion, 'pendiente'); ?>>Pendiente verificación</option>
-                    <option value="verificado" <?php selected($estado_verificacion, 'verificado'); ?>>Verificado</option>
-                    <option value="rechazado" <?php selected($estado_verificacion, 'rechazado'); ?>>Rechazado</option>
+                    <option value="pendiente" <?php selected($estado_verificacion, 'pendiente'); ?>>🕒 Pendiente verificación</option>
+                    <option value="verificado" <?php selected($estado_verificacion, 'verificado'); ?>>✅ Verificado</option>
+                    <option value="rechazado" <?php selected($estado_verificacion, 'rechazado'); ?>>❌ Rechazado</option>
                 </select>
-            </p>
-            <p>
-                <label>
-                    <input type="checkbox" name="despacho_is_verified" value="1" 
-                           <?php checked($is_verified, '1'); ?>>
-                    Verificado
-                </label>
             </p>
 
             <!-- NUEVO: Especialidades -->
@@ -686,10 +673,11 @@ class LexhoyDespachosCPT {
             }
         }
 
-        // Guardar checkbox de verificado
-        $is_verified = isset($_POST['despacho_is_verified']) ? '1' : '0';
+        // Mapeo automático: estado_verificacion -> is_verified
+        $estado_verificacion = get_post_meta($post_id, '_despacho_estado_verificacion', true);
+        $is_verified = ($estado_verificacion === 'verificado') ? '1' : '0';
         if (!$is_bulk_import) {
-            $this->custom_log("LexHoy DEBUG: Guardando _despacho_is_verified = '{$is_verified}'");
+            $this->custom_log("LexHoy DEBUG: Mapeando automáticamente _despacho_is_verified = '{$is_verified}' (basado en estado_verificacion = '{$estado_verificacion}')");
         }
         update_post_meta($post_id, '_despacho_is_verified', $is_verified);
 
@@ -717,11 +705,119 @@ class LexhoyDespachosCPT {
             // Eliminado: ya no sincronizamos título/slug automáticamente
         }
 
+        // --- NUEVO: Sincronizar estructura de sedes cuando se editan metadatos legacy ---
+        if (!$is_bulk_import) {
+            $this->sync_legacy_to_sedes($post_id);
+        }
+
         if (!$is_bulk_import) {
             $this->custom_log('=== LexHoy DEBUG save_meta_boxes FINAL para post ' . $post_id . ' ===');
         }
     }
     
+    /**
+     * Sincronizar metadatos legacy a estructura de sedes
+     */
+    private function sync_legacy_to_sedes($post_id) {
+        error_log("LEXHOY SYNC: sync_legacy_to_sedes iniciado para post {$post_id}");
+        
+        // Obtener sedes existentes
+        $sedes_existentes = get_post_meta($post_id, '_despacho_sedes', true);
+        if (!is_array($sedes_existentes)) {
+            $sedes_existentes = array();
+        }
+        
+        // Si no hay sedes existentes, crear una sede principal con los datos legacy
+        if (empty($sedes_existentes)) {
+            error_log("LEXHOY SYNC: No hay sedes existentes, creando sede principal desde legacy");
+            
+                         // Mapear direccion legacy a nueva estructura
+             $direccion_legacy = get_post_meta($post_id, '_despacho_direccion', true);
+             
+             $sede_principal = array(
+                 'nombre' => get_post_meta($post_id, '_despacho_nombre', true) ?: get_the_title($post_id),
+                 'localidad' => get_post_meta($post_id, '_despacho_localidad', true),
+                 'provincia' => get_post_meta($post_id, '_despacho_provincia', true),
+                 'codigo_postal' => get_post_meta($post_id, '_despacho_codigo_postal', true),
+                 // Nueva estructura: direccion se mapea a calle
+                 'calle' => $direccion_legacy,
+                 'numero' => '',
+                 'piso' => '',
+                 'direccion_completa' => $direccion_legacy,
+                 'telefono' => get_post_meta($post_id, '_despacho_telefono', true),
+                 'email_contacto' => get_post_meta($post_id, '_despacho_email', true),
+                 'web' => get_post_meta($post_id, '_despacho_web', true),
+                 'descripcion' => get_post_meta($post_id, '_despacho_descripcion', true),
+                                     'estado_verificacion' => get_post_meta($post_id, '_despacho_estado_verificacion', true),
+                    'is_verified' => (get_post_meta($post_id, '_despacho_estado_verificacion', true) === 'verificado') ? true : false,
+                 'numero_colegiado' => get_post_meta($post_id, '_despacho_numero_colegiado', true),
+                 'colegio' => get_post_meta($post_id, '_despacho_colegio', true),
+                 'experiencia' => get_post_meta($post_id, '_despacho_experiencia', true),
+                 'foto_perfil' => get_post_meta($post_id, '_despacho_foto_perfil', true),
+                 'es_principal' => true,
+                 'activa' => true,
+                 'areas_practica' => wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names')) ?: array(),
+                 'horarios' => get_post_meta($post_id, '_despacho_horario', true) ?: array(),
+                 'redes_sociales' => get_post_meta($post_id, '_despacho_redes_sociales', true) ?: array(),
+             );
+            
+            $sedes_existentes = array($sede_principal);
+        } else {
+            // Si hay sedes existentes, actualizar la sede principal con los datos legacy
+            error_log("LEXHOY SYNC: Actualizando sede principal existente con datos legacy");
+            
+            $sede_principal_index = 0;
+            foreach ($sedes_existentes as $index => $sede) {
+                if (isset($sede['es_principal']) && $sede['es_principal']) {
+                    $sede_principal_index = $index;
+                    break;
+                }
+            }
+            
+                         // Actualizar la sede principal con los datos legacy
+             $sedes_existentes[$sede_principal_index]['localidad'] = get_post_meta($post_id, '_despacho_localidad', true);
+             $sedes_existentes[$sede_principal_index]['provincia'] = get_post_meta($post_id, '_despacho_provincia', true);
+             $sedes_existentes[$sede_principal_index]['codigo_postal'] = get_post_meta($post_id, '_despacho_codigo_postal', true);
+             
+             // NUEVO: Mapear direccion a calle (nueva estructura)
+             $direccion_legacy = get_post_meta($post_id, '_despacho_direccion', true);
+             if (!empty($direccion_legacy)) {
+                 $sedes_existentes[$sede_principal_index]['calle'] = $direccion_legacy;
+                 $sedes_existentes[$sede_principal_index]['direccion_completa'] = $direccion_legacy;
+             }
+             
+             $sedes_existentes[$sede_principal_index]['telefono'] = get_post_meta($post_id, '_despacho_telefono', true);
+             $sedes_existentes[$sede_principal_index]['email_contacto'] = get_post_meta($post_id, '_despacho_email', true);
+             $sedes_existentes[$sede_principal_index]['web'] = get_post_meta($post_id, '_despacho_web', true);
+             $sedes_existentes[$sede_principal_index]['descripcion'] = get_post_meta($post_id, '_despacho_descripcion', true);
+             $sedes_existentes[$sede_principal_index]['numero_colegiado'] = get_post_meta($post_id, '_despacho_numero_colegiado', true);
+             $sedes_existentes[$sede_principal_index]['colegio'] = get_post_meta($post_id, '_despacho_colegio', true);
+                             $estado_verificacion = get_post_meta($post_id, '_despacho_estado_verificacion', true);
+                $sedes_existentes[$sede_principal_index]['estado_verificacion'] = $estado_verificacion;
+                $sedes_existentes[$sede_principal_index]['is_verified'] = ($estado_verificacion === 'verificado') ? true : false;
+             
+             // NUEVO: Sincronizar áreas de práctica desde taxonomías WordPress
+             $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+             if (!empty($areas_practica) && !is_wp_error($areas_practica)) {
+                 $sedes_existentes[$sede_principal_index]['areas_practica'] = $areas_practica;
+             }
+        }
+        
+        // Guardar las sedes actualizadas
+        $result = update_post_meta($post_id, '_despacho_sedes', $sedes_existentes);
+        
+        // Log de los datos que se están guardando
+        error_log("LEXHOY SYNC: Guardando sedes actualizadas: " . json_encode($sedes_existentes));
+        
+        // Limpiar caché del post para asegurar que el frontend lea los datos actualizados
+        wp_cache_delete($post_id, 'post_meta');
+        wp_cache_delete($post_id, 'posts');
+        clean_post_cache($post_id);
+        
+        error_log("LEXHOY SYNC: Sedes sincronizadas - resultado: " . ($result ? 'SUCCESS' : 'FAILED'));
+        error_log("LEXHOY SYNC: sync_legacy_to_sedes completado");
+    }
+
     /**
      * Procesar foto de perfil (subida de archivo o URL)
      */
@@ -881,20 +977,33 @@ class LexhoyDespachosCPT {
     /**
      * Sincronizar un post a Algolia
      */
-    public function sync_to_algolia($post_id) {
+    public function sync_to_algolia($post_id, $post = null, $update = null) {
+        // Log del inicio de la función
+        error_log("LEXHOY SYNC: Iniciando sincronización para post_id: {$post_id}");
+        
         // Verificar que no sea una revisión automática
         if (wp_is_post_revision($post_id)) {
+            error_log("LEXHOY SYNC: Omitida - es una revisión automática");
             return;
         }
 
         // Verificar que sea un despacho
         if (get_post_type($post_id) !== 'despacho') {
+            error_log("LEXHOY SYNC: Omitida - no es un despacho, es: " . get_post_type($post_id));
             return;
         }
 
+        error_log("LEXHOY SYNC: Procesando despacho válido ID: {$post_id}");
+
         // No hacer nada si hay una importación en progreso
         if ($this->import_in_progress) {
-            $this->custom_log("SYNC: Sincronización omitida durante importación masiva para post {$post_id}");
+            error_log("LEXHOY SYNC: Omitida - importación en progreso para post {$post_id}");
+            return;
+        }
+
+        // Obtener el post
+        $post = get_post($post_id);
+        if (!$post) {
             return;
         }
 
@@ -909,8 +1018,10 @@ class LexhoyDespachosCPT {
             $admin_api_key = get_option('lexhoy_despachos_algolia_admin_api_key');
             $index_name = get_option('lexhoy_despachos_algolia_index_name');
 
+            error_log("LEXHOY SYNC: Configuración Algolia - App ID: " . ($app_id ? 'OK' : 'VACÍO') . ", Admin Key: " . ($admin_api_key ? 'OK' : 'VACÍO') . ", Index: " . ($index_name ? $index_name : 'VACÍO'));
+
             if (empty($app_id) || empty($admin_api_key) || empty($index_name)) {
-                error_log('Configuración incompleta de Algolia. El despacho se guardó localmente pero no se sincronizó con Algolia.');
+                error_log('LEXHOY SYNC: ❌ Configuración incompleta de Algolia. El despacho se guardó localmente pero no se sincronizó con Algolia.');
                 return;
             }
 
@@ -923,8 +1034,39 @@ class LexhoyDespachosCPT {
             // Obtener áreas de práctica como taxonomía
             $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
             
+            // Log para ver si hay datos POST
+            if (!empty($_POST)) {
+                error_log("LEXHOY SYNC: Hay datos POST disponibles: " . count($_POST) . " campos");
+                // Log algunos campos clave para debug
+                $key_fields = ['despacho_direccion', 'despacho_telefono', 'despacho_numero_colegiado'];
+                foreach ($key_fields as $field) {
+                    if (isset($_POST[$field])) {
+                        error_log("LEXHOY SYNC: POST[{$field}] = " . $_POST[$field]);
+                    }
+                }
+            } else {
+                error_log("LEXHOY SYNC: No hay datos POST disponibles");
+            }
+            
             // Función helper para obtener datos de POST o meta
             $posted_or_meta = function($post_key, $meta_key, $sanitize_func = 'sanitize_text_field') use ($post_id) {
+                // PRIMERO: intentar obtener del POST (datos recién editados)
+                if (isset($_POST[$post_key])) {
+                    $value = $_POST[$post_key];
+                    
+                    // Aplicar sanitización según el tipo
+                    if ($sanitize_func === 'sanitize_email') {
+                        return sanitize_email($value);
+                    } elseif ($sanitize_func === 'esc_url_raw') {
+                        return esc_url_raw($value);
+                    } elseif ($sanitize_func === 'sanitize_textarea_field') {
+                        return sanitize_textarea_field($value);
+                    } else {
+                        return sanitize_text_field($value);
+                    }
+                }
+                
+                // SEGUNDO: si no está en POST, leer desde meta (valores guardados)
                 // Limpiar caché de metadatos para este post antes de leer
                 wp_cache_delete($post_id, 'post_meta');
                 return get_post_meta($post_id, $meta_key, true);
@@ -953,11 +1095,18 @@ class LexhoyDespachosCPT {
                         'web' => $posted_or_meta('despacho_web', '_despacho_web', 'esc_url_raw'),
                         'descripcion' => $posted_or_meta('despacho_descripcion', '_despacho_descripcion', 'sanitize_textarea_field'),
                         'estado_verificacion' => $posted_or_meta('despacho_estado_verificacion', '_despacho_estado_verificacion'),
-                        'is_verified' => isset($_POST['despacho_is_verified']) ? true : (get_post_meta($post_id, '_despacho_is_verified', true) ? true : false),
+                        'is_verified' => ($posted_or_meta('despacho_estado_verificacion', '_despacho_estado_verificacion') === 'verificado') ? true : false,
                         'numero_colegiado' => $posted_or_meta('despacho_numero_colegiado', '_despacho_numero_colegiado'),
                         'colegio' => $posted_or_meta('despacho_colegio', '_despacho_colegio'),
                         'experiencia' => $posted_or_meta('despacho_experiencia', '_despacho_experiencia'),
+                        'tamaño_despacho' => $posted_or_meta('despacho_tamaño', '_despacho_tamaño'),
+                        'año_fundacion' => $posted_or_meta('despacho_año_fundacion', '_despacho_año_fundacion'),
+                        'estado_registro' => $posted_or_meta('despacho_estado_registro', '_despacho_estado_registro'),
                         'foto_perfil' => $posted_or_meta('despacho_foto_perfil', '_despacho_foto_perfil', 'esc_url_raw'),
+                        // Mapear direccion a los campos separados para compatibilidad con template
+                        'calle' => $posted_or_meta('despacho_direccion', '_despacho_direccion'), // Usar direccion como calle por compatibilidad
+                        'numero' => '', // No tenemos campo separado, pero el template lo busca
+                        'piso' => '', // No tenemos campo separado, pero el template lo busca
                         'es_principal' => true,
                         'activa' => true,
                         'areas_practica' => $areas_practica,
@@ -984,10 +1133,13 @@ class LexhoyDespachosCPT {
             );
 
             // Sincronizar con Algolia
-            $client->save_object($index_name, $record);
+            error_log("LEXHOY SYNC: Enviando a Algolia - objectID: " . $record['objectID'] . ", nombre: " . $record['nombre']);
+            error_log("LEXHOY SYNC: Datos de sede principal: " . json_encode($sedes_wp[0] ?? []));
+            $result = $client->save_object($index_name, $record);
+            error_log("LEXHOY SYNC: ✅ Sincronización exitosa para despacho ID: {$post_id}");
 
         } catch (Exception $e) {
-            error_log('Error al sincronizar despacho con Algolia: ' . $e->getMessage());
+            error_log("LEXHOY SYNC: ❌ Error al sincronizar despacho ID {$post_id} con Algolia: " . $e->getMessage());
         }
     }
 
@@ -4087,15 +4239,39 @@ class LexhoyDespachosCPT {
         if (is_singular('despacho')) {
             global $post;
             if ($post) {
-                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
-                $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
-                $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
+                // USAR DIRECTAMENTE EL TÍTULO DEL POST (nombre del despacho)
+                $despacho_name = $post->post_title;
                 
-                // Usar el nombre del meta o el título del post
-                $despacho_name = $nombre ?: $post->post_title;
+                // Obtener ubicación para contexto adicional si es necesario
+                $sedes = get_post_meta($post->ID, '_despacho_sedes', true);
+                $sede_principal = null;
                 
-                // Crear título simplificado
-                $title['title'] = $despacho_name . ' - LexHoy';
+                if (!empty($sedes) && is_array($sedes)) {
+                    foreach ($sedes as $sede) {
+                        if (isset($sede['es_principal']) && $sede['es_principal']) {
+                            $sede_principal = $sede;
+                            break;
+                        }
+                    }
+                    if (!$sede_principal && !empty($sedes)) {
+                        $sede_principal = $sedes[0];
+                    }
+                }
+                
+                $localidad = $sede_principal['localidad'] ?? get_post_meta($post->ID, '_despacho_localidad', true);
+                $provincia = $sede_principal['provincia'] ?? get_post_meta($post->ID, '_despacho_provincia', true);
+                
+                // Crear título con el nombre del despacho
+                $page_title = $despacho_name;
+                if ($localidad || $provincia) {
+                    $location_parts = array_filter(array($localidad, $provincia));
+                    if (!empty($location_parts)) {
+                        $page_title .= ' - ' . implode(', ', $location_parts);
+                    }
+                }
+                $page_title .= ' - LexHoy';
+                
+                $title['title'] = $page_title;
             }
         }
         return $title;
@@ -4108,12 +4284,8 @@ class LexhoyDespachosCPT {
         if (is_singular('despacho')) {
             global $post;
             if ($post) {
-                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
-                $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
-                $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
-                
-                $despacho_name = $nombre ?: $post->post_title;
-                
+                // USAR DIRECTAMENTE EL TÍTULO DEL POST (nombre del despacho)
+                $despacho_name = $post->post_title;
                 return $despacho_name . ' - LexHoy';
             }
         }
@@ -4127,8 +4299,8 @@ class LexhoyDespachosCPT {
         if (is_singular('despacho')) {
             global $post;
             if ($post) {
-                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
-                $despacho_name = $nombre ?: $post->post_title;
+                // USAR DIRECTAMENTE EL TÍTULO DEL POST (nombre del despacho)
+                $despacho_name = $post->post_title;
                 return $despacho_name . ' - LexHoy';
             }
         }
@@ -4142,12 +4314,28 @@ class LexhoyDespachosCPT {
         if (is_singular('despacho')) {
             global $post;
             if ($post) {
-                $nombre = get_post_meta($post->ID, '_despacho_nombre', true);
-                $localidad = get_post_meta($post->ID, '_despacho_localidad', true);
-                $provincia = get_post_meta($post->ID, '_despacho_provincia', true);
-                $descripcion = get_post_meta($post->ID, '_despacho_descripcion', true);
+                // USAR DIRECTAMENTE EL TÍTULO DEL POST (nombre del despacho)
+                $despacho_name = $post->post_title;
                 
-                $despacho_name = $nombre ?: $post->post_title;
+                // Obtener datos de ubicación de la sede principal
+                $sedes = get_post_meta($post->ID, '_despacho_sedes', true);
+                $sede_principal = null;
+                
+                if (!empty($sedes) && is_array($sedes)) {
+                    foreach ($sedes as $sede) {
+                        if (isset($sede['es_principal']) && $sede['es_principal']) {
+                            $sede_principal = $sede;
+                            break;
+                        }
+                    }
+                    if (!$sede_principal && !empty($sedes)) {
+                        $sede_principal = $sedes[0];
+                    }
+                }
+                
+                $localidad = $sede_principal['localidad'] ?? get_post_meta($post->ID, '_despacho_localidad', true);
+                $provincia = $sede_principal['provincia'] ?? get_post_meta($post->ID, '_despacho_provincia', true);
+                $descripcion = $sede_principal['descripcion'] ?? $post->post_content ?? get_post_meta($post->ID, '_despacho_descripcion', true);
                 $location_parts = array_filter(array($localidad, $provincia));
                 
                 // Meta description

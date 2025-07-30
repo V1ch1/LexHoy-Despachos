@@ -120,7 +120,7 @@ class LexhoySedesManager {
                                     'estado_verificacion' => $sede_json['estado_verificacion'] ?? 'pendiente',
                                     'estado_registro' => $sede_json['estado_registro'] ?? 'activo',
                                     'foto_perfil' => $sede_json['foto_perfil'] ?? '',
-                                    'is_verified' => false, // FORZADO: Todas las sedes sin verificar
+                                    'is_verified' => (($sede_json['estado_verificacion'] ?? 'pendiente') === 'verificado') ? true : false,
                                     'observaciones' => $sede_json['observaciones'] ?? '',
                                     'horarios' => $sede_json['horarios'] ?? array(),
                                     'redes_sociales' => $sede_json['redes_sociales'] ?? array(),
@@ -613,12 +613,7 @@ class LexhoySedesManager {
                                 </select>
                             </div>
                             <div>
-                                <label style="display: flex; align-items: center; padding-top: 25px;">
-                                    <input type="checkbox" name="sedes[<?php echo $index; ?>][is_verified]" 
-                                           value="1" <?php checked($sede['is_verified'], true); ?> 
-                                           style="margin-right: 8px;">
-                                    <strong>Verificado</strong>
-                                </label>
+                                <!-- Checkbox eliminado - se usa solo el desplegable Estado Verificación -->
                             </div>
                         </div>
                         
@@ -765,7 +760,7 @@ class LexhoySedesManager {
                     'estado_verificacion' => sanitize_text_field($sede['estado_verificacion'] ?? 'pendiente'),
                     'estado_registro' => sanitize_text_field($sede['estado_registro'] ?? 'activo'),
                     'foto_perfil' => esc_url_raw($sede['foto_perfil'] ?? ''),
-                    'is_verified' => false, // FORZADO: Todas las sedes sin verificar
+                    'is_verified' => (sanitize_text_field($sede['estado_verificacion'] ?? 'pendiente') === 'verificado') ? true : false,
                     'observaciones' => sanitize_textarea_field($sede['observaciones'] ?? ''),
                     'es_principal' => isset($sede['es_principal']) ? true : false,
                     'activa' => isset($sede['activa']) ? true : false,
@@ -854,7 +849,7 @@ class LexhoySedesManager {
                 'estado_verificacion' => $sede_data['estado_verificacion'] ?? 'pendiente',
                 'estado_registro' => $sede_data['estado_registro'] ?? 'activo',
                 'foto_perfil' => $sede_data['foto_perfil'] ?? '',
-                'is_verified' => false, // FORZADO: Todas las sedes sin verificar
+                'is_verified' => (($sede_data['estado_verificacion'] ?? 'pendiente') === 'verificado') ? true : false,
                 'observaciones' => $sede_data['observaciones'] ?? '',
                 'horarios' => $sede_data['horarios'] ?? array(),
                 'redes_sociales' => $sede_data['redes_sociales'] ?? array(),

@@ -75,6 +75,9 @@ get_header(); ?>
         // Obtener todos los metadatos del despacho
         $post_id = get_the_ID();
         
+        // Limpiar caché para asegurar datos más recientes
+        wp_cache_delete($post_id, 'post_meta');
+        
         // NUEVA LÓGICA: Obtener datos de sedes primero, fallback a campos legacy
         $sedes = get_post_meta($post_id, '_despacho_sedes', true);
         $sede_principal = null;
@@ -95,46 +98,60 @@ get_header(); ?>
         
         // Función helper para obtener valor de sede principal o fallback
         $get_despacho_data = function($sede_key, $legacy_key) use ($sede_principal, $post_id) {
-            // Primero intentar desde sede principal
-            if ($sede_principal && !empty($sede_principal[$sede_key])) {
-                return $sede_principal[$sede_key];
-            }
-            // Fallback a campo legacy
-            return get_post_meta($post_id, $legacy_key, true);
+            // FORZAR: SIEMPRE leer desde metadatos legacy (datos editables)
+            return get_post_meta($post_id, $legacy_key, true) ?: '';
         };
         
-        // Información básica (con nueva lógica de sedes)
+        // Información básica desde sede principal (nueva estructura)
         $nombre = get_the_title(); // TÍTULO DEL DESPACHO - NO de la sede
-        $localidad = $get_despacho_data('localidad', '_despacho_localidad');
-        $provincia = $get_despacho_data('provincia', '_despacho_provincia');
-        $codigo_postal = $get_despacho_data('codigo_postal', '_despacho_codigo_postal');
-        // Construir dirección completa desde múltiples campos
-        $calle = $get_despacho_data('calle', '_despacho_calle');
-        $numero = $get_despacho_data('numero', '_despacho_numero');
-        $piso = $get_despacho_data('piso', '_despacho_piso');
-        $direccion_completa = $get_despacho_data('direccion_completa', '_despacho_direccion');
         
-        // Construir dirección si no está completa
-        if (empty($direccion_completa)) {
-            $direccion_parts = array_filter(array($calle, $numero, $piso));
-            $direccion = !empty($direccion_parts) ? implode(' ', $direccion_parts) : '';
-        } else {
-            $direccion = $direccion_completa;
-        }
-        $telefono = $get_despacho_data('telefono', '_despacho_telefono');
-        $email = $get_despacho_data('email_contacto', '_despacho_email');
-        $web = $get_despacho_data('web', '_despacho_web');
-        $descripcion = $get_despacho_data('descripcion', '_despacho_descripcion');
-        $estado_verificacion = $get_despacho_data('estado_verificacion', '_despacho_estado_verificacion');
-        $is_verified = $get_despacho_data('is_verified', '_despacho_is_verified');
+        // Construir dirección desde los campos separados de la sede
+        $calle = $sede_principal['calle'] ?? get_post_meta($post_id, '_despacho_calle', true);
+        $numero = $sede_principal['numero'] ?? get_post_meta($post_id, '_despacho_numero', true);
+        $piso = $sede_principal['piso'] ?? get_post_meta($post_id, '_despacho_piso', true);
         
-        // Información adicional
-        $especialidades = get_post_meta($post_id, '_despacho_especialidades', true);
-        $experiencia = $get_despacho_data('experiencia', '_despacho_experiencia');
-        $tamano_despacho = $get_despacho_data('tamano_despacho', '_despacho_tamaño');
-        $ano_fundacion = $get_despacho_data('ano_fundacion', '_despacho_año_fundacion');
-        $estado_registro = $get_despacho_data('estado_registro', '_despacho_estado_registro');
-        $foto_perfil = $get_despacho_data('foto_perfil', '_despacho_foto_perfil');
+        // Construir dirección completa
+        $direccion_parts = array_filter(array($calle, $numero, $piso));
+        $direccion = !empty($direccion_parts) ? implode(' ', $direccion_parts) : 
+                    (get_post_meta($post_id, '_despacho_direccion', true) ?: '');
+        
+        $localidad = $sede_principal['localidad'] ?? get_post_meta($post_id, '_despacho_localidad', true);
+        $provincia = $sede_principal['provincia'] ?? get_post_meta($post_id, '_despacho_provincia', true);
+        $codigo_postal = $sede_principal['codigo_postal'] ?? get_post_meta($post_id, '_despacho_codigo_postal', true);
+        
+        // DEBUG TEMPORAL: Ver qué datos se están leyendo
+        error_log("FRONTEND DEBUG - Post ID: {$post_id}");
+        error_log("FRONTEND DEBUG - Sede principal calle: " . ($sede_principal['calle'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Sede principal numero: " . ($sede_principal['numero'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Sede principal piso: " . ($sede_principal['piso'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Sede principal codigo_postal: " . ($sede_principal['codigo_postal'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Variable direccion final: " . $direccion);
+        $telefono = $sede_principal['telefono'] ?? get_post_meta($post_id, '_despacho_telefono', true);
+        $email = $sede_principal['email_contacto'] ?? get_post_meta($post_id, '_despacho_email', true);
+        $web = $sede_principal['web'] ?? get_post_meta($post_id, '_despacho_web', true);
+        $descripcion = $sede_principal['descripcion'] ?? get_post_meta($post_id, '_despacho_descripcion', true);
+        $estado_verificacion = $sede_principal['estado_verificacion'] ?? get_post_meta($post_id, '_despacho_estado_verificacion', true);
+        $is_verified = $sede_principal['is_verified'] ?? get_post_meta($post_id, '_despacho_is_verified', true);
+        
+        // Información adicional (desde sede principal)
+        $especialidades = $sede_principal['especialidades'] ?? get_post_meta($post_id, '_despacho_especialidades', true);
+        $experiencia = $sede_principal['experiencia'] ?? get_post_meta($post_id, '_despacho_experiencia', true);
+        $tamano_despacho = $sede_principal['tamano_despacho'] ?? get_post_meta($post_id, '_despacho_tamaño', true);
+        $ano_fundacion = $sede_principal['ano_fundacion'] ?? get_post_meta($post_id, '_despacho_año_fundacion', true);
+        $estado_registro = $sede_principal['estado_registro'] ?? get_post_meta($post_id, '_despacho_estado_registro', true);
+        $foto_perfil = $sede_principal['foto_perfil'] ?? get_post_meta($post_id, '_despacho_foto_perfil', true);
+        $numero_colegiado = $sede_principal['numero_colegiado'] ?? get_post_meta($post_id, '_despacho_numero_colegiado', true);
+        $colegio = $sede_principal['colegio'] ?? get_post_meta($post_id, '_despacho_colegio', true);
+        
+        // DEBUG TEMPORAL: Ver datos profesionales y verificación
+        error_log("FRONTEND DEBUG - Sede principal numero_colegiado: " . ($sede_principal['numero_colegiado'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Sede principal colegio: " . ($sede_principal['colegio'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Sede principal is_verified: " . ($sede_principal['is_verified'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Sede principal estado_verificacion: " . ($sede_principal['estado_verificacion'] ?? 'N/A'));
+        error_log("FRONTEND DEBUG - Variable numero_colegiado final: " . $numero_colegiado);
+        error_log("FRONTEND DEBUG - Variable colegio final: " . $colegio);
+        error_log("FRONTEND DEBUG - Variable is_verified final: " . ($is_verified ? 'TRUE' : 'FALSE'));
+        error_log("FRONTEND DEBUG - Variable estado_verificacion final: " . $estado_verificacion);
         
         // Horarios (nueva estructura vs legacy)
         $horario = null;
@@ -152,8 +169,37 @@ get_header(); ?>
             $redes_sociales = get_post_meta($post_id, '_despacho_redes_sociales', true);
         }
         
-        // Áreas de práctica
-        $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+        // Áreas de práctica (consolidadas de todas las sedes)
+        $areas_practica = [];
+        $todas_areas = array();
+        
+        // Obtener áreas de la sede principal
+        if ($sede_principal && isset($sede_principal['areas_practica']) && is_array($sede_principal['areas_practica'])) {
+            $todas_areas = array_merge($todas_areas, $sede_principal['areas_practica']);
+        }
+        
+        // Obtener áreas de todas las sedes adicionales
+        if (!empty($sedes) && is_array($sedes)) {
+            foreach ($sedes as $sede) {
+                if (isset($sede['areas_practica']) && is_array($sede['areas_practica'])) {
+                    $todas_areas = array_merge($todas_areas, $sede['areas_practica']);
+                }
+            }
+        }
+        
+        // Si no hay áreas en sedes, usar fallback a taxonomías de WordPress
+        if (empty($todas_areas)) {
+            $todas_areas = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+        }
+        
+        // Eliminar duplicados y ordenar
+        $areas_practica = array_unique(array_filter($todas_areas));
+        sort($areas_practica);
+        
+        // Debug para áreas de práctica consolidadas
+        error_log("FRONTEND DEBUG - Sede principal areas_practica: " . json_encode($sede_principal['areas_practica'] ?? []));
+        error_log("FRONTEND DEBUG - Todas las áreas consolidadas: " . json_encode($todas_areas));
+        error_log("FRONTEND DEBUG - Areas practica final (sin duplicados): " . json_encode($areas_practica));
         
         // Auto-detectar entorno para fotos
         $is_local = (strpos($_SERVER['HTTP_HOST'], 'lexhoy.local') !== false);
@@ -202,17 +248,17 @@ get_header(); ?>
                 
                 <!-- Badge de verificación (o espacio vacío para mantener alineación) -->
                 <div class="verification-badge-container">
-                    <?php if ($is_verified == '1'): ?>
+                    <?php if ($estado_verificacion === 'verificado'): ?>
                         <div class="verification-badge verified">
                             <i class="fas fa-check-circle"></i>
                             Verificado
                         </div>
-                    <?php elseif ($estado_verificacion == 'pendiente'): ?>
+                    <?php elseif ($estado_verificacion === 'pendiente'): ?>
                         <div class="verification-badge pending">
                             <i class="fas fa-clock"></i>
                             Pendiente verificación
                         </div>
-                    <?php elseif ($estado_verificacion == 'rechazado'): ?>
+                    <?php elseif ($estado_verificacion === 'rechazado'): ?>
                         <div class="verification-badge rejected">
                             <i class="fas fa-times-circle"></i>
                             Rechazado
@@ -239,16 +285,10 @@ get_header(); ?>
                 </div>
             <?php endif; ?>
             
-            <!-- Título y subtítulo centrados -->
+            <!-- Título centrado (sin subtítulo) -->
             <div class="despacho-title-row">
                 <div class="despacho-title-content">
                     <h1 class="despacho-title"><?php echo esc_html($nombre ?: get_the_title()); ?></h1>
-                    <p class="despacho-subtitle">
-                        <?php 
-                        $location_parts = array_filter(array($localidad, $provincia));
-                        echo esc_html(implode(', ', $location_parts));
-                        ?>
-                    </p>
                 </div>
             </div>
         </div>
@@ -265,7 +305,7 @@ get_header(); ?>
                         <?php if ($telefono): ?>
                             <div class="contact-item">
                                 <i class="fas fa-phone"></i>
-                                <?php if ($is_verified == '1'): ?>
+                                <?php if ($estado_verificacion === 'verificado'): ?>
                                     <a href="tel:<?php echo esc_attr($telefono); ?>"><?php echo esc_html($telefono); ?></a>
                                 <?php else: ?>
                                     <span class="phone-verification-notice">Solo mostramos teléfonos de despachos verificados</span>
@@ -276,7 +316,7 @@ get_header(); ?>
                         <?php if ($email): ?>
                             <div class="contact-item">
                                 <i class="fas fa-envelope"></i>
-                                <?php if ($is_verified == '1'): ?>
+                                <?php if ($estado_verificacion === 'verificado'): ?>
                                     <a href="mailto:<?php echo esc_attr($email); ?>"><?php echo esc_html($email); ?></a>
                                 <?php else: ?>
                                     <span class="phone-verification-notice">Solo mostramos emails de despachos verificados</span>
@@ -291,38 +331,73 @@ get_header(); ?>
                             </div>
                         <?php endif; ?>
                         
-                        <?php if ($direccion): ?>
+                        <?php if ($direccion || $localidad || $provincia): ?>
                             <div class="contact-item">
                                 <i class="fas fa-map-marker-alt"></i>
-                                <span><?php echo esc_html($direccion); ?></span>
+                                <span>
+                                    <?php 
+                                    // Construir dirección completa con localidad y provincia
+                                    $address_parts = array();
+                                    
+                                    // Agregar dirección si existe
+                                    if (!empty($direccion)) {
+                                        $address_parts[] = $direccion;
+                                    }
+                                    
+                                    // Agregar localidad y provincia
+                                    $location_parts = array_filter(array($localidad, $provincia));
+                                    if (!empty($location_parts)) {
+                                        $address_parts[] = implode(', ', $location_parts);
+                                    }
+                                    
+                                    // Agregar código postal si existe
+                                    if (!empty($codigo_postal)) {
+                                        $address_parts[] = '(' . $codigo_postal . ')';
+                                    }
+                                    
+                                    echo esc_html(implode(', ', $address_parts));
+                                    ?>
+                                </span>
                             </div>
                         <?php endif; ?>
                         
-                        <?php if ($codigo_postal): ?>
+                        <?php if ($numero_colegiado): ?>
                             <div class="contact-item">
-                                <i class="fas fa-mail-bulk"></i>
-                                <span><?php echo esc_html($codigo_postal); ?></span>
+                                <i class="fas fa-id-card"></i>
+                                <span><strong>Nº Colegiado:</strong> <?php echo esc_html($numero_colegiado); ?></span>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($colegio): ?>
+                            <div class="contact-item">
+                                <i class="fas fa-university"></i>
+                                <span><strong>Colegio:</strong> <?php echo esc_html($colegio); ?></span>
                             </div>
                         <?php endif; ?>
                     </div>
                 </div>
                 
-                <!-- Sedes del Despacho - NUEVA SECCIÓN (solo si hay 2 o más sedes) -->
+                <!-- Sedes del Despacho - NUEVA SECCIÓN (solo si hay sedes adicionales NO principales) -->
                 <?php 
                 // Obtener sedes del nuevo formato
                 $sedes = get_post_meta($post_id, '_despacho_sedes', true);
-                if (!empty($sedes) && is_array($sedes) && count($sedes) > 1): ?>
+                $sedes_adicionales = array();
+                if (!empty($sedes) && is_array($sedes)) {
+                    foreach ($sedes as $sede) {
+                        if (!isset($sede['es_principal']) || !$sede['es_principal']) {
+                            $sedes_adicionales[] = $sede;
+                        }
+                    }
+                }
+                if (!empty($sedes_adicionales)): ?>
                     <div class="despacho-section despacho-sedes">
-                        <h3><i class="fas fa-building"></i> Nuestras Sedes</h3>
+                        <h3><i class="fas fa-building"></i> Otras Sedes</h3>
                         <div class="sedes-container">
-                            <?php foreach ($sedes as $sede): ?>
-                                <div class="sede-card <?php echo $sede['es_principal'] ? 'sede-principal' : ''; ?>">
+                            <?php foreach ($sedes_adicionales as $sede): ?>
+                                <div class="sede-card"><?php // Solo sedes adicionales (no principales) ?>
                                     <div class="sede-header">
                                         <h4>
                                             🏢 <?php echo esc_html($sede['nombre']); ?>
-                                            <?php if ($sede['es_principal']): ?>
-                                                <span class="badge-principal">⭐ Principal</span>
-                                            <?php endif; ?>
                                         </h4>
                                     </div>
                                     
@@ -337,25 +412,51 @@ get_header(); ?>
                                         <?php if (!empty($sede['telefono'])): ?>
                                             <div class="sede-contact-item">
                                                 <i class="fas fa-phone"></i>
-                                                <a href="tel:<?php echo esc_attr($sede['telefono']); ?>" class="phone-link">
-                                                    <?php echo esc_html($sede['telefono']); ?>
-                                                </a>
+                                                <?php if ($estado_verificacion === 'verificado'): ?>
+                                                    <a href="tel:<?php echo esc_attr($sede['telefono']); ?>" class="phone-link">
+                                                        <?php echo esc_html($sede['telefono']); ?>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="phone-verification-notice">Solo mostramos teléfonos de despachos verificados</span>
+                                                <?php endif; ?>
                                             </div>
                                         <?php endif; ?>
                                         
                                         <?php if (!empty($sede['email_contacto'])): ?>
                                             <div class="sede-contact-item">
                                                 <i class="fas fa-envelope"></i>
-                                                <a href="mailto:<?php echo esc_attr($sede['email_contacto']); ?>">
-                                                    <?php echo esc_html($sede['email_contacto']); ?>
-                                                </a>
+                                                <?php if ($estado_verificacion === 'verificado'): ?>
+                                                    <a href="mailto:<?php echo esc_attr($sede['email_contacto']); ?>">
+                                                        <?php echo esc_html($sede['email_contacto']); ?>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="phone-verification-notice">Solo mostramos emails de despachos verificados</span>
+                                                <?php endif; ?>
                                             </div>
                                         <?php endif; ?>
                                         
-                                        <?php if (!empty($sede['direccion_completa'])): ?>
+                                        <?php 
+                                        // Construir dirección completa de la sede
+                                        $direccion_parts = array_filter(array(
+                                            $sede['calle'] ?? '',
+                                            $sede['numero'] ?? '',
+                                            $sede['piso'] ?? ''
+                                        ));
+                                        $direccion_sede = !empty($direccion_parts) ? implode(' ', $direccion_parts) : ($sede['direccion_completa'] ?? '');
+                                        
+                                        $localidad_parts = array_filter(array(
+                                            $sede['localidad'] ?? '',
+                                            $sede['provincia'] ?? '',
+                                            $sede['codigo_postal'] ?? ''
+                                        ));
+                                        $localidad_sede = !empty($localidad_parts) ? implode(', ', $localidad_parts) : '';
+                                        
+                                        $direccion_completa_sede = trim($direccion_sede . ($localidad_sede ? ', ' . $localidad_sede : ''));
+                                        
+                                        if (!empty($direccion_completa_sede)): ?>
                                             <div class="sede-contact-item">
                                                 <i class="fas fa-map-marker-alt"></i>
-                                                <span><?php echo esc_html($sede['direccion_completa']); ?></span>
+                                                <span><?php echo esc_html($direccion_completa_sede); ?></span>
                                             </div>
                                         <?php endif; ?>
                                         
@@ -370,6 +471,15 @@ get_header(); ?>
                                             <div class="sede-contact-item">
                                                 <i class="fas fa-gavel"></i>
                                                 <span><strong>Servicios:</strong> <?php echo esc_html($sede['servicios_especificos']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!empty($sede['areas_practica']) && is_array($sede['areas_practica'])): ?>
+                                            <div class="sede-contact-item">
+                                                <i class="fas fa-gavel"></i>
+                                                <span><strong>Áreas de práctica:</strong> 
+                                                    <?php echo esc_html(implode(', ', $sede['areas_practica'])); ?>
+                                                </span>
                                             </div>
                                         <?php endif; ?>
                                         

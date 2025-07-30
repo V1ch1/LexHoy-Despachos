@@ -316,7 +316,7 @@ class LexhoyDespachosShortcode {
                     'localidad' => $get_data('localidad', '_despacho_localidad'),
                     'provincia' => $get_data('provincia', '_despacho_provincia'),
                     'areas_practica' => $this->get_areas_for_post($post_id),
-                    'isVerified' => $get_data('is_verified', '_despacho_is_verified') === '1' || $get_data('is_verified', '_despacho_is_verified') === true,
+                    'isVerified' => $get_data('estado_verificacion', '_despacho_estado_verificacion') === 'verificado',
                     'link' => get_permalink($post_id),
                     'slug' => get_post_field('post_name', $post_id)
                 );

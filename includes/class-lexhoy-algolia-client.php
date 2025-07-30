@@ -30,13 +30,17 @@ class LexhoyAlgoliaClient {
      */
     private function custom_log($message) {
         // Usar una ruta absoluta más confiable
-        $wp_content_dir = WP_CONTENT_DIR ?: dirname(dirname(dirname(dirname(__FILE__)))) . '/wp-content';
+        $wp_content_dir = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : dirname(dirname(dirname(dirname(__FILE__)))) . '/wp-content';
         $log_file = $wp_content_dir . '/lexhoy-debug.log';
         
         // Crear el directorio si no existe
         $log_dir = dirname($log_file);
         if (!is_dir($log_dir)) {
-            wp_mkdir_p($log_dir);
+            if (function_exists('wp_mkdir_p')) {
+                wp_mkdir_p($log_dir);
+            } else {
+                @mkdir($log_dir, 0755, true);
+            }
         }
         
         $timestamp = date('Y-m-d H:i:s');
