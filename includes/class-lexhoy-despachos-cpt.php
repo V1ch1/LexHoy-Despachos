@@ -21,7 +21,7 @@ class LexhoyDespachosCPT {
         
         add_action('init', array($this, 'register_post_type'));
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
-        add_action('save_post', array($this, 'save_meta_boxes'), 1, 1);
+    add_action('save_post', array($this, 'save_meta_boxes'), 99, 1);
         // Hook de test removido para producción
         
         // Redirecciones para URLs limpias
@@ -709,6 +709,21 @@ class LexhoyDespachosCPT {
         // --- NUEVO: Sincronizar estructura de sedes cuando se editan metadatos legacy ---
         if (!$is_bulk_import) {
             $this->sync_legacy_to_sedes($post_id);
+        }
+
+        // --- NUEVO: Sincronizar áreas de práctica del formulario con la taxonomía ---
+        if (
+            !$is_bulk_import &&
+            isset($_POST['tax_input']) &&
+            isset($_POST['tax_input']['area_practica']) &&
+            is_array($_POST['tax_input']['area_practica'])
+        ) {
+            $area_ids = array_map('intval', $_POST['tax_input']['area_practica']);
+            // Asignar los términos seleccionados a la taxonomía area_practica
+            wp_set_post_terms($post_id, $area_ids, 'area_practica', false);
+            if (method_exists($this, 'custom_log')) {
+                $this->custom_log('LexHoy DEBUG: Sincronizando taxonomía area_practica con IDs: ' . implode(',', $area_ids));
+            }
         }
 
         if (!$is_bulk_import) {

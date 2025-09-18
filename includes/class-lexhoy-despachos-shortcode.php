@@ -312,10 +312,13 @@ class LexhoyDespachosShortcode {
                 
                 $despachos[] = array(
                     'id' => $post_id,
-                    'nombre' => get_the_title(), // SIEMPRE usar el título del despacho, NO el nombre de la sede
+                    'nombre' => get_the_title(),
                     'localidad' => $get_data('localidad', '_despacho_localidad'),
                     'provincia' => $get_data('provincia', '_despacho_provincia'),
-                    'areas_practica' => $this->get_areas_for_post($post_id),
+                    // Usar áreas de la sede principal si existen, si no fallback a taxonomía
+                    'areas_practica' => (!empty($sede_principal['areas_practica']) && is_array($sede_principal['areas_practica']))
+                        ? implode(', ', $sede_principal['areas_practica'])
+                        : $this->get_areas_for_post($post_id),
                     'isVerified' => $get_data('estado_verificacion', '_despacho_estado_verificacion') === 'verificado',
                     'link' => get_permalink($post_id),
                     'slug' => get_post_field('post_name', $post_id)
@@ -335,7 +338,9 @@ class LexhoyDespachosShortcode {
                         <p>Intenta con otros términos de búsqueda o elimina los filtros.</p>
                     </div>';
         } else {
-            $html = '<div class="despachos-grid">';
+            // Inyectar los datos como JSON para debug en el frontend
+            $html .= '<script>window.LexHoyDespachosDebug = ' . json_encode($despachos) . ';</script>';
+            $html .= '<div class="despachos-grid">';
             foreach ($despachos as $despacho) {
                 $html .= '<div class="despacho-card hit-card">';
                 if ($despacho['isVerified']) {
@@ -346,7 +351,7 @@ class LexhoyDespachosShortcode {
                 }
                 $html .= '<div class="despacho-name">' . esc_html($despacho['nombre']) . '</div>';
                 $html .= '<div class="despacho-location">' . esc_html($despacho['localidad']) . ', ' . esc_html($despacho['provincia']) . '</div>';
-                $html .= '<div class="despacho-areas"><strong>Áreas:</strong> ' . esc_html($despacho['areas_practica']) . '</div>';
+                $html .= '<div class="despacho-areas"><strong>Áreas de práctica:</strong> ' . esc_html($despacho['areas_practica']) . '</div>';
                 $html .= '<a href="' . esc_url($despacho['link']) . '" class="despacho-link">Ver más</a>';
                 $html .= '</div>';
             }
