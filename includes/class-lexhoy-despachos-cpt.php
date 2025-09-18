@@ -21,7 +21,7 @@ class LexhoyDespachosCPT {
         
         add_action('init', array($this, 'register_post_type'));
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
-    add_action('save_post', array($this, 'save_meta_boxes'), 99, 1);
+        add_action('save_post', array($this, 'save_meta_boxes'), 99, 1);
         // Hook de test removido para producción
         
         // Redirecciones para URLs limpias
