@@ -169,37 +169,19 @@ get_header(); ?>
             $redes_sociales = get_post_meta($post_id, '_despacho_redes_sociales', true);
         }
         
-        // Áreas de práctica (consolidadas de todas las sedes)
-        $areas_practica = [];
-        $todas_areas = array();
-        
-        // Obtener áreas de la sede principal
-        if ($sede_principal && isset($sede_principal['areas_practica']) && is_array($sede_principal['areas_practica'])) {
-            $todas_areas = array_merge($todas_areas, $sede_principal['areas_practica']);
+
+        // Áreas de práctica: solo sede principal (igual que en el buscador)
+        if ($sede_principal && isset($sede_principal['areas_practica']) && is_array($sede_principal['areas_practica']) && !empty($sede_principal['areas_practica'])) {
+            $areas_practica = array_unique(array_filter($sede_principal['areas_practica']));
+            sort($areas_practica);
+        } else {
+            // Fallback: usar taxonomía si no hay áreas en sede principal
+            $areas_practica = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+            $areas_practica = array_unique(array_filter($areas_practica));
+            sort($areas_practica);
         }
-        
-        // Obtener áreas de todas las sedes adicionales
-        if (!empty($sedes) && is_array($sedes)) {
-            foreach ($sedes as $sede) {
-                if (isset($sede['areas_practica']) && is_array($sede['areas_practica'])) {
-                    $todas_areas = array_merge($todas_areas, $sede['areas_practica']);
-                }
-            }
-        }
-        
-        // Si no hay áreas en sedes, usar fallback a taxonomías de WordPress
-        if (empty($todas_areas)) {
-            $todas_areas = wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
-        }
-        
-        // Eliminar duplicados y ordenar
-        $areas_practica = array_unique(array_filter($todas_areas));
-        sort($areas_practica);
-        
-        // Debug para áreas de práctica consolidadas
-        error_log("FRONTEND DEBUG - Sede principal areas_practica: " . json_encode($sede_principal['areas_practica'] ?? []));
-        error_log("FRONTEND DEBUG - Todas las áreas consolidadas: " . json_encode($todas_areas));
-        error_log("FRONTEND DEBUG - Areas practica final (sin duplicados): " . json_encode($areas_practica));
+        // Debug para áreas de práctica (solo sede principal)
+        error_log("FRONTEND DEBUG - Areas practica (solo sede principal): " . json_encode($areas_practica));
         
         // Auto-detectar entorno para fotos
         $is_local = (strpos($_SERVER['HTTP_HOST'], 'lexhoy.local') !== false);

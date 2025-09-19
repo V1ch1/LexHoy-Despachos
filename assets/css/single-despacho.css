@@ -1225,3 +1225,39 @@
     width: 400px;
   }
 }
+
+.despacho-header {
+    text-align: center; /* Centra el contenido dentro de todo el contenedor */
+}
+
+.despacho-profile-photo {
+    display: flex; /* Activamos flexbox */
+    justify-content: center; /* Centra horizontalmente */
+    align-items: center; /* Centra verticalmente si es necesario */
+    width: 100%; /* Asegura que el contenedor ocupe todo el ancho disponible */
+    margin: 0 auto; /* Centra el contenedor en la página */
+}
+
+.despacho-profile-photo img {
+    width: 100%; /* Hace que la imagen ocupe todo el contenedor sin sobresalir */
+    max-width: 145px; /* Ajusta el tamaño máximo del logo (ajústalo según lo necesites) */
+    height: auto; /* Mantiene la proporción original */
+    object-fit: contain; /* Ajusta la imagen para que encaje dentro del contenedor sin distorsionarse *
+}
+
+/* Para móviles */
+@media (max-width: 767px) {
+    .despacho-header {
+        text-align: center; /* Asegura que el texto también esté centrado */
+    }
+
+    .despacho-profile-photo {
+        display: flex; /* Activamos flexbox para el centrado */
+        justify-content: center; /* Centra horizontalmente */
+        align-items: center; /* Centra verticalmente */
+    }
+
+    .despacho-profile-photo img {
+        max-width: 150px; /* Ajusta el tamaño del logo en dispositivos móviles */
+    }
+}
