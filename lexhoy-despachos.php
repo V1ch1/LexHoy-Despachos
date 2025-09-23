@@ -92,4 +92,19 @@ function lexhoy_despachos_uninstall() {
 }
 register_uninstall_hook(__FILE__, 'lexhoy_despachos_uninstall');
 
- 
+ // Exponer todos los campos meta del CPT 'despacho' en la REST API
+add_action('rest_api_init', function () {
+    register_rest_field('despacho', 'meta', [
+        'get_callback' => function ($object) {
+            // Devuelve todos los meta campos del despacho
+            return get_post_meta($object['id']);
+        },
+        'update_callback' => function ($value, $object) {
+            // Permite actualizar todos los meta campos (valida permisos en producción)
+            foreach ($value as $key => $val) {
+                update_post_meta($object->ID, $key, $val);
+            }
+        },
+        'schema' => null,
+    ]);
+});
