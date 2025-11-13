@@ -68,6 +68,12 @@ class LexhoyDespachosCPT {
         // Inicializar cliente de Algolia
         $this->init_algolia_client();
 
+        // Registrar metadatos para REST API - DEBE ejecutarse temprano
+        add_action('rest_api_init', array($this, 'register_meta_for_rest_api'));
+        
+        // NUEVO: Hook para sincronizar DESPUÉS de que REST API actualice metadatos
+        add_action('rest_after_insert_despacho', array($this, 'sync_after_rest_insert'), 10, 3);
+
         // Nuevo: disparar sincronización cuando un despacho se publica - CORREGIDO para evitar nuevas instancias
         add_action(
             'transition_post_status',
@@ -143,7 +149,7 @@ class LexhoyDespachosCPT {
             'show_in_menu'      => true,
             'query_var'         => true,
             'rewrite'           => array('slug' => 'despacho', 'with_front' => false),
-            'capability_type'   => 'despacho',
+            'capability_type'   => 'post', // Usar capacidades estándar de WordPress
             'map_meta_cap'      => true,
             'has_archive'       => false,
             'hierarchical'      => false,
@@ -155,6 +161,91 @@ class LexhoyDespachosCPT {
         );
 
         register_post_type('despacho', $args);
+    }
+
+    /**
+     * Registrar metadatos para REST API
+     * Esto permite que WordPress REST API guarde automáticamente los metadatos
+     */
+    public function register_meta_for_rest_api() {
+        error_log('🔧 LEXHOY: Registrando metadatos para REST API');
+        
+        // Registrar _despacho_sedes para REST API
+        register_post_meta('despacho', '_despacho_sedes', array(
+            'show_in_rest' => array(
+                'schema' => array(
+                    'type' => 'array',
+                    'items' => array(
+                        'type' => 'object',
+                    ),
+                ),
+            ),
+            'single' => true,
+            'type' => 'array',
+            'auth_callback' => function() {
+                return current_user_can('edit_posts');
+            }
+        ));
+
+        // Registrar otros metadatos importantes
+        $meta_fields = array(
+            '_despacho_nombre' => 'string',
+            '_despacho_localidad' => 'string',
+            '_despacho_provincia' => 'string',
+            '_despacho_codigo_postal' => 'string',
+            '_despacho_direccion' => 'string',
+            '_despacho_telefono' => 'string',
+            '_despacho_email' => 'string',
+            '_despacho_web' => 'string',
+            '_despacho_descripcion' => 'string',
+            '_despacho_estado_verificacion' => 'string',
+            '_despacho_is_verified' => 'string',
+            '_despacho_numero_colegiado' => 'string',
+            '_despacho_colegio' => 'string',
+            '_despacho_experiencia' => 'string',
+            '_despacho_tamaño' => 'string',
+            '_despacho_año_fundacion' => 'string',
+            '_despacho_estado_registro' => 'string',
+            '_despacho_foto_perfil' => 'string',
+        );
+
+        foreach ($meta_fields as $meta_key => $type) {
+            register_post_meta('despacho', $meta_key, array(
+                'show_in_rest' => true,
+                'single' => true,
+                'type' => $type,
+                'auth_callback' => function() {
+                    return current_user_can('edit_posts');
+                }
+            ));
+        }
+
+        // Registrar arrays (horarios y redes sociales)
+        register_post_meta('despacho', '_despacho_horario', array(
+            'show_in_rest' => array(
+                'schema' => array(
+                    'type' => 'object',
+                ),
+            ),
+            'single' => true,
+            'type' => 'object',
+            'auth_callback' => function() {
+                return current_user_can('edit_posts');
+            }
+        ));
+
+        register_post_meta('despacho', '_despacho_redes_sociales', array(
+            'show_in_rest' => array(
+                'schema' => array(
+                    'type' => 'object',
+                ),
+            ),
+            'single' => true,
+            'type' => 'object',
+            'auth_callback' => function() {
+                return current_user_can('edit_posts');
+            }
+        ));
     }
 
     /**
@@ -992,9 +1083,45 @@ class LexhoyDespachosCPT {
     }
 
     /**
-     * Sincronizar un post a Algolia
+     * Sincronizar después de que REST API inserte/actualice un despacho
+     * Este hook se ejecuta DESPUÉS de que todos los metadatos estén guardados
      */
-    public function sync_to_algolia($post_id, $post = null, $update = null) {
+    public function sync_after_rest_insert($post, $request, $creating) {
+        error_log("🔄 LEXHOY REST: Hook rest_after_insert_despacho ejecutado para post_id: {$post->ID}");
+        error_log("🔄 LEXHOY REST: Creando nuevo: " . ($creating ? 'SÍ' : 'NO'));
+        
+        // Esperar 2 segundos para asegurar que todos los metadatos estén guardados
+        sleep(2);
+        
+        // Limpiar caché de metadatos
+        wp_cache_delete($post->ID, 'post_meta');
+        
+        // Ejecutar sincronización (forzar ejecución aunque sea REST)
+        $this->sync_to_algolia($post->ID, $post, !$creating, true);
+    }
+
+    /**
+     * Sincronizar un post a Algolia
+     * @param int $post_id ID del post
+     * @param object $post Objeto del post
+     * @param bool $update Si es actualización
+     * @param bool $force_sync Forzar sincronización aunque sea REST (usado por rest_after_insert)
+     */
+    public function sync_to_algolia($post_id, $post = null, $update = null, $force_sync = false) {
+        // IMPORTANTE: Si estamos en una petición REST API, omitir este hook
+        // EXCEPTO si viene del hook rest_after_insert_despacho (force_sync = true)
+        if (!$force_sync && defined('REST_REQUEST') && REST_REQUEST) {
+            error_log("LEXHOY SYNC: Omitida - es petición REST API, esperando a rest_after_insert_despacho");
+            return;
+        }
+        
+        // Evitar sincronizaciones múltiples en la misma ejecución
+        static $synced_posts = array();
+        if (isset($synced_posts[$post_id])) {
+            error_log("LEXHOY SYNC: Omitida - ya sincronizado en esta ejecución para post_id: {$post_id}");
+            return;
+        }
+        
         // Log del inicio de la función
         error_log("LEXHOY SYNC: Iniciando sincronización para post_id: {$post_id}");
         
@@ -1094,7 +1221,21 @@ class LexhoyDespachosCPT {
             
             // Obtener sedes guardadas
             $sedes_wp = get_post_meta($post_id, '_despacho_sedes', true);
+            error_log('🔍 LEXHOY SYNC: Sedes leídas de meta (raw): ' . print_r($sedes_wp, true));
+            error_log('🔍 LEXHOY SYNC: Tipo de sedes: ' . gettype($sedes_wp));
+            
+            // IMPORTANTE: Si es string serializado, deserializar
+            if (is_string($sedes_wp) && !empty($sedes_wp)) {
+                error_log('🔍 LEXHOY SYNC: Sedes es string serializado, deserializando...');
+                $sedes_wp = maybe_unserialize($sedes_wp);
+                error_log('🔍 LEXHOY SYNC: Sedes después de deserializar: ' . print_r($sedes_wp, true));
+            }
+            
+            error_log('🔍 LEXHOY SYNC: Es array: ' . (is_array($sedes_wp) ? 'SÍ' : 'NO'));
+            error_log('🔍 LEXHOY SYNC: Cantidad de sedes: ' . (is_array($sedes_wp) ? count($sedes_wp) : '0'));
+            
             if (!is_array($sedes_wp)) {
+                error_log('⚠️ LEXHOY SYNC: Sedes no es array, inicializando vacío');
                 $sedes_wp = array();
             }
             
@@ -1154,6 +1295,9 @@ class LexhoyDespachosCPT {
             error_log("LEXHOY SYNC: Datos de sede principal: " . json_encode($sedes_wp[0] ?? []));
             $result = $client->save_object($index_name, $record);
             error_log("LEXHOY SYNC: ✅ Sincronización exitosa para despacho ID: {$post_id}");
+            
+            // Marcar como sincronizado
+            $synced_posts[$post_id] = true;
 
         } catch (Exception $e) {
             error_log("LEXHOY SYNC: ❌ Error al sincronizar despacho ID {$post_id} con Algolia: " . $e->getMessage());
