@@ -1495,29 +1495,38 @@ class LexhoyDespachosCPT {
                         'post_content'=> $record['descripcion'] ?? ''
                     ));
 
+                    // Función helper para asegurar strings (evitar arrays serializados)
+                    $ensure_string = function($value) {
+                        if (is_array($value)) {
+                            // Si es array, tomar el primer elemento
+                            return is_string(reset($value)) ? reset($value) : '';
+                        }
+                        return is_string($value) ? $value : '';
+                    };
+
                     // Actualizar meta datos restantes
-                    update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
-                    update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
-                    update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
-                    update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
-                    update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
-                    update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
-                    update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
-                    update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
-                    update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
-                    update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
+                    update_post_meta($post_id, '_despacho_nombre', $ensure_string($record['nombre'] ?? ''));
+                    update_post_meta($post_id, '_despacho_localidad', $ensure_string($record['localidad'] ?? ''));
+                    update_post_meta($post_id, '_despacho_provincia', $ensure_string($record['provincia'] ?? ''));
+                    update_post_meta($post_id, '_despacho_codigo_postal', $ensure_string($record['codigo_postal'] ?? ''));
+                    update_post_meta($post_id, '_despacho_direccion', $ensure_string($record['direccion'] ?? ''));
+                    update_post_meta($post_id, '_despacho_telefono', $ensure_string($record['telefono'] ?? ''));
+                    update_post_meta($post_id, '_despacho_email', $ensure_string($record['email'] ?? ''));
+                    update_post_meta($post_id, '_despacho_web', $ensure_string($record['web'] ?? ''));
+                    update_post_meta($post_id, '_despacho_descripcion', $ensure_string($record['descripcion'] ?? ''));
+                    update_post_meta($post_id, '_despacho_estado_verificacion', $ensure_string($record['estado_verificacion'] ?? 'pendiente'));
                     update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? 0);
                     // CAMPOS PROFESIONALES NUEVOS
-                    update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
-                    update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
+                    update_post_meta($post_id, '_despacho_numero_colegiado', $ensure_string($record['numero_colegiado'] ?? ''));
+                    update_post_meta($post_id, '_despacho_colegio', $ensure_string($record['colegio'] ?? ''));
                     // OTROS CAMPOS NUEVOS
                     update_post_meta($post_id, '_despacho_especialidades', isset($record['especialidades']) && is_array($record['especialidades']) ? implode(',', $record['especialidades']) : '');
                     update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
                     update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
-                    update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
-                    update_post_meta($post_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
+                    update_post_meta($post_id, '_despacho_experiencia', $ensure_string($record['experiencia'] ?? ''));
+                    update_post_meta($post_id, '_despacho_tamaño', $ensure_string($record['tamaño_despacho'] ?? ''));
                     update_post_meta($post_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
-                    update_post_meta($post_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
+                    update_post_meta($post_id, '_despacho_estado_registro', $ensure_string($record['estado_registro'] ?? 'activo'));
 
                     // Sincronizar áreas de práctica (crear términos si no existen)
                     if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
@@ -2142,22 +2151,31 @@ class LexhoyDespachosCPT {
                 }
                 
                 if ($sede_principal) {
+                    // Función helper para asegurar strings (evitar arrays serializados)
+                    $ensure_string = function($value) {
+                        if (is_array($value)) {
+                            // Si es array, tomar el primer elemento
+                            return is_string(reset($value)) ? reset($value) : '';
+                        }
+                        return is_string($value) ? $value : '';
+                    };
+                    
                     // Extraer datos de la sede principal para campos legacy
-                    $meta_updates['_despacho_nombre'] = $sede_principal['nombre'] ?? $nombre;
-                    $meta_updates['_despacho_localidad'] = $sede_principal['localidad'] ?? '';
-                    $meta_updates['_despacho_provincia'] = $sede_principal['provincia'] ?? '';
-                    $meta_updates['_despacho_codigo_postal'] = $sede_principal['codigo_postal'] ?? '';
-                    $meta_updates['_despacho_direccion'] = $sede_principal['direccion_completa'] ?? '';
-                    $meta_updates['_despacho_telefono'] = $sede_principal['telefono'] ?? '';
-                    $meta_updates['_despacho_email'] = $sede_principal['email_contacto'] ?? '';
-                    $meta_updates['_despacho_web'] = $sede_principal['web'] ?? '';
-                    $meta_updates['_despacho_descripcion'] = $sede_principal['descripcion'] ?? '';
-                    $meta_updates['_despacho_estado_verificacion'] = $sede_principal['estado_verificacion'] ?? 'pendiente';
+                    $meta_updates['_despacho_nombre'] = $ensure_string($sede_principal['nombre'] ?? $nombre);
+                    $meta_updates['_despacho_localidad'] = $ensure_string($sede_principal['localidad'] ?? '');
+                    $meta_updates['_despacho_provincia'] = $ensure_string($sede_principal['provincia'] ?? '');
+                    $meta_updates['_despacho_codigo_postal'] = $ensure_string($sede_principal['codigo_postal'] ?? '');
+                    $meta_updates['_despacho_direccion'] = $ensure_string($sede_principal['direccion_completa'] ?? '');
+                    $meta_updates['_despacho_telefono'] = $ensure_string($sede_principal['telefono'] ?? '');
+                    $meta_updates['_despacho_email'] = $ensure_string($sede_principal['email_contacto'] ?? '');
+                    $meta_updates['_despacho_web'] = $ensure_string($sede_principal['web'] ?? '');
+                    $meta_updates['_despacho_descripcion'] = $ensure_string($sede_principal['descripcion'] ?? '');
+                    $meta_updates['_despacho_estado_verificacion'] = $ensure_string($sede_principal['estado_verificacion'] ?? 'pendiente');
                     $meta_updates['_despacho_is_verified'] = false; // FORZADO: Todos sin verificar
-                    $meta_updates['_despacho_numero_colegiado'] = $sede_principal['numero_colegiado'] ?? '';
-                    $meta_updates['_despacho_colegio'] = $sede_principal['colegio'] ?? '';
-                    $meta_updates['_despacho_experiencia'] = $sede_principal['experiencia'] ?? '';
-                    $meta_updates['_despacho_foto_perfil'] = $sede_principal['foto_perfil'] ?? '';
+                    $meta_updates['_despacho_numero_colegiado'] = $ensure_string($sede_principal['numero_colegiado'] ?? '');
+                    $meta_updates['_despacho_colegio'] = $ensure_string($sede_principal['colegio'] ?? '');
+                    $meta_updates['_despacho_experiencia'] = $ensure_string($sede_principal['experiencia'] ?? '');
+                    $meta_updates['_despacho_foto_perfil'] = $ensure_string($sede_principal['foto_perfil'] ?? '');
                     
                     // NUEVA ESTRUCTURA: Procesar horarios optimizados
                     if (isset($sede_principal['horarios']) && is_array($sede_principal['horarios'])) {
@@ -2209,21 +2227,30 @@ class LexhoyDespachosCPT {
                 }
             } else {
                 // COMPATIBILIDAD: Estructura antigua (sin sedes)
-                update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
-                update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
-                update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
-                update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
-                update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
-                update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
-                update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
-                update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
-                update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
-                update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
+                // Función helper para asegurar strings (evitar arrays serializados)
+                $ensure_string = function($value) {
+                    if (is_array($value)) {
+                        // Si es array, tomar el primer elemento
+                        return is_string(reset($value)) ? reset($value) : '';
+                    }
+                    return is_string($value) ? $value : '';
+                };
+                
+                update_post_meta($post_id, '_despacho_nombre', $ensure_string($record['nombre'] ?? ''));
+                update_post_meta($post_id, '_despacho_localidad', $ensure_string($record['localidad'] ?? ''));
+                update_post_meta($post_id, '_despacho_provincia', $ensure_string($record['provincia'] ?? ''));
+                update_post_meta($post_id, '_despacho_codigo_postal', $ensure_string($record['codigo_postal'] ?? ''));
+                update_post_meta($post_id, '_despacho_direccion', $ensure_string($record['direccion'] ?? ''));
+                update_post_meta($post_id, '_despacho_telefono', $ensure_string($record['telefono'] ?? ''));
+                update_post_meta($post_id, '_despacho_email', $ensure_string($record['email'] ?? ''));
+                update_post_meta($post_id, '_despacho_web', $ensure_string($record['web'] ?? ''));
+                update_post_meta($post_id, '_despacho_descripcion', $ensure_string($record['descripcion'] ?? ''));
+                update_post_meta($post_id, '_despacho_estado_verificacion', $ensure_string($record['estado_verificacion'] ?? 'pendiente'));
                 update_post_meta($post_id, '_despacho_is_verified', false); // FORZADO: Todos sin verificar
-                update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
-                update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
-                update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
-                update_post_meta($post_id, '_despacho_foto_perfil', $record['foto_perfil'] ?? '');
+                update_post_meta($post_id, '_despacho_numero_colegiado', $ensure_string($record['numero_colegiado'] ?? ''));
+                update_post_meta($post_id, '_despacho_colegio', $ensure_string($record['colegio'] ?? ''));
+                update_post_meta($post_id, '_despacho_experiencia', $ensure_string($record['experiencia'] ?? ''));
+                update_post_meta($post_id, '_despacho_foto_perfil', $ensure_string($record['foto_perfil'] ?? ''));
                 
                 // Procesar horarios (estructura antigua o nueva)
                 if (isset($record['horarios']) && is_array($record['horarios'])) {
