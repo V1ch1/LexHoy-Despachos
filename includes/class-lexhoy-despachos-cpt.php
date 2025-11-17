@@ -1090,6 +1090,9 @@ class LexhoyDespachosCPT {
         error_log("🔄 LEXHOY REST: Hook rest_after_insert_despacho ejecutado para post_id: {$post->ID}");
         error_log("🔄 LEXHOY REST: Creando nuevo: " . ($creating ? 'SÍ' : 'NO'));
         
+        // Procesar imagen base64 si existe en los metadatos
+        $this->process_base64_photo($post->ID);
+        
         // Esperar 2 segundos para asegurar que todos los metadatos estén guardados
         sleep(2);
         
@@ -1098,6 +1101,71 @@ class LexhoyDespachosCPT {
         
         // Ejecutar sincronización (forzar ejecución aunque sea REST)
         $this->sync_to_algolia($post->ID, $post, !$creating, true);
+    }
+    
+    /**
+     * Procesar foto en formato base64 y convertirla a archivo en Media Library
+     * Esto se usa cuando se reciben datos desde Next.js vía REST API
+     */
+    private function process_base64_photo($post_id) {
+        $foto_perfil = get_post_meta($post_id, '_despacho_foto_perfil', true);
+        
+        // Verificar si es una imagen base64
+        if (empty($foto_perfil) || !is_string($foto_perfil)) {
+            return;
+        }
+        
+        // Verificar si ya es una URL (no necesita procesamiento)
+        if (filter_var($foto_perfil, FILTER_VALIDATE_URL)) {
+            error_log("🖼️ LEXHOY FOTO: Ya es una URL válida, no requiere conversión");
+            return;
+        }
+        
+        // Verificar si es base64
+        if (strpos($foto_perfil, 'data:image') !== 0) {
+            return; // No es base64, salir
+        }
+        
+        error_log("🖼️ LEXHOY FOTO: Detectada imagen base64, convirtiendo a archivo...");
+        
+        // Extraer el tipo de imagen y los datos
+        preg_match('/data:image\/(.*?);base64,(.*)/', $foto_perfil, $matches);
+        if (count($matches) !== 3) {
+            error_log("❌ LEXHOY FOTO: Formato base64 inválido");
+            return;
+        }
+        
+        $image_type = $matches[1]; // jpg, png, webp, etc.
+        $base64_data = $matches[2];
+        
+        // Decodificar base64
+        $image_data = base64_decode($base64_data);
+        if ($image_data === false) {
+            error_log("❌ LEXHOY FOTO: Error al decodificar base64");
+            return;
+        }
+        
+        // Generar nombre de archivo único
+        $filename = 'despacho-' . $post_id . '-' . time() . '.' . $image_type;
+        
+        // Obtener el directorio de uploads de WordPress
+        $upload_dir = wp_upload_dir();
+        $file_path = $upload_dir['path'] . '/' . $filename;
+        $file_url = $upload_dir['url'] . '/' . $filename;
+        
+        // Guardar el archivo
+        $saved = file_put_contents($file_path, $image_data);
+        if ($saved === false) {
+            error_log("❌ LEXHOY FOTO: Error al guardar archivo en {$file_path}");
+            return;
+        }
+        
+        error_log("✅ LEXHOY FOTO: Archivo guardado en {$file_path}");
+        
+        // Actualizar el metadato con la URL del archivo
+        update_post_meta($post_id, '_despacho_foto_perfil', $file_url);
+        
+        error_log("✅ LEXHOY FOTO: Metadato actualizado con URL: {$file_url}");
     }
 
     /**
