@@ -1193,6 +1193,9 @@ class LexhoyDespachosCPT {
         // Log del inicio de la función
         error_log("LEXHOY SYNC: Iniciando sincronización para post_id: {$post_id}");
         
+        // Procesar foto base64 si existe (tanto para REST API como para guardado manual)
+        $this->process_base64_photo($post_id);
+        
         // Verificar que no sea una revisión automática
         if (wp_is_post_revision($post_id)) {
             error_log("LEXHOY SYNC: Omitida - es una revisión automática");
