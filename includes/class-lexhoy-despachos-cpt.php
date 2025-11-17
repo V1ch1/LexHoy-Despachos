@@ -1239,6 +1239,44 @@ class LexhoyDespachosCPT {
                 $sedes_wp = array();
             }
             
+            // Función helper para normalizar valores antes de enviar a Algolia
+            $normalize_for_algolia = function($value) {
+                // Si es array, convertir a string separado por comas
+                if (is_array($value)) {
+                    // Filtrar valores vacíos y convertir a string
+                    $filtered = array_filter($value, function($v) {
+                        return !empty($v) && $v !== '';
+                    });
+                    return !empty($filtered) ? implode(', ', $filtered) : '';
+                }
+                
+                // Si es string serializado de PHP, deserializar primero
+                if (is_string($value) && (strpos($value, 'a:') === 0 || strpos($value, 's:') === 0)) {
+                    $unserialized = @maybe_unserialize($value);
+                    if (is_array($unserialized)) {
+                        $filtered = array_filter($unserialized, function($v) {
+                            return !empty($v) && $v !== '';
+                        });
+                        return !empty($filtered) ? implode(', ', $filtered) : '';
+                    }
+                    return $unserialized ?: $value;
+                }
+                
+                // Si es objeto, convertir a array y luego a string
+                if (is_object($value)) {
+                    $value = (array) $value;
+                    return implode(', ', array_filter($value));
+                }
+                
+                // Si es booleano, convertir a string
+                if (is_bool($value)) {
+                    return $value ? 'Sí' : 'No';
+                }
+                
+                // Retornar el valor tal cual si es escalar
+                return $value ?: '';
+            };
+            
             // Si no hay sedes, crear una sede con los datos legacy para compatibilidad
             if (empty($sedes_wp)) {
                 $sedes_wp = array(
@@ -1279,13 +1317,24 @@ class LexhoyDespachosCPT {
                 }
             }
             
+            // Normalizar todas las sedes para Algolia (convertir arrays a strings legibles)
+            $sedes_normalized = array();
+            foreach ($sedes_wp as $sede) {
+                $sede_normalized = array();
+                foreach ($sede as $key => $value) {
+                    // Normalizar cada campo de la sede
+                    $sede_normalized[$key] = $normalize_for_algolia($value);
+                }
+                $sedes_normalized[] = $sede_normalized;
+            }
+            
             $record = array(
                 'objectID' => get_post_meta($post_id, '_algolia_object_id', true) ?: $post_id,
                 'nombre' => $post->post_title,
                 'descripcion' => $post->post_content,
-                'sedes' => $sedes_wp,
-                'num_sedes' => count($sedes_wp),
-                'areas_practica' => $areas_practica, // Mantener en nivel raíz para compatibilidad
+                'sedes' => $sedes_normalized, // Usar sedes normalizadas
+                'num_sedes' => count($sedes_normalized),
+                'areas_practica' => $normalize_for_algolia($areas_practica), // Normalizar también el campo raíz
                 'ultima_actualizacion' => date('d-m-Y'),
                 'slug' => $post->post_name,
             );
