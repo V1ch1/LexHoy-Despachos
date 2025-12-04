@@ -1398,65 +1398,90 @@ class LexhoyDespachosCPT {
             return;
         }
         
-        // Obtener la URL actual
-        $current_url = $_SERVER['REQUEST_URI'];
-        $path = trim(parse_url($current_url, PHP_URL_PATH), '/');
-        
-        // Si la URL contiene /despacho/, redirigir a URL limpia
-        if (strpos($path, 'despacho/') === 0) {
-            $despacho_name = substr($path, 9); // Quitar 'despacho/'
+        try {
+            // Obtener la URL actual
+            $current_url = $_SERVER['REQUEST_URI'];
+            $path = trim(parse_url($current_url, PHP_URL_PATH), '/');
             
-            // Buscar el despacho
-            $despacho = get_posts(array(
-                'post_type' => 'despacho',
-                'name' => $despacho_name,
-                'post_status' => 'publish',
-                'numberposts' => 1
-            ));
-            
-            if (!empty($despacho)) {
-                // Redirigir a la URL limpia con 301 (permanente para SEO)
-                $clean_url = home_url('/' . $despacho_name . '/');
-                wp_redirect($clean_url, 301);
-                exit;
+            // Evitar procesar si el path está vacío (home) o es wp-login, etc.
+            if (empty($path) || strpos($path, 'wp-') === 0) {
+                return;
             }
-        }
-        
-        // Si la URL es limpia (sin /despacho/), verificar si es un despacho
-        if (!empty($path) && !is_admin()) {
-            // Buscar un despacho con este slug
-            $despacho = get_posts(array(
-                'post_type' => 'despacho',
-                'name' => $path,
-                'post_status' => 'publish',
-                'numberposts' => 1
-            ));
-            
-            if (!empty($despacho)) {
-                // Configurar WordPress para mostrar el despacho
-                global $wp_query, $post;
-                $despacho = $despacho[0];
+
+            // Si la URL contiene /despacho/, redirigir a URL limpia
+            if (strpos($path, 'despacho/') === 0) {
+                $despacho_name = substr($path, 9); // Quitar 'despacho/'
                 
-                $wp_query->is_single = true;
-                $wp_query->is_singular = true;
-                $wp_query->is_post_type_archive = false;
-                $wp_query->is_archive = false;
-                $wp_query->is_home = false;
-                $wp_query->is_front_page = false;
-                $wp_query->is_404 = false;
+                // Buscar el despacho
+                $despacho = get_posts(array(
+                    'post_type' => 'despacho',
+                    'name' => $despacho_name,
+                    'post_status' => 'publish',
+                    'numberposts' => 1
+                ));
                 
-                $wp_query->post = $despacho;
-                $wp_query->posts = array($despacho);
-                $wp_query->post_count = 1;
-                $wp_query->found_posts = 1;
-                $wp_query->max_num_pages = 1;
-                $wp_query->queried_object = $despacho;
-                $wp_query->queried_object_id = $despacho->ID;
-                
-                $post = $despacho;
-                setup_postdata($post);
+                if (!empty($despacho)) {
+                    // Redirigir a la URL limpia con 301 (permanente para SEO)
+                    $clean_url = home_url('/' . $despacho_name . '/');
+                    wp_redirect($clean_url, 301);
+                    exit;
+                }
             }
+            
+            // Si la URL es limpia (sin /despacho/), verificar si es un despacho
+            // PERO PRIMERO: Verificar si ya existe como página o post normal para evitar conflictos (Error 500)
+            if (get_page_by_path($path) || get_page_by_path($path, OBJECT, 'post')) {
+                return;
+            }
+
+            if (!empty($path) && !is_admin()) {
+                // Buscar un despacho con este slug
+                $despacho = get_posts(array(
+                    'post_type' => 'despacho',
+                    'name' => $path,
+                    'post_status' => 'publish',
+                    'numberposts' => 1
+                ));
+                
+                if (!empty($despacho)) {
+                    // Configurar WordPress para mostrar el despacho
+                    global $wp_query, $post;
+                    $despacho = $despacho[0];
+                    
+                    $wp_query->is_single = true;
+                    $wp_query->is_singular = true;
+                    $wp_query->is_post_type_archive = false;
+                    $wp_query->is_archive = false;
+                    $wp_query->is_home = false;
+                    $wp_query->is_front_page = false;
+                    $wp_query->is_404 = false;
+                    
+                    $wp_query->post = $despacho;
+                    $wp_query->posts = array($despacho);
+                    $wp_query->post_count = 1;
+                    $wp_query->found_posts = 1;
+                    $wp_query->max_num_pages = 1;
+                    $wp_query->queried_object = $despacho;
+                    $wp_query->queried_object_id = $despacho->ID;
+                    
+                    $post = $despacho;
+                    setup_postdata($post);
+                }
+            }
+        } catch (Exception $e) {
+            // Silenciar errores para no romper el frontend
+            error_log('LexHoy Error en handle_clean_urls: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Evitar redirecciones canónicas incorrectas para despachos
+     */
+    public function prevent_canonical_redirect_for_despachos($redirect_url, $requested_url) {
+        if (is_singular('despacho')) {
+            return false; // Desactivar redirección canónica para despachos individuales
+        }
+        return $redirect_url;
     }
 
     /**
