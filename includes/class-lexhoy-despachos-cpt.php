@@ -68,6 +68,12 @@ class LexhoyDespachosCPT {
         // Inicializar cliente de Algolia
         $this->init_algolia_client();
 
+        // Registrar metadatos para REST API - DEBE ejecutarse temprano
+        add_action('rest_api_init', array($this, 'register_meta_for_rest_api'));
+        
+        // NUEVO: Hook para sincronizar DESPUÉS de que REST API actualice metadatos
+        add_action('rest_after_insert_despacho', array($this, 'sync_after_rest_insert'), 10, 3);
+
         // Nuevo: disparar sincronización cuando un despacho se publica - CORREGIDO para evitar nuevas instancias
         add_action(
             'transition_post_status',
@@ -143,7 +149,8 @@ class LexhoyDespachosCPT {
             'show_in_menu'      => true,
             'query_var'         => true,
             'rewrite'           => array('slug' => 'despacho', 'with_front' => false),
-            'capability_type'   => 'post',
+            'capability_type'   => 'post', // Usar capacidades estándar de WordPress
+            'map_meta_cap'      => true,
             'has_archive'       => false,
             'hierarchical'      => false,
             'menu_position'     => 5,
@@ -154,6 +161,91 @@ class LexhoyDespachosCPT {
         );
 
         register_post_type('despacho', $args);
+    }
+
+    /**
+     * Registrar metadatos para REST API
+     * Esto permite que WordPress REST API guarde automáticamente los metadatos
+     */
+    public function register_meta_for_rest_api() {
+        error_log('🔧 LEXHOY: Registrando metadatos para REST API');
+        
+        // Registrar _despacho_sedes para REST API
+        register_post_meta('despacho', '_despacho_sedes', array(
+            'show_in_rest' => array(
+                'schema' => array(
+                    'type' => 'array',
+                    'items' => array(
+                        'type' => 'object',
+                    ),
+                ),
+            ),
+            'single' => true,
+            'type' => 'array',
+            'auth_callback' => function() {
+                return current_user_can('edit_posts');
+            }
+        ));
+
+        // Registrar otros metadatos importantes
+        $meta_fields = array(
+            '_despacho_nombre' => 'string',
+            '_despacho_localidad' => 'string',
+            '_despacho_provincia' => 'string',
+            '_despacho_codigo_postal' => 'string',
+            '_despacho_direccion' => 'string',
+            '_despacho_telefono' => 'string',
+            '_despacho_email' => 'string',
+            '_despacho_web' => 'string',
+            '_despacho_descripcion' => 'string',
+            '_despacho_estado_verificacion' => 'string',
+            '_despacho_is_verified' => 'string',
+            '_despacho_numero_colegiado' => 'string',
+            '_despacho_colegio' => 'string',
+            '_despacho_experiencia' => 'string',
+            '_despacho_tamaño' => 'string',
+            '_despacho_año_fundacion' => 'string',
+            '_despacho_estado_registro' => 'string',
+            '_despacho_foto_perfil' => 'string',
+        );
+
+        foreach ($meta_fields as $meta_key => $type) {
+            register_post_meta('despacho', $meta_key, array(
+                'show_in_rest' => true,
+                'single' => true,
+                'type' => $type,
+                'auth_callback' => function() {
+                    return current_user_can('edit_posts');
+                }
+            ));
+        }
+
+        // Registrar arrays (horarios y redes sociales)
+        register_post_meta('despacho', '_despacho_horario', array(
+            'show_in_rest' => array(
+                'schema' => array(
+                    'type' => 'object',
+                ),
+            ),
+            'single' => true,
+            'type' => 'object',
+            'auth_callback' => function() {
+                return current_user_can('edit_posts');
+            }
+        ));
+
+        register_post_meta('despacho', '_despacho_redes_sociales', array(
+            'show_in_rest' => array(
+                'schema' => array(
+                    'type' => 'object',
+                ),
+            ),
+            'single' => true,
+            'type' => 'object',
+            'auth_callback' => function() {
+                return current_user_can('edit_posts');
+            }
+        ));
     }
 
     /**
@@ -991,11 +1083,118 @@ class LexhoyDespachosCPT {
     }
 
     /**
-     * Sincronizar un post a Algolia
+     * Sincronizar después de que REST API inserte/actualice un despacho
+     * Este hook se ejecuta DESPUÉS de que todos los metadatos estén guardados
      */
-    public function sync_to_algolia($post_id, $post = null, $update = null) {
+    public function sync_after_rest_insert($post, $request, $creating) {
+        error_log("🔄 LEXHOY REST: Hook rest_after_insert_despacho ejecutado para post_id: {$post->ID}");
+        error_log("🔄 LEXHOY REST: Creando nuevo: " . ($creating ? 'SÍ' : 'NO'));
+        
+        // Procesar imagen base64 si existe en los metadatos
+        $this->process_base64_photo($post->ID);
+        
+        // Esperar 2 segundos para asegurar que todos los metadatos estén guardados
+        sleep(2);
+        
+        // Limpiar caché de metadatos
+        wp_cache_delete($post->ID, 'post_meta');
+        
+        // Ejecutar sincronización (forzar ejecución aunque sea REST)
+        $this->sync_to_algolia($post->ID, $post, !$creating, true);
+    }
+    
+    /**
+     * Procesar foto en formato base64 y convertirla a archivo en Media Library
+     * Esto se usa cuando se reciben datos desde Next.js vía REST API
+     */
+    private function process_base64_photo($post_id) {
+        $foto_perfil = get_post_meta($post_id, '_despacho_foto_perfil', true);
+        
+        // Verificar si es una imagen base64
+        if (empty($foto_perfil) || !is_string($foto_perfil)) {
+            return;
+        }
+        
+        // Verificar si ya es una URL (no necesita procesamiento)
+        if (filter_var($foto_perfil, FILTER_VALIDATE_URL)) {
+            error_log("🖼️ LEXHOY FOTO: Ya es una URL válida, no requiere conversión");
+            return;
+        }
+        
+        // Verificar si es base64
+        if (strpos($foto_perfil, 'data:image') !== 0) {
+            return; // No es base64, salir
+        }
+        
+        error_log("🖼️ LEXHOY FOTO: Detectada imagen base64, convirtiendo a archivo...");
+        
+        // Extraer el tipo de imagen y los datos
+        preg_match('/data:image\/(.*?);base64,(.*)/', $foto_perfil, $matches);
+        if (count($matches) !== 3) {
+            error_log("❌ LEXHOY FOTO: Formato base64 inválido");
+            return;
+        }
+        
+        $image_type = $matches[1]; // jpg, png, webp, etc.
+        $base64_data = $matches[2];
+        
+        // Decodificar base64
+        $image_data = base64_decode($base64_data);
+        if ($image_data === false) {
+            error_log("❌ LEXHOY FOTO: Error al decodificar base64");
+            return;
+        }
+        
+        // Generar nombre de archivo único
+        $filename = 'despacho-' . $post_id . '-' . time() . '.' . $image_type;
+        
+        // Obtener el directorio de uploads de WordPress
+        $upload_dir = wp_upload_dir();
+        $file_path = $upload_dir['path'] . '/' . $filename;
+        $file_url = $upload_dir['url'] . '/' . $filename;
+        
+        // Guardar el archivo
+        $saved = file_put_contents($file_path, $image_data);
+        if ($saved === false) {
+            error_log("❌ LEXHOY FOTO: Error al guardar archivo en {$file_path}");
+            return;
+        }
+        
+        error_log("✅ LEXHOY FOTO: Archivo guardado en {$file_path}");
+        
+        // Actualizar el metadato con la URL del archivo
+        update_post_meta($post_id, '_despacho_foto_perfil', $file_url);
+        
+        error_log("✅ LEXHOY FOTO: Metadato actualizado con URL: {$file_url}");
+    }
+
+    /**
+     * Sincronizar un post a Algolia
+     * @param int $post_id ID del post
+     * @param object $post Objeto del post
+     * @param bool $update Si es actualización
+     * @param bool $force_sync Forzar sincronización aunque sea REST (usado por rest_after_insert)
+     */
+    public function sync_to_algolia($post_id, $post = null, $update = null, $force_sync = false) {
+        // IMPORTANTE: Si estamos en una petición REST API, omitir este hook
+        // EXCEPTO si viene del hook rest_after_insert_despacho (force_sync = true)
+        if (!$force_sync && defined('REST_REQUEST') && REST_REQUEST) {
+            error_log("LEXHOY SYNC: Omitida - es petición REST API, esperando a rest_after_insert_despacho");
+            return;
+        }
+        
+        // Evitar sincronizaciones múltiples en la misma ejecución
+        static $synced_posts = array();
+        if (isset($synced_posts[$post_id])) {
+            error_log("LEXHOY SYNC: Omitida - ya sincronizado en esta ejecución para post_id: {$post_id}");
+            return;
+        }
+        
         // Log del inicio de la función
         error_log("LEXHOY SYNC: Iniciando sincronización para post_id: {$post_id}");
+        
+        // Procesar foto base64 si existe (tanto para REST API como para guardado manual)
+        $this->process_base64_photo($post_id);
         
         // Verificar que no sea una revisión automática
         if (wp_is_post_revision($post_id)) {
@@ -1093,9 +1292,61 @@ class LexhoyDespachosCPT {
             
             // Obtener sedes guardadas
             $sedes_wp = get_post_meta($post_id, '_despacho_sedes', true);
+            error_log('🔍 LEXHOY SYNC: Sedes leídas de meta (raw): ' . print_r($sedes_wp, true));
+            error_log('🔍 LEXHOY SYNC: Tipo de sedes: ' . gettype($sedes_wp));
+            
+            // IMPORTANTE: Si es string serializado, deserializar
+            if (is_string($sedes_wp) && !empty($sedes_wp)) {
+                error_log('🔍 LEXHOY SYNC: Sedes es string serializado, deserializando...');
+                $sedes_wp = maybe_unserialize($sedes_wp);
+                error_log('🔍 LEXHOY SYNC: Sedes después de deserializar: ' . print_r($sedes_wp, true));
+            }
+            
+            error_log('🔍 LEXHOY SYNC: Es array: ' . (is_array($sedes_wp) ? 'SÍ' : 'NO'));
+            error_log('🔍 LEXHOY SYNC: Cantidad de sedes: ' . (is_array($sedes_wp) ? count($sedes_wp) : '0'));
+            
             if (!is_array($sedes_wp)) {
+                error_log('⚠️ LEXHOY SYNC: Sedes no es array, inicializando vacío');
                 $sedes_wp = array();
             }
+            
+            // Función helper para normalizar valores antes de enviar a Algolia
+            $normalize_for_algolia = function($value) {
+                // Si es array, convertir a string separado por comas
+                if (is_array($value)) {
+                    // Filtrar valores vacíos y convertir a string
+                    $filtered = array_filter($value, function($v) {
+                        return !empty($v) && $v !== '';
+                    });
+                    return !empty($filtered) ? implode(', ', $filtered) : '';
+                }
+                
+                // Si es string serializado de PHP, deserializar primero
+                if (is_string($value) && (strpos($value, 'a:') === 0 || strpos($value, 's:') === 0)) {
+                    $unserialized = @maybe_unserialize($value);
+                    if (is_array($unserialized)) {
+                        $filtered = array_filter($unserialized, function($v) {
+                            return !empty($v) && $v !== '';
+                        });
+                        return !empty($filtered) ? implode(', ', $filtered) : '';
+                    }
+                    return $unserialized ?: $value;
+                }
+                
+                // Si es objeto, convertir a array y luego a string
+                if (is_object($value)) {
+                    $value = (array) $value;
+                    return implode(', ', array_filter($value));
+                }
+                
+                // Si es booleano, convertir a string
+                if (is_bool($value)) {
+                    return $value ? 'Sí' : 'No';
+                }
+                
+                // Retornar el valor tal cual si es escalar
+                return $value ?: '';
+            };
             
             // Si no hay sedes, crear una sede con los datos legacy para compatibilidad
             if (empty($sedes_wp)) {
@@ -1137,13 +1388,24 @@ class LexhoyDespachosCPT {
                 }
             }
             
+            // Normalizar todas las sedes para Algolia (convertir arrays a strings legibles)
+            $sedes_normalized = array();
+            foreach ($sedes_wp as $sede) {
+                $sede_normalized = array();
+                foreach ($sede as $key => $value) {
+                    // Normalizar cada campo de la sede
+                    $sede_normalized[$key] = $normalize_for_algolia($value);
+                }
+                $sedes_normalized[] = $sede_normalized;
+            }
+            
             $record = array(
                 'objectID' => get_post_meta($post_id, '_algolia_object_id', true) ?: $post_id,
                 'nombre' => $post->post_title,
                 'descripcion' => $post->post_content,
-                'sedes' => $sedes_wp,
-                'num_sedes' => count($sedes_wp),
-                'areas_practica' => $areas_practica, // Mantener en nivel raíz para compatibilidad
+                'sedes' => $sedes_normalized, // Usar sedes normalizadas
+                'num_sedes' => count($sedes_normalized),
+                'areas_practica' => $normalize_for_algolia($areas_practica), // Normalizar también el campo raíz
                 'ultima_actualizacion' => date('d-m-Y'),
                 'slug' => $post->post_name,
             );
@@ -1153,6 +1415,9 @@ class LexhoyDespachosCPT {
             error_log("LEXHOY SYNC: Datos de sede principal: " . json_encode($sedes_wp[0] ?? []));
             $result = $client->save_object($index_name, $record);
             error_log("LEXHOY SYNC: ✅ Sincronización exitosa para despacho ID: {$post_id}");
+            
+            // Marcar como sincronizado
+            $synced_posts[$post_id] = true;
 
         } catch (Exception $e) {
             error_log("LEXHOY SYNC: ❌ Error al sincronizar despacho ID {$post_id} con Algolia: " . $e->getMessage());
@@ -1230,29 +1495,38 @@ class LexhoyDespachosCPT {
                         'post_content'=> $record['descripcion'] ?? ''
                     ));
 
+                    // Función helper para asegurar strings (evitar arrays serializados)
+                    $ensure_string = function($value) {
+                        if (is_array($value)) {
+                            // Si es array, tomar el primer elemento
+                            return is_string(reset($value)) ? reset($value) : '';
+                        }
+                        return is_string($value) ? $value : '';
+                    };
+
                     // Actualizar meta datos restantes
-                    update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
-                    update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
-                    update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
-                    update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
-                    update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
-                    update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
-                    update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
-                    update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
-                    update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
-                    update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
+                    update_post_meta($post_id, '_despacho_nombre', $ensure_string($record['nombre'] ?? ''));
+                    update_post_meta($post_id, '_despacho_localidad', $ensure_string($record['localidad'] ?? ''));
+                    update_post_meta($post_id, '_despacho_provincia', $ensure_string($record['provincia'] ?? ''));
+                    update_post_meta($post_id, '_despacho_codigo_postal', $ensure_string($record['codigo_postal'] ?? ''));
+                    update_post_meta($post_id, '_despacho_direccion', $ensure_string($record['direccion'] ?? ''));
+                    update_post_meta($post_id, '_despacho_telefono', $ensure_string($record['telefono'] ?? ''));
+                    update_post_meta($post_id, '_despacho_email', $ensure_string($record['email'] ?? ''));
+                    update_post_meta($post_id, '_despacho_web', $ensure_string($record['web'] ?? ''));
+                    update_post_meta($post_id, '_despacho_descripcion', $ensure_string($record['descripcion'] ?? ''));
+                    update_post_meta($post_id, '_despacho_estado_verificacion', $ensure_string($record['estado_verificacion'] ?? 'pendiente'));
                     update_post_meta($post_id, '_despacho_is_verified', $record['isVerified'] ?? 0);
                     // CAMPOS PROFESIONALES NUEVOS
-                    update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
-                    update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
+                    update_post_meta($post_id, '_despacho_numero_colegiado', $ensure_string($record['numero_colegiado'] ?? ''));
+                    update_post_meta($post_id, '_despacho_colegio', $ensure_string($record['colegio'] ?? ''));
                     // OTROS CAMPOS NUEVOS
                     update_post_meta($post_id, '_despacho_especialidades', isset($record['especialidades']) && is_array($record['especialidades']) ? implode(',', $record['especialidades']) : '');
                     update_post_meta($post_id, '_despacho_horario', $record['horario'] ?? array());
                     update_post_meta($post_id, '_despacho_redes_sociales', $record['redes_sociales'] ?? array());
-                    update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
-                    update_post_meta($post_id, '_despacho_tamaño', $record['tamaño_despacho'] ?? '');
+                    update_post_meta($post_id, '_despacho_experiencia', $ensure_string($record['experiencia'] ?? ''));
+                    update_post_meta($post_id, '_despacho_tamaño', $ensure_string($record['tamaño_despacho'] ?? ''));
                     update_post_meta($post_id, '_despacho_año_fundacion', $record['año_fundacion'] ?? 0);
-                    update_post_meta($post_id, '_despacho_estado_registro', $record['estado_registro'] ?? 'activo');
+                    update_post_meta($post_id, '_despacho_estado_registro', $ensure_string($record['estado_registro'] ?? 'activo'));
 
                     // Sincronizar áreas de práctica (crear términos si no existen)
                     if (!empty($record['areas_practica']) && is_array($record['areas_practica'])) {
@@ -1902,22 +2176,31 @@ class LexhoyDespachosCPT {
                 }
                 
                 if ($sede_principal) {
+                    // Función helper para asegurar strings (evitar arrays serializados)
+                    $ensure_string = function($value) {
+                        if (is_array($value)) {
+                            // Si es array, tomar el primer elemento
+                            return is_string(reset($value)) ? reset($value) : '';
+                        }
+                        return is_string($value) ? $value : '';
+                    };
+                    
                     // Extraer datos de la sede principal para campos legacy
-                    $meta_updates['_despacho_nombre'] = $sede_principal['nombre'] ?? $nombre;
-                    $meta_updates['_despacho_localidad'] = $sede_principal['localidad'] ?? '';
-                    $meta_updates['_despacho_provincia'] = $sede_principal['provincia'] ?? '';
-                    $meta_updates['_despacho_codigo_postal'] = $sede_principal['codigo_postal'] ?? '';
-                    $meta_updates['_despacho_direccion'] = $sede_principal['direccion_completa'] ?? '';
-                    $meta_updates['_despacho_telefono'] = $sede_principal['telefono'] ?? '';
-                    $meta_updates['_despacho_email'] = $sede_principal['email_contacto'] ?? '';
-                    $meta_updates['_despacho_web'] = $sede_principal['web'] ?? '';
-                    $meta_updates['_despacho_descripcion'] = $sede_principal['descripcion'] ?? '';
-                    $meta_updates['_despacho_estado_verificacion'] = $sede_principal['estado_verificacion'] ?? 'pendiente';
+                    $meta_updates['_despacho_nombre'] = $ensure_string($sede_principal['nombre'] ?? $nombre);
+                    $meta_updates['_despacho_localidad'] = $ensure_string($sede_principal['localidad'] ?? '');
+                    $meta_updates['_despacho_provincia'] = $ensure_string($sede_principal['provincia'] ?? '');
+                    $meta_updates['_despacho_codigo_postal'] = $ensure_string($sede_principal['codigo_postal'] ?? '');
+                    $meta_updates['_despacho_direccion'] = $ensure_string($sede_principal['direccion_completa'] ?? '');
+                    $meta_updates['_despacho_telefono'] = $ensure_string($sede_principal['telefono'] ?? '');
+                    $meta_updates['_despacho_email'] = $ensure_string($sede_principal['email_contacto'] ?? '');
+                    $meta_updates['_despacho_web'] = $ensure_string($sede_principal['web'] ?? '');
+                    $meta_updates['_despacho_descripcion'] = $ensure_string($sede_principal['descripcion'] ?? '');
+                    $meta_updates['_despacho_estado_verificacion'] = $ensure_string($sede_principal['estado_verificacion'] ?? 'pendiente');
                     $meta_updates['_despacho_is_verified'] = false; // FORZADO: Todos sin verificar
-                    $meta_updates['_despacho_numero_colegiado'] = $sede_principal['numero_colegiado'] ?? '';
-                    $meta_updates['_despacho_colegio'] = $sede_principal['colegio'] ?? '';
-                    $meta_updates['_despacho_experiencia'] = $sede_principal['experiencia'] ?? '';
-                    $meta_updates['_despacho_foto_perfil'] = $sede_principal['foto_perfil'] ?? '';
+                    $meta_updates['_despacho_numero_colegiado'] = $ensure_string($sede_principal['numero_colegiado'] ?? '');
+                    $meta_updates['_despacho_colegio'] = $ensure_string($sede_principal['colegio'] ?? '');
+                    $meta_updates['_despacho_experiencia'] = $ensure_string($sede_principal['experiencia'] ?? '');
+                    $meta_updates['_despacho_foto_perfil'] = $ensure_string($sede_principal['foto_perfil'] ?? '');
                     
                     // NUEVA ESTRUCTURA: Procesar horarios optimizados
                     if (isset($sede_principal['horarios']) && is_array($sede_principal['horarios'])) {
@@ -1969,21 +2252,30 @@ class LexhoyDespachosCPT {
                 }
             } else {
                 // COMPATIBILIDAD: Estructura antigua (sin sedes)
-                update_post_meta($post_id, '_despacho_nombre', $record['nombre'] ?? '');
-                update_post_meta($post_id, '_despacho_localidad', $record['localidad'] ?? '');
-                update_post_meta($post_id, '_despacho_provincia', $record['provincia'] ?? '');
-                update_post_meta($post_id, '_despacho_codigo_postal', $record['codigo_postal'] ?? '');
-                update_post_meta($post_id, '_despacho_direccion', $record['direccion'] ?? '');
-                update_post_meta($post_id, '_despacho_telefono', $record['telefono'] ?? '');
-                update_post_meta($post_id, '_despacho_email', $record['email'] ?? '');
-                update_post_meta($post_id, '_despacho_web', $record['web'] ?? '');
-                update_post_meta($post_id, '_despacho_descripcion', $record['descripcion'] ?? '');
-                update_post_meta($post_id, '_despacho_estado_verificacion', $record['estado_verificacion'] ?? 'pendiente');
+                // Función helper para asegurar strings (evitar arrays serializados)
+                $ensure_string = function($value) {
+                    if (is_array($value)) {
+                        // Si es array, tomar el primer elemento
+                        return is_string(reset($value)) ? reset($value) : '';
+                    }
+                    return is_string($value) ? $value : '';
+                };
+                
+                update_post_meta($post_id, '_despacho_nombre', $ensure_string($record['nombre'] ?? ''));
+                update_post_meta($post_id, '_despacho_localidad', $ensure_string($record['localidad'] ?? ''));
+                update_post_meta($post_id, '_despacho_provincia', $ensure_string($record['provincia'] ?? ''));
+                update_post_meta($post_id, '_despacho_codigo_postal', $ensure_string($record['codigo_postal'] ?? ''));
+                update_post_meta($post_id, '_despacho_direccion', $ensure_string($record['direccion'] ?? ''));
+                update_post_meta($post_id, '_despacho_telefono', $ensure_string($record['telefono'] ?? ''));
+                update_post_meta($post_id, '_despacho_email', $ensure_string($record['email'] ?? ''));
+                update_post_meta($post_id, '_despacho_web', $ensure_string($record['web'] ?? ''));
+                update_post_meta($post_id, '_despacho_descripcion', $ensure_string($record['descripcion'] ?? ''));
+                update_post_meta($post_id, '_despacho_estado_verificacion', $ensure_string($record['estado_verificacion'] ?? 'pendiente'));
                 update_post_meta($post_id, '_despacho_is_verified', false); // FORZADO: Todos sin verificar
-                update_post_meta($post_id, '_despacho_numero_colegiado', $record['numero_colegiado'] ?? '');
-                update_post_meta($post_id, '_despacho_colegio', $record['colegio'] ?? '');
-                update_post_meta($post_id, '_despacho_experiencia', $record['experiencia'] ?? '');
-                update_post_meta($post_id, '_despacho_foto_perfil', $record['foto_perfil'] ?? '');
+                update_post_meta($post_id, '_despacho_numero_colegiado', $ensure_string($record['numero_colegiado'] ?? ''));
+                update_post_meta($post_id, '_despacho_colegio', $ensure_string($record['colegio'] ?? ''));
+                update_post_meta($post_id, '_despacho_experiencia', $ensure_string($record['experiencia'] ?? ''));
+                update_post_meta($post_id, '_despacho_foto_perfil', $ensure_string($record['foto_perfil'] ?? ''));
                 
                 // Procesar horarios (estructura antigua o nueva)
                 if (isset($record['horarios']) && is_array($record['horarios'])) {

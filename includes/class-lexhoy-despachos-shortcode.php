@@ -196,7 +196,11 @@ class LexhoyDespachosShortcode {
      * AJAX handler para búsqueda de despachos
      */
     public function ajax_search_despachos() {
-        check_ajax_referer('lexhoy_despachos_search', 'nonce');
+        // Verificar nonce solo si el usuario está logueado
+        // Para usuarios no logueados, permitir la búsqueda sin nonce
+        if (is_user_logged_in()) {
+            check_ajax_referer('lexhoy_despachos_search', 'nonce');
+        }
 
         $search = sanitize_text_field($_POST['search'] ?? '');
         $provincia = sanitize_text_field($_POST['provincia'] ?? '');
