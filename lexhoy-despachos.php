@@ -3,7 +3,7 @@
  * Plugin Name: LexHoy Despachos
  * Plugin URI: https://lexhoy.com
  * Description: Plugin para gestionar despachos de LexHoy
- * Version: 1.1.1
+ * Version: 1.1.2
  * Author: LexHoy
  * Author URI: https://lexhoy.com
  * Text Domain: lexhoy-despachos
@@ -108,3 +108,30 @@ add_action('rest_api_init', function () {
         'schema' => null,
     ]);
 });
+
+/**
+ * Inicializar actualizador desde GitHub
+ */
+add_action('init', 'lexhoy_despachos_init_updater');
+
+function lexhoy_despachos_init_updater() {
+    if (is_admin()) {
+        $updater_path = plugin_dir_path(__FILE__) . 'includes/class-plugin-updater.php';
+        
+        if (file_exists($updater_path)) {
+            require_once $updater_path;
+            
+            // CONFIGURACIÓN DEL REPOSITORIO GITHUB
+            $github_user = 'V1ch1'; 
+            $github_repo = 'LexHoy-Despachos';
+            $access_token = ''; 
+            
+            new LexHoy_Despachos_Updater(
+                __FILE__, 
+                $github_user, 
+                $github_repo,
+                $access_token
+            );
+        }
+    }
+}
