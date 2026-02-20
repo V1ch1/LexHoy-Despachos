@@ -906,3 +906,65 @@
     text-align: center;
     padding: 20px;
 }
+
+/* ==========================================================================
+   RESET AGRESIVO PARA EL TEMA NEWSPAPER (FORZAR BLANCO/TRANSPARENTE)
+   ========================================================================== */
+
+/* Forzar que todos los contenedores y elementos de texto NO tengan fondo gris */
+body html .lexhoy-despachos-search div,
+body html .lexhoy-despachos-search span,
+body html .lexhoy-despachos-search label,
+body html .lexhoy-despachos-search .alphabet-letter,
+body html .lexhoy-despachos-search .filter-label,
+body html .lexhoy-despachos-search .filter-tab-btn {
+    background-image: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Forzar fondos blancos en los contenedores principales con máxima especificidad */
+body .lexhoy-despachos-search,
+body .lexhoy-despachos-search .search-header,
+body .lexhoy-despachos-search .alphabet-container,
+body .lexhoy-despachos-search .filters-sidebar,
+body .lexhoy-despachos-search .results-sidebar,
+body .lexhoy-despachos-search .despacho-card,
+body .lexhoy-despachos-search .filters-tabs,
+body .lexhoy-despachos-search .current-refinements,
+body .lexhoy-despachos-search .filter-count,
+body .lexhoy-despachos-search .filter-label,
+body .lexhoy-despachos-search .filter-tab-btn:hover {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+}
+
+/* Las letras del abecedario y etiquetas de filtro deben ser transparentes o blancas */
+body .lexhoy-despachos-search .alphabet-letter {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+body .lexhoy-despachos-search .alphabet-letter:hover,
+body .lexhoy-despachos-search .alphabet-letter.active {
+    background: transparent !important;
+}
+
+/* Ocultar ABSOLUTAMENTE cualquier párrafo vacío que inyecte WordPress */
+body .lexhoy-despachos-search p:empty,
+body .lexhoy-despachos-search p:blank,
+body .lexhoy-despachos-search p:empty::before,
+body .lexhoy-despachos-search p:empty::after {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 0 !important;
+}
+
+/* Asegurar que el título NO tenga fondo */
+body .lexhoy-despachos-search .search-title {
+    background: transparent !important;
+    background-color: transparent !important;
+}

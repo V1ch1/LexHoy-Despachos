@@ -1261,3 +1261,30 @@
         max-width: 150px; /* Ajusta el tamaño del logo en dispositivos móviles */
     }
 }
+
+/* ==========================================================================
+   RESET AGRESIVO PARA EL TEMA NEWSPAPER (FORZAR BLANCO/TRANSPARENTE)
+   ========================================================================== */
+
+body html .lexhoy-despacho-single,
+body html .lexhoy-despacho-single .despacho-header,
+body html .lexhoy-despacho-single .despacho-content,
+body html .lexhoy-despacho-single .despacho-main,
+body html .lexhoy-despacho-single .despacho-sidebar,
+body html .lexhoy-despacho-single .despacho-section,
+body html .lexhoy-despacho-single .sede-card,
+body html .lexhoy-despacho-single .sede-header,
+body html .lexhoy-despacho-single .contact-item {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+/* Elementos que deben ser transparentes */
+body html .lexhoy-despacho-single .despacho-title,
+body html .lexhoy-despacho-single .despacho-subtitle,
+body html .lexhoy-despacho-single .specialty-tag:hover {
+    background: transparent !important;
+    background-color: transparent !important;
+}
