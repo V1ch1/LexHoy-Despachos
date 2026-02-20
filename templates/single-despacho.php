@@ -605,125 +605,18 @@ get_header(); ?>
                 <!-- Botón para actualizar datos del despacho -->
                 <div class="despacho-section">
                     <h3><i class="fas fa-edit"></i> Actualizar Información</h3>
-                    <p>¿Eres la persona responsable de este despacho? ¿Quieres actualizar los datos? Ponte en contacto con nosotros.</p>
-                    <button class="update-despacho-btn" onclick="openUpdatePopup()">
+                    <p>¿Eres la persona responsable de este despacho? ¿Quieres actualizar los datos? Accede a nuestro portal para gestionar tu información.</p>
+                    <a href="https://despachos.lexhoy.com/" class="update-despacho-btn">
                         <i class="fas fa-pen-to-square"></i>
                         Actualizar Datos del Despacho
-                    </button>
+                    </a>
                 </div>
                 
-            </div>
-        </div>
-        
-        <!-- Popup para actualizar datos -->
-        <div id="update-despacho-popup" class="update-popup-overlay">
-            <div class="update-popup-content">
-                <div class="update-popup-header">
-                    <h3><i class="fas fa-edit"></i> Actualizar Datos del Despacho</h3>
-                    <button class="close-popup-btn" onclick="closeUpdatePopup()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="update-popup-body">
-                    <p><strong>Despacho:</strong> <?php echo esc_html($nombre ?: get_the_title()); ?></p>
-                    <p>Para actualizar la información de este despacho, por favor completa el formulario de contacto. Nos pondremos en contacto contigo lo antes posible.</p>
-                    
-                    <!-- Contact Form 7 - Formulario Despachos -->
-                    <div class="despacho-contact-form">
-                        <?php 
-                        // Verificar si Contact Form 7 está activo
-                        if (function_exists('wpcf7_get_contact_form_by_title')) {
-                            // Renderizar el formulario con datos del despacho
-                            echo do_shortcode('[contact-form-7 id="0725a70" title="Formulario Despachos"]');
-                        } elseif (function_exists('do_shortcode')) {
-                            // Intentar renderizar el shortcode directamente
-                            echo do_shortcode('[contact-form-7 id="0725a70" title="Formulario Despachos"]');
-                        } else {
-                            // Fallback si Contact Form 7 no está disponible
-                            echo '<div class="contact-form-fallback">';
-                            echo '<p style="text-align: center; padding: 40px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; color: #856404;">';
-                            echo '<i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>';
-                            echo '<strong>Contact Form 7 requerido</strong><br>';
-                            echo 'Para mostrar el formulario, instala y activa el plugin Contact Form 7.';
-                            echo '</p>';
-                            echo '</div>';
-                        }
-                        ?>
-                        
-                        <!-- Campos ocultos con información del despacho -->
-                        <input type="hidden" id="despacho-telefono-oculto" value="<?php echo esc_attr($telefono); ?>" />
-                        <input type="hidden" id="despacho-nombre-oculto" value="<?php echo esc_attr($nombre ?: get_the_title()); ?>" />
-                        <input type="hidden" id="despacho-id-oculto" value="<?php echo esc_attr($post_id); ?>" />
-                        
-                        <script>
-                        // Rellenar automáticamente campos del formulario si están disponibles
-                        document.addEventListener('DOMContentLoaded', function() {
-                            setTimeout(function() {
-                                // Intentar encontrar y rellenar campos del formulario
-                                const nombreDespacho = document.getElementById('despacho-nombre-oculto')?.value;
-                                const telefonoDespacho = document.getElementById('despacho-telefono-oculto')?.value;
-                                const despacheId = document.getElementById('despacho-id-oculto')?.value;
-                                
-                                // Buscar campos del formulario y pre-rellenarlos
-                                const form = document.querySelector('.despacho-contact-form form');
-                                if (form) {
-                                    // Campo de nombre del despacho (si existe)
-                                    const nameField = form.querySelector('input[name*="despacho"], input[name*="empresa"], input[name*="nombre-despacho"]');
-                                    if (nameField && nombreDespacho) {
-                                        nameField.value = nombreDespacho;
-                                    }
-                                    
-                                    // Campo oculto de teléfono (si existe)
-                                    const phoneField = form.querySelector('input[name*="telefono"], input[type="tel"]');
-                                    if (phoneField && telefonoDespacho) {
-                                        phoneField.value = telefonoDespacho;
-                                        phoneField.type = 'hidden'; // Hacer el campo oculto
-                                    }
-                                    
-                                    // Campo de ID del despacho (si existe)
-                                    const idField = form.querySelector('input[name*="despacho-id"], input[name*="id"]');
-                                    if (idField && despacheId) {
-                                        idField.value = despacheId;
-                                    }
-                                }
-                            }, 500);
-                        });
-                        </script>
-                    </div>
-                </div>
             </div>
         </div>
         
     <?php endwhile; endif; ?>
 </div>
 
-<script>
-function openUpdatePopup() {
-    document.getElementById('update-despacho-popup').style.display = 'flex';
-    document.body.style.overflow = 'hidden'; // Prevenir scroll del body
-}
-
-function closeUpdatePopup() {
-    document.getElementById('update-despacho-popup').style.display = 'none';
-    document.body.style.overflow = 'auto'; // Restaurar scroll del body
-}
-
-// Cerrar popup al hacer clic fuera del contenido
-document.addEventListener('DOMContentLoaded', function() {
-    const popup = document.getElementById('update-despacho-popup');
-    popup.addEventListener('click', function(e) {
-        if (e.target === popup) {
-            closeUpdatePopup();
-        }
-    });
-    
-    // Cerrar popup con la tecla Escape
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && popup.style.display === 'flex') {
-            closeUpdatePopup();
-        }
-    });
-});
-</script>
 
 <?php get_footer(); ?> 

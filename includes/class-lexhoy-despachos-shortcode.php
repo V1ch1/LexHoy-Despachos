@@ -34,7 +34,6 @@ class LexhoyDespachosShortcode {
 
     public function render_search_form($atts) {
         // Enqueue scripts y estilos necesarios
-        wp_enqueue_style('bootstrap', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css');
         wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
         wp_enqueue_style('google-fonts-inter', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         wp_enqueue_style('lexhoy-despachos-search', LEXHOY_DESPACHOS_PLUGIN_URL . 'assets/css/search.css', array(), LEXHOY_DESPACHOS_VERSION);
@@ -55,118 +54,7 @@ class LexhoyDespachosShortcode {
         $areas = $this->get_areas_practica();
 
         ob_start();
-        ?>
-        <!-- CSS crítico inline para prevenir FOUC -->
-        <style>
-        .alphabet-container {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        .alphabet-container.loaded {
-            opacity: 1;
-        }
-        .alphabet-letter {
-            flex: 1 !important;
-            text-align: center !important;
-        }
-        </style>
-        
-        <div class="lexhoy-despachos-search">
-            <div class="search-header">
-                <div class="search-title">
-                    | Busca alfabéticamente o por nombre en nuestra lista de abogados: |
-                </div>
-
-                <div class="alphabet-container">
-                    <?php
-                    $letters = range('A', 'Z');
-                    foreach ($letters as $letter) {
-                        echo '<div class="alphabet-letter" data-letter="' . $letter . '">' . $letter . '</div>';
-                    }
-                    ?>
-                </div>
-
-                <div class="search-box-container">
-                    <input type="text" id="searchbox" class="search-input" placeholder="Buscar despachos..." />
-                    <button type="button" id="search-button" class="search-button">
-                        <i class="fas fa-search"></i>
-                    </button>
-                </div>
-            </div>
-
-            <div class="search-content">
-                <div class="filters-sidebar">
-                    <div class="filters-tabs">
-                        <div class="filters-tab-header">
-                            <button class="filter-tab-btn active" data-tab="province">Provincias</button>
-                            <button class="filter-tab-btn" data-tab="location">Localidades</button>
-                            <button class="filter-tab-btn" data-tab="practice">Áreas</button>
-                        </div>
-                        <div class="filters-tab-content">
-                            <div id="province-list" class="filter-tab-pane active">
-                                <div class="filter-search">
-                                    <input type="text" placeholder="Buscar provincia..." class="filter-search-input" data-filter="provincia">
-                                </div>
-                                <div class="filter-list" id="provincias-filter">
-                                    <?php foreach ($provincias as $provincia): ?>
-                                        <div class="filter-item" data-value="<?php echo esc_attr($provincia); ?>">
-                                            <label class="filter-label">
-                                                <input type="checkbox" class="filter-checkbox" data-filter="provincia" value="<?php echo esc_attr($provincia); ?>">
-                                                <span class="filter-text"><?php echo esc_html($provincia); ?></span>
-                                                <span class="filter-count">(<?php echo $this->get_count_by_provincia($provincia); ?>)</span>
-                                            </label>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                            <div id="location-list" class="filter-tab-pane">
-                                <div class="filter-search">
-                                    <input type="text" placeholder="Buscar localidad..." class="filter-search-input" data-filter="localidad">
-                                </div>
-                                <div class="filter-list" id="localidades-filter">
-                                    <?php foreach ($localidades as $localidad): ?>
-                                        <div class="filter-item" data-value="<?php echo esc_attr($localidad); ?>">
-                                            <label class="filter-label">
-                                                <input type="checkbox" class="filter-checkbox" data-filter="localidad" value="<?php echo esc_attr($localidad); ?>">
-                                                <span class="filter-text"><?php echo esc_html($localidad); ?></span>
-                                                <span class="filter-count">(<?php echo $this->get_count_by_localidad($localidad); ?>)</span>
-                                            </label>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                            <div id="practice-list" class="filter-tab-pane">
-                                <div class="filter-search">
-                                    <input type="text" placeholder="Buscar área..." class="filter-search-input" data-filter="area">
-                                </div>
-                                <div class="filter-list" id="areas-filter">
-                                    <?php foreach ($areas as $area): ?>
-                                        <div class="filter-item" data-value="<?php echo esc_attr($area); ?>">
-                                            <label class="filter-label">
-                                                <input type="checkbox" class="filter-checkbox" data-filter="area" value="<?php echo esc_attr($area); ?>">
-                                                <span class="filter-text"><?php echo esc_html($area); ?></span>
-                                                <span class="filter-count">(<?php echo $this->get_count_by_area($area); ?>)</span>
-                                            </label>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="current-refinements" class="current-refinements"></div>
-                </div>
-                <div class="results-sidebar">
-                    <div id="hits" class="results-container">
-                        <div class="loading-message">Cargando despachos...</div>
-                    </div>
-                    <div id="pagination" class="pagination-container"></div>
-                </div>
-            </div>
-        </div>
-
+        ?><style>.alphabet-container{display:flex!important;align-items:center!important;justify-content:space-between!important;opacity:0;transition:opacity 0.3s ease}.alphabet-container.loaded{opacity:1}.alphabet-letter{flex:1!important;text-align:center!important}</style><div class="lexhoy-despachos-search"><div class="search-header"><div class="search-title">| Busca alfabéticamente o por nombre en nuestra lista de abogados: |</div><div class="alphabet-container"><?php $letters = range('A', 'Z'); foreach ($letters as $letter) { echo '<div class="alphabet-letter" data-letter="' . $letter . '">' . $letter . '</div>'; } ?></div><div class="search-box-container"><input type="text" id="searchbox" class="search-input" placeholder="Buscar despachos..." /><button type="button" id="search-button" class="search-button"><i class="fas fa-search"></i></button></div></div><div class="search-content"><div class="filters-sidebar"><div class="filters-tabs"><div class="filters-tab-header"><button class="filter-tab-btn active" data-tab="province">Provincias</button><button class="filter-tab-btn" data-tab="location">Localidades</button><button class="filter-tab-btn" data-tab="practice">Áreas</button></div><div class="filters-tab-content"><div id="province-list" class="filter-tab-pane active"><div class="filter-search"><input type="text" placeholder="Buscar provincia..." class="filter-search-input" data-filter="provincia"></div><div class="filter-list" id="provincias-filter"><?php foreach ($provincias as $provincia): ?><div class="filter-item" data-value="<?php echo esc_attr($provincia); ?>"><label class="filter-label"><input type="checkbox" class="filter-checkbox" data-filter="provincia" value="<?php echo esc_attr($provincia); ?>"><span class="filter-text"><?php echo esc_html($provincia); ?></span><span class="filter-count">(<?php echo $this->get_count_by_provincia($provincia); ?>)</span></label></div><?php endforeach; ?></div></div><div id="location-list" class="filter-tab-pane"><div class="filter-search"><input type="text" placeholder="Buscar localidad..." class="filter-search-input" data-filter="localidad"></div><div class="filter-list" id="localidades-filter"><?php foreach ($localidades as $localidad): ?><div class="filter-item" data-value="<?php echo esc_attr($localidad); ?>"><label class="filter-label"><input type="checkbox" class="filter-checkbox" data-filter="localidad" value="<?php echo esc_attr($localidad); ?>"><span class="filter-text"><?php echo esc_html($localidad); ?></span><span class="filter-count">(<?php echo $this->get_count_by_localidad($localidad); ?>)</span></label></div><?php endforeach; ?></div></div><div id="practice-list" class="filter-tab-pane"><div class="filter-search"><input type="text" placeholder="Buscar área..." class="filter-search-input" data-filter="area"></div><div class="filter-list" id="areas-filter"><?php foreach ($areas as $area): ?><div class="filter-item" data-value="<?php echo esc_attr($area); ?>"><label class="filter-label"><input type="checkbox" class="filter-checkbox" data-filter="area" value="<?php echo esc_attr($area); ?>"><span class="filter-text"><?php echo esc_html($area); ?></span><span class="filter-count">(<?php echo $this->get_count_by_area($area); ?>)</span></label></div><?php endforeach; ?></div></div></div></div><div id="current-refinements" class="current-refinements"></div></div><div class="results-sidebar"><div id="hits" class="results-container"><div class="loading-message">Cargando despachos...</div></div><div id="pagination" class="pagination-container"></div></div></div></div>?>
         <script type="text/html" id="hit-template">
             <div class="despacho-card hit-card">
                 {{#isVerified}}

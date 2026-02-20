@@ -1,28 +1,5 @@
-/* Estilos SOLO para el buscador de despachos - Versión limpia y centrada */
-
-/* Estilos globales para encabezados */
-h2 {
-  font-size: 2rem !important;        /* ≈32px */
-  font-weight: bold !important;
-  margin-bottom: 0.75em !important;
-}
-
-h3 {
-  font-size: 1.5rem !important;      /* ≈24px */
-  font-weight: normal !important;
-  margin-bottom: 0.5em !important;
-}
-
-/* Ajustes responsive globales */
-@media (max-width: 768px) {
-  h2 {
-    font-size: 1.75rem !important; /* ≈28px */
-  }
-
-  h3 {
-    font-size: 1.25rem !important; /* ≈20px */
-  }
-}
+/* Estilos globales para encabezados removidos - deben seguir el esquema del tema */
+/* Si se necesitan estilos específicos para h2/h3 dentro del buscador, se añadirán con scope */
 
 /* Contenedor principal */
 .lexhoy-despachos-search {
@@ -56,6 +33,14 @@ h3 {
   font-family: "Inter", Helvetica, Arial, sans-serif !important;
 }
 
+/* Ocultar párrafos vacíos inyectados por WordPress (wpautop) */
+.lexhoy-despachos-search p:empty,
+.lexhoy-despachos-search p:blank {
+  display: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
 /* Enlaces específicos del buscador - NO afectar logos del sitio */
 .lexhoy-despachos-search .despacho-link,
 .lexhoy-despachos-search .pagination-link,
@@ -66,32 +51,15 @@ h3 {
   text-decoration: none !important;
 }
 
-/* Reset dentro del contenedor */
-.lexhoy-despachos-search body,
-.lexhoy-despachos-search html {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  overflow-x: hidden !important;
-}
+/* Eliminados resets globales que afectan al tema */
 
-/* Sobrescribir reglas de Bootstrap */
-.lexhoy-despachos-search .container,
-.lexhoy-despachos-search .container-fluid,
-.lexhoy-despachos-search .row,
-.lexhoy-despachos-search .col,
-.lexhoy-despachos-search .col-* {
-  margin: 0 !important;
-  padding: 0 !important;
-  max-width: none !important;
-}
-
-/* Reglas base para desktop - Centrado equilibrado */
-.lexhoy-despachos-search > * {
+/* Centrado del buscador */
+.lexhoy-despachos-search .search-header,
+.lexhoy-despachos-search .search-content {
   max-width: 1200px !important;
-  width: 90% !important;
-  margin: 0 auto !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 
 /* Cabecera de búsqueda */
@@ -107,7 +75,7 @@ h3 {
 }
 
 /* Título */
-.search-title {
+.lexhoy-despachos-search .search-title {
   font-size: x-large;
   color: #e10000;
   text-align: center;
@@ -116,7 +84,7 @@ h3 {
 }
 
 /* Contenedor del alfabeto */
-.alphabet-container {
+.lexhoy-despachos-search .alphabet-container {
   width: 100%;
   min-height: 81px;
   display: flex;
@@ -130,7 +98,6 @@ h3 {
   flex-wrap: nowrap;
   gap: 0;
   background-color: #ffffff !important;
-  /* Prevenir FOUC */
   opacity: 0;
   transition: opacity 0.3s ease;
 }
@@ -141,7 +108,7 @@ h3 {
 }
 
 /* Letras del alfabeto */
-.alphabet-letter {
+.lexhoy-despachos-search .alphabet-letter {
   font-size: 40px;
   color: #000000;
   cursor: pointer;
@@ -151,12 +118,12 @@ h3 {
   text-align: center;
 }
 
-.alphabet-letter:hover {
+.lexhoy-despachos-search .alphabet-letter:hover {
   color: #e10000;
   background-color: #f8f9fa;
 }
 
-.alphabet-letter.active {
+.lexhoy-despachos-search .alphabet-letter.active {
   color: #e10000;
   font-weight: bold;
   transform: scale(1.1);
@@ -164,7 +131,7 @@ h3 {
 }
 
 /* Contenedor de búsqueda */
-.search-box-container {
+.lexhoy-despachos-search .search-box-container {
   width: 100%;
   margin-top: 20px;
   margin-bottom: 20px;
@@ -172,7 +139,7 @@ h3 {
   display: flex;
 }
 
-.search-input {
+.lexhoy-despachos-search .search-input {
   width: 100%;
   height: 45px;
   font-size: large;
@@ -185,17 +152,17 @@ h3 {
   background-color: #ffffff !important;
 }
 
-.search-input::placeholder {
+.lexhoy-despachos-search .search-input::placeholder {
   color: #e10000 !important;
   opacity: 1 !important;
 }
 
-.search-input:focus {
+.lexhoy-despachos-search .search-input:focus {
   box-shadow: none !important;
   border-color: #000000 !important;
 }
 
-.search-button {
+.lexhoy-despachos-search .search-button {
   position: absolute;
   right: 0;
   top: 0;
@@ -210,7 +177,7 @@ h3 {
   justify-content: center;
 }
 
-.search-button:hover {
+.lexhoy-despachos-search .search-button:hover {
   background: #005a87;
 }
 
@@ -226,7 +193,7 @@ h3 {
 }
 
 /* Barra lateral de filtros - SIN FONDO GRIS */
-.filters-sidebar {
+.lexhoy-despachos-search .filters-sidebar {
   width: 380px;
   flex-shrink: 0;
   background: #ffffff !important;
@@ -234,45 +201,42 @@ h3 {
   border-radius: 8px;
   height: fit-content;
   border: 1px solid #e0e0e0;
-  box-sizing: border-box; /* Asegurar que padding esté incluido en el ancho */
+  box-sizing: border-box;
 }
 
-/* Barra lateral de resultados */
-.results-sidebar {
+.lexhoy-despachos-search .results-sidebar {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  max-width: 100%; /* Límite máximo para evitar overflow */
-  width: 100%; /* Asegurar que use el ancho disponible sin excederlo */
-  margin: 0; /* Eliminar margen auto que centra */
+  max-width: 100%;
+  width: 100%;
+  margin: 0;
   background-color: #ffffff !important;
-  box-sizing: border-box; /* Incluir padding y border en el ancho */
-  overflow-x: hidden; /* Evitar scroll horizontal */
-  padding: 20px; /* Mismo padding que filters-sidebar para alineación */
-  border: 1px solid #e0e0e0; /* Mismo borde que filters-sidebar */
-  border-radius: 8px; /* Mismo border-radius que filters-sidebar */
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
 }
 
-/* Contenedor de filtros */
-.filters-container {
+.lexhoy-despachos-search .filters-container {
   margin-bottom: 20px;
 }
 
-/* Pestañas de filtros */
-.filters-tabs {
+.lexhoy-despachos-search .filters-tabs {
   background: white;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid #e0e0e0;
 }
 
-.filters-tab-header {
+.lexhoy-despachos-search .filters-tab-header {
   display: flex;
   border-bottom: 1px solid #ddd;
 }
 
-.filter-tab-btn {
+.lexhoy-despachos-search .filter-tab-btn {
   flex: 1;
   padding: 12px;
   background: none;
@@ -284,37 +248,31 @@ h3 {
   transition: all 0.3s ease;
 }
 
-.filter-tab-btn:last-child {
-  border-right: none;
-}
-
-.filter-tab-btn:hover {
+.lexhoy-despachos-search .filter-tab-btn:hover {
   background: #f8f9fa;
   color: #333;
 }
 
-.filter-tab-btn.active {
+.lexhoy-despachos-search .filter-tab-btn.active {
   background: #e10000;
   color: white;
 }
 
-/* Contenido de pestañas */
-.filters-tab-content {
+.lexhoy-despachos-search .filters-tab-content {
   padding: 15px;
   background-color: #ffffff !important;
 }
 
-.filter-tab-pane {
+.lexhoy-despachos-search .filter-tab-pane {
   display: none;
   background-color: #ffffff !important;
 }
 
-.filter-tab-pane.active {
+.lexhoy-despachos-search .filter-tab-pane.active {
   display: block;
 }
 
-/* Lista de filtros */
-.filter-list {
+.lexhoy-despachos-search .filter-list {
   max-height: 300px;
   overflow-y: auto;
   display: flex;
@@ -322,12 +280,12 @@ h3 {
   gap: 8px;
 }
 
-.filter-item {
+.lexhoy-despachos-search .filter-item {
   display: flex;
   align-items: center;
 }
 
-.filter-label {
+.lexhoy-despachos-search .filter-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -342,18 +300,18 @@ h3 {
   color: #333;
 }
 
-.filter-label:hover {
+.lexhoy-despachos-search .filter-label:hover {
   background: #e9ecef;
   border-color: #e10000;
 }
 
-.filter-item--selected .filter-label {
+.lexhoy-despachos-search .filter-item--selected .filter-label {
   background: #e10000;
   color: white;
   border-color: #e10000;
 }
 
-.filter-count {
+.lexhoy-despachos-search .filter-count {
   color: #666;
   font-size: 12px;
   background: #fff;
@@ -362,58 +320,55 @@ h3 {
   margin-left: 8px;
 }
 
-.filter-item--selected .filter-count {
+.lexhoy-despachos-search .filter-item--selected .filter-count {
   background: rgba(255, 255, 255, 0.2);
   color: white;
 }
 
 /* Contenedor de resultados */
-.results-container {
+.lexhoy-despachos-search .results-container {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 0; /* Sin padding ya que results-sidebar tiene padding */
+  padding: 0;
   width: 100%;
   box-sizing: border-box;
 }
 
-/* Grid de despachos */
-.despachos-grid {
+.lexhoy-despachos-search .despachos-grid {
   display: flex;
   flex-direction: column;
   gap: 20px;
   width: 100%;
-  max-width: 100%; /* Límite estricto de ancho */
+  max-width: 100%;
   box-sizing: border-box;
-  overflow-x: hidden; /* Evitar scroll horizontal */
-  padding: 0; /* Sin padding para alinear con filters-sidebar */
+  overflow-x: hidden;
+  padding: 0;
 }
 
-/* Tarjeta de despacho */
-.despacho-card {
+.lexhoy-despachos-search .despacho-card {
   background: white;
-  border: 1px solid #e0e0e0; /* Mismo borde que filters-sidebar */
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
   position: relative;
   width: 100%;
-  max-width: 100%; /* Asegurar que no exceda el contenedor padre */
+  max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden; /* Evitar que el contenido se salga */
-  word-wrap: break-word; /* Partir palabras largas */
-  overflow-wrap: break-word; /* Compatibilidad adicional */
+  overflow: hidden;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
-.despacho-card:hover {
+.lexhoy-despachos-search .despacho-card:hover {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   transform: translateY(-2px);
 }
 
-/* Badge de verificación */
-.verification-badge {
+.lexhoy-despachos-search .verification-badge {
   position: absolute;
   top: 10px;
   right: 10px;
@@ -429,57 +384,54 @@ h3 {
   transition: all 0.3s ease;
 }
 
-.verification-badge i {
+.lexhoy-despachos-search .verification-badge i {
   font-size: 16px;
   color: #ffffff;
 }
 
-.verification-badge:hover {
+.lexhoy-despachos-search .verification-badge:hover {
   background: #27ae60;
 }
 
-/* Nombre del despacho */
-.despacho-name {
+.lexhoy-despachos-search .despacho-name {
   font-size: 18px;
   font-weight: bold;
   color: #333;
   margin-bottom: 10px;
   line-height: 1.3;
-  word-wrap: break-word; /* Partir palabras largas */
-  overflow-wrap: break-word; /* Compatibilidad adicional */
-  hyphens: auto; /* Añadir guiones automáticos */
-  max-width: 100%; /* Asegurar que no exceda el contenedor */
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  max-width: 100%;
 }
 
-.despacho-name a {
+.lexhoy-despachos-search .despacho-name a {
   color: inherit;
   text-decoration: none;
 }
 
-.despacho-name a:hover {
+.lexhoy-despachos-search .despacho-name a:hover {
   color: #e10000;
 }
 
-/* Ubicación del despacho */
-.despacho-location {
+.lexhoy-despachos-search .despacho-location {
   color: #666;
   font-size: 14px;
   margin-bottom: 10px;
   line-height: 1.4;
-  word-wrap: break-word; /* Partir palabras largas */
-  overflow-wrap: break-word; /* Compatibilidad adicional */
-  max-width: 100%; /* Asegurar que no exceda el contenedor */
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
 }
 
-/* Áreas de práctica */
-.despacho-areas {
+.lexhoy-despachos-search .despacho-areas {
   color: #333;
   font-size: 14px;
   margin-bottom: 15px;
   line-height: 1.4;
-  word-wrap: break-word; /* Partir palabras largas */
-  overflow-wrap: break-word; /* Compatibilidad adicional */
-  max-width: 100%; /* Asegurar que no exceda el contenedor */
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
 }
 
 /* Enlace "Ver más" */
@@ -527,7 +479,7 @@ h3 {
 }
 
 /* Sin resultados */
-.no-results {
+.lexhoy-despachos-search .no-results {
   text-align: center;
   padding: 40px 20px;
   color: #666;
@@ -535,23 +487,18 @@ h3 {
   line-height: 1.5;
 }
 
-/* Refinamientos actuales */
-.current-refinements {
+.lexhoy-despachos-search .current-refinements {
   margin-bottom: 20px;
   padding: 15px;
   background: #f8f9fa;
   border-radius: 8px;
 }
 
-.refinement-group {
+.lexhoy-despachos-search .refinement-group {
   margin-bottom: 10px;
 }
 
-.refinement-group:last-child {
-  margin-bottom: 0;
-}
-
-.refinement-group strong {
+.lexhoy-despachos-search .refinement-group strong {
   display: block;
   margin-bottom: 5px;
   color: #333;
@@ -559,7 +506,7 @@ h3 {
   font-weight: 600;
 }
 
-.refinement-item {
+.lexhoy-despachos-search .refinement-item {
   display: inline-block;
   background: #e10000;
   color: white;
@@ -570,23 +517,22 @@ h3 {
   text-decoration: none;
 }
 
-.refinement-remove {
+.lexhoy-despachos-search .refinement-remove {
   margin-left: 5px;
   color: white;
   text-decoration: none;
   font-weight: bold;
 }
 
-.refinement-remove:hover {
+.lexhoy-despachos-search .refinement-remove:hover {
   color: #ffcccc;
 }
 
-/* Búsqueda en filtros */
-.filter-search {
+.lexhoy-despachos-search .filter-search {
   margin-bottom: 15px;
 }
 
-.filter-search-input {
+.lexhoy-despachos-search .filter-search-input {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid #ddd;
@@ -594,21 +540,20 @@ h3 {
   font-size: 14px;
 }
 
-.filter-search-input:focus {
+.lexhoy-despachos-search .filter-search-input:focus {
   outline: none;
   border-color: #e10000;
   box-shadow: 0 0 0 2px rgba(225, 0, 0, 0.1);
 }
 
-/* Mensajes de carga y error */
-.loading-message {
+.lexhoy-despachos-search .loading-message {
   text-align: center;
   padding: 40px 20px;
   color: #666;
   font-size: 16px;
 }
 
-.error-message {
+.lexhoy-despachos-search .error-message {
   text-align: center;
   padding: 40px 20px;
   color: #e74c3c;
@@ -618,29 +563,29 @@ h3 {
   border-radius: 8px;
 }
 
-/* Paginación personalizada */
-.pagination {
+/* Paginación personalizada - Scoped para evitar conflictos con el tema */
+.lexhoy-despachos-search .pagination {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 8px;
-  margin: 20px auto; /* Centrar con margin auto */
-  flex-wrap: nowrap; /* Mantener todo en una línea por defecto */
+  margin: 20px auto;
+  flex-wrap: nowrap;
   max-width: 100%;
   box-sizing: border-box;
-  overflow-x: auto; /* Scroll horizontal si es necesario en escritorio */
-  width: fit-content; /* Ajustar al contenido para mejor centrado */
+  overflow-x: auto;
+  width: fit-content;
 }
 
-.pagination-container {
+.lexhoy-despachos-search .pagination-container {
   display: flex;
-  justify-content: center; /* Centrar contenido */
+  justify-content: center;
   align-items: center;
   max-width: 100%;
   box-sizing: border-box;
-  overflow-x: auto; /* Cambiar a auto para permitir centrado */
+  overflow-x: auto;
   width: 100%;
-  text-align: center; /* Centrar texto como fallback */
+  text-align: center;
 }
 
 .pagination-link {
@@ -760,107 +705,105 @@ h3 {
     width: 100% !important;
   }
 
-  .search-button {
+  .lexhoy-despachos-search .search-button {
     height: 40px;
     width: 40px;
   }
 
-  .despacho-card {
+  .lexhoy-despachos-search .despacho-card {
     padding: 12px;
-    overflow: hidden !important; /* Contenido dentro de los bordes */
+    overflow: hidden !important;
     word-wrap: break-word !important;
     box-sizing: border-box !important;
   }
 
-  .despacho-name {
+  .lexhoy-despachos-search .despacho-name {
     font-size: 16px;
     word-wrap: break-word !important;
     overflow-wrap: break-word !important;
     hyphens: auto !important;
   }
 
-  .despacho-location,
-  .despacho-areas {
+  .lexhoy-despachos-search .despacho-location,
+  .lexhoy-despachos-search .despacho-areas {
     font-size: 13px;
     word-wrap: break-word !important;
     overflow-wrap: break-word !important;
   }
 
-  /* Paginación para tablets */
-  .pagination {
-    gap: 3px !important; /* Espacio mínimo entre elementos */
-    flex-wrap: nowrap !important; /* Forzar todo en una línea */
+  .lexhoy-despachos-search .pagination {
+    gap: 3px !important;
+    flex-wrap: nowrap !important;
     justify-content: center !important;
-    overflow-x: auto !important; /* Scroll horizontal si es necesario */
+    overflow-x: auto !important;
     white-space: nowrap !important;
-    margin: 20px auto !important; /* Centrar completamente */
-    width: fit-content !important; /* Ajustar al contenido */
+    margin: 20px auto !important;
+    width: fit-content !important;
     max-width: 100% !important;
   }
 
-  .pagination-link,
-  .pagination-current {
-    padding: 4px 8px !important; /* Padding más pequeño */
+  .lexhoy-despachos-search .pagination-link,
+  .lexhoy-despachos-search .pagination-current {
+    padding: 4px 8px !important;
     font-size: 13px !important;
     min-width: 28px !important;
     text-align: center !important;
-    flex-shrink: 0 !important; /* No comprimir elementos */
+    flex-shrink: 0 !important;
   }
 
-  /* Ocultar texto en botones de navegación para tablets */
-  .pagination-link.nav-button .nav-text {
+  .lexhoy-despachos-search .pagination-link.nav-button .nav-text {
     display: none !important;
   }
 }
 
 @media screen and (max-width: 480px) {
-  .search-header {
+  .lexhoy-despachos-search .search-header {
     padding: 10px !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
 
-  .search-content {
+  .lexhoy-despachos-search .search-content {
     padding: 0 10px !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
 
-  .filters-sidebar {
+  .lexhoy-despachos-search .filters-sidebar {
     padding: 15px;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
 
-  .results-container {
+  .lexhoy-despachos-search .results-container {
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
 
-  .results-sidebar {
+  .lexhoy-despachos-search .results-sidebar {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
-    padding: 10px !important; /* Padding ajustado para móviles pequeños */
+    padding: 10px !important;
   }
 
-  .despachos-grid {
+  .lexhoy-despachos-search .despachos-grid {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
 
-  .despacho-card {
+  .lexhoy-despachos-search .despacho-card {
     padding: 10px;
-    overflow: hidden !important; /* Asegurar que el contenido esté dentro */
+    overflow: hidden !important;
     word-wrap: break-word !important;
     overflow-wrap: break-word !important;
     box-sizing: border-box !important;
   }
 
-  .despacho-name {
+  .lexhoy-despachos-search .despacho-name {
     font-size: 15px;
     word-wrap: break-word !important;
     overflow-wrap: break-word !important;
@@ -868,22 +811,22 @@ h3 {
     max-width: 100% !important;
   }
 
-  .despacho-location,
-  .despacho-areas {
+  .lexhoy-despachos-search .despacho-location,
+  .lexhoy-despachos-search .despacho-areas {
     font-size: 12px;
     word-wrap: break-word !important;
     overflow-wrap: break-word !important;
     max-width: 100% !important;
   }
 
-  .filter-tab-btn {
+  .lexhoy-despachos-search .filter-tab-btn {
     padding: 8px 6px;
     font-size: 13px;
     box-sizing: border-box !important;
     word-wrap: break-word !important;
   }
 
-  .filter-label {
+  .lexhoy-despachos-search .filter-label {
     padding: 4px 8px;
     font-size: 12px;
     box-sizing: border-box !important;
@@ -891,166 +834,73 @@ h3 {
     overflow-wrap: break-word !important;
   }
 
-  /* NUEVO: Controles adicionales para alfabeto en móviles pequeños */
-  .alphabet-container {
+  .lexhoy-despachos-search .alphabet-container {
     overflow-x: auto !important;
     overflow-y: hidden !important;
     white-space: nowrap !important;
     padding: 5px 8px !important;
   }
 
-  .alphabet-letter {
-    font-size: 24px !important; /* Más pequeño en móviles */
+  .lexhoy-despachos-search .alphabet-letter {
+    font-size: 24px !important;
     flex-shrink: 0 !important;
     min-width: 25px !important;
   }
 
-  /* NUEVO: Control adicional para enlaces y botones */
-  .despacho-link {
+  .lexhoy-despachos-search .despacho-link {
     max-width: 100% !important;
     box-sizing: border-box !important;
     word-wrap: break-word !important;
     text-overflow: ellipsis !important;
   }
 
-  .verification-badge {
+  .lexhoy-despachos-search .verification-badge {
     max-width: calc(100% - 20px) !important;
     box-sizing: border-box !important;
     word-wrap: break-word !important;
     overflow: hidden !important;
   }
 
-  /* Paginación para móviles pequeños */
-  .pagination {
-    gap: 2px !important; /* Espacio muy mínimo entre elementos */
-    flex-wrap: nowrap !important; /* Forzar todo en una línea */
+  .lexhoy-despachos-search .pagination {
+    gap: 2px !important;
+    flex-wrap: nowrap !important;
     justify-content: center !important;
     max-width: 100% !important;
-    overflow-x: auto !important; /* Scroll horizontal si es necesario */
+    overflow-x: auto !important;
     white-space: nowrap !important;
-    padding: 0 5px !important; /* Pequeño padding lateral */
-    margin: 20px auto !important; /* Centrar completamente */
-    width: fit-content !important; /* Ajustar al contenido */
+    padding: 0 5px !important;
+    margin: 20px auto !important;
+    width: fit-content !important;
   }
 
-  .pagination-link,
-  .pagination-current {
-    padding: 3px 6px !important; /* Padding muy pequeño */
+  .lexhoy-despachos-search .pagination-link,
+  .lexhoy-despachos-search .pagination-current {
+    padding: 3px 6px !important;
     font-size: 12px !important;
     min-width: 24px !important;
     text-align: center !important;
     box-sizing: border-box !important;
-    flex-shrink: 0 !important; /* No comprimir elementos */
+    flex-shrink: 0 !important;
   }
 
-  /* Ocultar texto en botones de navegación para móviles */
-  .pagination-link.nav-button .nav-text {
+  .lexhoy-despachos-search .pagination-link.nav-button .nav-text {
     display: none !important;
   }
 
-  /* Asegurar que la paginación esté contenida */
-  .pagination-container {
+  .lexhoy-despachos-search .pagination-container {
     max-width: 100% !important;
     box-sizing: border-box !important;
-    overflow-x: auto !important; /* Permitir scroll si es necesario */
+    overflow-x: auto !important;
     display: flex !important;
-    justify-content: center !important; /* Centrar completamente */
+    justify-content: center !important;
     width: 100% !important;
     text-align: center !important;
   }
-    text-overflow: ellipsis !important;
-  }
 }
 
-/* OCULTAR ELEMENTOS DEL TEMA QUE INTERFIEREN */
-/* Ocultar párrafo vacío con código */
-.td-page-content.tagdiv-type p:has(code:empty),
-.td-page-content.tagdiv-type p:empty,
-.td-page-content.tagdiv-type p:has(code:only-child:empty) {
-  display: none !important;
-  visibility: hidden !important;
-  height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-}
-
-/* Ocultar breadcrumb */
-.td-crumb-container {
-  display: none !important;
-  visibility: hidden !important;
-  height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-}
-
-/* Reglas adicionales para elementos vacíos */
-.td-page-content.tagdiv-type p:has(code:empty) {
-  display: none !important;
-}
-
-/* Ocultar cualquier párrafo que solo contenga espacios o código vacío */
-.td-page-content.tagdiv-type p:has(code:only-child),
-.td-page-content.tagdiv-type p:has(code:first-child:last-child) {
-  display: none !important;
-}
-
-/* Proteger logos del sitio del CSS del buscador */
-body:not(.lexhoy-despachos-search) .td-header-logo a,
-body:not(.lexhoy-despachos-search) .td-header-logo img,
-body:not(.lexhoy-despachos-search) .td-logo a,
-body:not(.lexhoy-despachos-search) .td-logo img,
-body:not(.lexhoy-despachos-search) .logo a,
-body:not(.lexhoy-despachos-search) .logo img,
-body:not(.lexhoy-despachos-search) .site-logo a,
-body:not(.lexhoy-despachos-search) .site-logo img {
-  text-decoration: none !important;
-  border: none !important;
-  background: none !important;
-}
-
-/* Proteger header y navegación del sitio */
-.td-header,
-.td-header-wrap,
-.td-header-top-menu,
-.td-header-menu,
-.td-header-main-menu,
-.td-main-menu,
-.td-header-menu-wrap,
-.td-header-menu-full,
-.td-header-menu-wrap-full,
-.td-header-menu-wrap-full .td-header-menu,
-.td-header-menu-wrap-full .td-header-menu .td-main-menu,
-.td-header-menu-wrap-full .td-header-menu .td-main-menu li,
-.td-header-menu-wrap-full .td-header-menu .td-main-menu li a {
-  font-family: inherit !important;
-  text-decoration: inherit !important;
-  border: inherit !important;
-  background: inherit !important;
-  color: inherit !important;
-}
-
-/* Proteger elementos específicos del tema */
-.td-header-logo,
-.td-header-logo a,
-.td-header-logo img,
-.td-logo,
-.td-logo a,
-.td-logo img {
-  text-decoration: none !important;
-  border: none !important;
-  background: none !important;
-  font-family: inherit !important;
-}
-
-/* Sobrescribir reglas de Bootstrap */
-.lexhoy-despachos-search .container,
-.lexhoy-despachos-search .container-fluid,
-.lexhoy-despachos-search .row,
-.lexhoy-despachos-search .col,
-.lexhoy-despachos-search .col-* {
-  margin: 0 !important;
-  padding: 0 !important;
-  max-width: none !important;
+/* Eliminados hacks de protección - el scoping correcto debería ser suficiente */
+/* Se mantienen solo las correcciones para elementos vacíos si son necesarias, pero scoping .lexhoy-despachos-search */
+.lexhoy-despachos-search .no-results {
+    text-align: center;
+    padding: 20px;
 }
