@@ -52,7 +52,7 @@
 
 .sede-card.sede-principal {
   border-color: #000000;
-  background: #f8f9fa;
+  background: #ffffff !important;
   position: relative;
   border-width: 2px; /* Borde más grueso para destacar */
 }
@@ -477,7 +477,7 @@
 }
 
 .contact-item:hover {
-  background: #f8f9fa;
+  background: #ffffff !important;
   padding-left: 10px;
 }
 
@@ -710,8 +710,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 20px 25px;
-  border-bottom: 1px solid #e9ecef;
-  background: #f8f9fa;
+  border-bottom: 1px solid #dddddd !important;
+  background: #ffffff !important;
   border-radius: 8px 8px 0 0;
   position: sticky;
   top: 0;
@@ -744,7 +744,7 @@
 }
 
 .close-popup-btn:hover {
-  background: #e9ecef;
+  background: #ffffff !important;
   color: #000000;
 }
 

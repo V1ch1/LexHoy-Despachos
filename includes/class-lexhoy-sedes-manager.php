@@ -150,7 +150,7 @@ class LexhoySedesManager {
         </div>
         
         <?php if (!empty($sedes_json)): ?>
-            <div class="sedes-info-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #28a745; border-radius: 4px;">
+            <div class="sedes-info-section" style="margin-top: 20px; padding: 15px; background: #ffffff; border-left: 4px solid #28a745; border-radius: 4px;">
                 <h4 style="color: #28a745; margin-bottom: 10px;">📊 Información desde Algolia</h4>
                 <p><strong>Total sedes en Algolia:</strong> <?php echo count($sedes_json); ?></p>
                 <details style="margin-top: 10px;">
@@ -321,7 +321,7 @@ class LexhoySedesManager {
         ?>
         
         <div class="sede-form" style="border: 1px solid #ddd; margin-bottom: 15px; border-radius: 6px; background: #fff;">
-            <div class="sede-header" style="background: #f1f1f1; padding: 12px; border-bottom: 1px solid #ddd; cursor: pointer;">
+            <div class="sede-header" style="background: #ffffff; padding: 12px; border-bottom: 1px solid #ddd; cursor: pointer;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <h4 style="margin: 0; color: #2c3e50;">
                         <span class="toggle-sede">📍 <?php echo !empty($sede['nombre']) ? esc_html($sede['nombre']) : 'Nueva Sede'; ?></span>
