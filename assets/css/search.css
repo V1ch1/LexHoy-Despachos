@@ -116,18 +116,19 @@
   transition: all 0.3s ease;
   flex: 1;
   text-align: center;
+  background-color: transparent !important;
 }
 
 .lexhoy-despachos-search .alphabet-letter:hover {
   color: #e10000;
-  background-color: transparent;
+  background-color: transparent !important;
 }
 
 .lexhoy-despachos-search .alphabet-letter.active {
   color: #e10000;
   font-weight: bold;
   transform: scale(1.1);
-  background-color: transparent;
+  background-color: transparent !important;
 }
 
 /* Contenedor de búsqueda */
@@ -291,7 +292,7 @@
   justify-content: space-between;
   width: 100%;
   padding: 8px 12px;
-  background: #ffffff;
+  background: #ffffff !important;
   border: 1px solid #ddd;
   border-radius: 4px;
   cursor: pointer;
@@ -301,7 +302,7 @@
 }
 
 .lexhoy-despachos-search .filter-label:hover {
-  background: #e9ecef;
+  background: #f8f9fa !important;
   border-color: #e10000;
 }
 
@@ -490,8 +491,9 @@
 .lexhoy-despachos-search .current-refinements {
   margin-bottom: 20px;
   padding: 15px;
-  background: #f8f9fa;
+  background: #ffffff !important;
   border-radius: 8px;
+  border: 1px solid #e0e0e0;
 }
 
 .lexhoy-despachos-search .refinement-group {
