@@ -120,14 +120,14 @@
 
 .lexhoy-despachos-search .alphabet-letter:hover {
   color: #e10000;
-  background-color: #f8f9fa;
+  background-color: transparent;
 }
 
 .lexhoy-despachos-search .alphabet-letter.active {
   color: #e10000;
   font-weight: bold;
   transform: scale(1.1);
-  background-color: #f8f9fa;
+  background-color: transparent;
 }
 
 /* Contenedor de búsqueda */
@@ -249,7 +249,7 @@
 }
 
 .lexhoy-despachos-search .filter-tab-btn:hover {
-  background: #f8f9fa;
+  background: #ffffff;
   color: #333;
 }
 
@@ -291,7 +291,7 @@
   justify-content: space-between;
   width: 100%;
   padding: 8px 12px;
-  background: #f8f9fa;
+  background: #ffffff;
   border: 1px solid #ddd;
   border-radius: 4px;
   cursor: pointer;
