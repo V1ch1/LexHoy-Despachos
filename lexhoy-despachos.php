@@ -3,7 +3,7 @@
  * Plugin Name: LexHoy Despachos
  * Plugin URI: https://lexhoy.com
  * Description: Plugin para gestionar despachos de LexHoy
- * Version: 1.1.2
+ * Version: 1.1.3
  * Author: LexHoy
  * Author URI: https://lexhoy.com
  * Text Domain: lexhoy-despachos

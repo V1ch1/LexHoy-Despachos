@@ -2963,7 +2963,7 @@ class LexhoyDespachosCPT {
             </button>
             
             <div id="granular-progress" style="margin-top: 15px; display: none;">
-                <div class="progress-bar" style="width: 100%; background-color: #f1f1f1; border-radius: 4px;">
+                <div class="progress-bar" style="width: 100%; border-radius: 4px;">
                     <div id="granular-bar" style="width: 0%; height: 25px; background-color: #007cba; border-radius: 4px; transition: width 0.3s;"></div>
                 </div>
                 <p id="granular-status">Preparando...</p>
