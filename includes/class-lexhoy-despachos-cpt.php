@@ -24,8 +24,8 @@ class LexhoyDespachosCPT {
         add_action('save_post', array($this, 'save_meta_boxes'), 99, 1);
         // Hook de test removido para producción
         
-        // Redirecciones para URLs limpias
-        add_action('template_redirect', array($this, 'handle_clean_urls'));
+        // Redirecciones para URLs limpias - Prioridad alta para que no lo pise el 404 handler
+        add_action('template_redirect', array($this, 'handle_clean_urls'), 5);
         
         // Filtrar permalinks para URLs limpias de despachos
         add_filter('post_type_link', array($this, 'filter_post_type_link'), 10, 2);
@@ -93,8 +93,8 @@ class LexhoyDespachosCPT {
         add_filter('single_template', array($this, 'load_single_despacho_template'));
         add_filter('taxonomy_template', array($this, 'load_taxonomy_template'));
         
-        // SEO: Manejar 404s y redirecciones
-        add_action('template_redirect', array($this, 'handle_404_redirects'), 1);
+        // SEO: Manejar 404s y redirecciones - Prioridad BAJA para que dé tiempo a los otros handlers
+        add_action('template_redirect', array($this, 'handle_404_redirects'), 20);
         
         // Modificar títulos de páginas de despachos individuales - PRIORIDAD ALTA para sobrescribir RankMath
         add_filter('document_title_parts', array($this, 'modify_despacho_page_title'), 999, 1);
