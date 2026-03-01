@@ -111,6 +111,9 @@ class LexhoyDespachosCPT {
 
         // SEO: Sobrescribir robots de RankMath
         add_filter('rank_math/frontend/robots', array($this, 'override_rankmath_robots'), 999);
+        
+        // SEO: Forzar taxonomías en el sitemap de RankMath
+        add_filter('rank_math/sitemap/taxonomies', array($this, 'add_taxonomies_to_rankmath_sitemap'));
     }
 
     /**
@@ -1614,8 +1617,10 @@ class LexhoyDespachosCPT {
         $args_prov = array(
             'hierarchical' => true,
             'labels' => $labels_prov,
+            'public' => true,
             'show_ui' => true,
             'show_admin_column' => true,
+            'show_in_nav_menus' => true,
             'query_var' => true,
             'rewrite' => array('slug' => 'provincia', 'with_front' => false),
             'show_in_rest' => true
@@ -1641,8 +1646,10 @@ class LexhoyDespachosCPT {
         $args_area = array(
             'hierarchical' => true,
             'labels' => $labels_area,
+            'public' => true,
             'show_ui' => true,
             'show_admin_column' => true,
+            'show_in_nav_menus' => true,
             'query_var' => true,
             'rewrite' => array('slug' => 'especialidad', 'with_front' => false), // SLUG SEO: especialidad
             'show_in_rest' => true
@@ -6320,6 +6327,15 @@ class LexhoyDespachosCPT {
             $this->custom_log("AJAX MICRO-LOTE FATAL ERROR: {$error_msg}");
             wp_send_json_error($error_msg);
         }
+    }
+
+    /**
+     * Forzar que las taxonomías de LexHoy aparezcan en el sitemap de RankMath
+     */
+    public function add_taxonomies_to_rankmath_sitemap($taxonomies) {
+        $taxonomies['provincia'] = 'provincia';
+        $taxonomies['area_practica'] = 'area_practica';
+        return $taxonomies;
     }
 }
 
