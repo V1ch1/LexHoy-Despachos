@@ -11,6 +11,17 @@ class LexhoyInterlinking {
     
     public function __construct() {
         add_shortcode('lexhoy_abogados_relacionados', array($this, 'render_related_lawyers'));
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_styles'));
+    }
+
+    /**
+     * Encolar estilos necesarios para el widget
+     */
+    public function enqueue_styles() {
+        if (is_singular('post')) {
+            wp_enqueue_style('lexhoy-silos-premium', LEXHOY_DESPACHOS_PLUGIN_URL . 'assets/css/silos.css', array(), LEXHOY_DESPACHOS_VERSION);
+            wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+        }
     }
 
     /**
@@ -58,42 +69,47 @@ class LexhoyInterlinking {
 
         ob_start();
         ?>
-        <div class="lexhoy-related-lawyers-widget" style="margin: 30px 0; padding: 25px; background: #f8faff; border: 1px solid #e0e6ed; border-radius: 12px; font-family: 'Inter', sans-serif;">
-            <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 1.5rem; color: #333; display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.8rem;">⚖️</span> <?php echo esc_html($atts['title']); ?>
-            </h3>
+        <div class="lexhoy-related-lawyers-widget-premium">
+            <div class="widget-header">
+                <h3><i class="fas fa-balance-scale"></i> <?php echo esc_html($atts['title']); ?></h3>
+                <p>Especialistas verificados recomendados para tu consulta</p>
+            </div>
             
-            <div class="related-lawyers-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div class="related-lawyers-grid">
                 <?php while ($query->have_posts()) : $query->the_post(); 
                     $post_id = get_the_ID();
                     $sedes = get_post_meta($post_id, '_despacho_sedes', true);
                     $sede_principal = (!empty($sedes) && is_array($sedes)) ? $sedes[0] : null;
                     $foto = $sede_principal['foto_perfil'] ?? get_post_meta($post_id, '_despacho_foto_perfil', true);
                     $localidad = $sede_principal['localidad'] ?? get_post_meta($post_id, '_despacho_localidad', true);
+                    $is_verified = ($sede_principal['estado_verificacion'] ?? get_post_meta($post_id, '_despacho_estado_verificacion', true)) === 'verificado';
                 ?>
-                    <div class="lawyer-item" style="background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 15px; text-align: center; transition: all 0.3s ease;">
-                        <?php if ($foto): ?>
-                            <img src="<?php echo esc_url($foto); ?>" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid #0073aa;">
-                        <?php else: ?>
-                            <div style="width: 70px; height: 70px; border-radius: 50%; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; font-size: 1.5rem;">👤</div>
-                        <?php endif; ?>
+                    <div class="lawyer-card-mini">
+                        <div class="lawyer-avatar-wrapper">
+                            <?php if ($foto): ?>
+                                <img src="<?php echo esc_url($foto); ?>" class="lawyer-avatar">
+                            <?php else: ?>
+                                <div class="lawyer-avatar-placeholder"><i class="fas fa-user-tie"></i></div>
+                            <?php endif; ?>
+                            <?php if ($is_verified): ?>
+                                <i class="fas fa-check-circle verified-badge-mini"></i>
+                            <?php endif; ?>
+                        </div>
                         
-                        <h4 style="margin: 10px 0 5px; font-size: 1.1rem; line-height: 1.2;">
-                            <a href="<?php the_permalink(); ?>" style="text-decoration: none; color: #0073aa;"><?php the_title(); ?></a>
-                        </h4>
-                        <p style="margin: 0; font-size: 0.85rem; color: #666;">📍 <?php echo esc_html($localidad); ?></p>
+                        <div class="lawyer-info-mini">
+                            <h4><a href="<?php the_permalink(); ?>"><?php the_title(); ?></a></h4>
+                            <span class="lawyer-loc-mini"><i class="fas fa-map-marker-alt"></i> <?php echo esc_html($localidad); ?></span>
+                        </div>
                         
-                        <div style="margin-top: 15px;">
-                            <a href="<?php the_permalink(); ?>" style="display: inline-block; padding: 6px 14px; background: #0073aa; color: #fff; border-radius: 20px; text-decoration: none; font-size: 0.85rem; font-weight: 500;">Ver Perfil</a>
+                        <div class="lawyer-action-mini">
+                            <a href="<?php the_permalink(); ?>" class="btn-mini">Ver Perfil</a>
                         </div>
                     </div>
                 <?php endwhile; wp_reset_postdata(); ?>
             </div>
             
-            <div style="margin-top: 25px; text-align: center; border-top: 1px solid #e0e6ed; padding-top: 15px;">
-                <p style="margin: 0; font-size: 0.9rem; color: #555;">
-                    ¿Buscas expertos en otra provincia? <a href="<?php echo home_url('/despacho/'); ?>" style="color: #0073aa; font-weight: 600;">Explora el buscador completo &rarr;</a>
-                </p>
+            <div class="widget-footer">
+                <p>¿Buscas más expertos? <a href="<?php echo home_url('/despacho/'); ?>">Explora el buscador completo &rarr;</a></p>
             </div>
         </div>
         <?php
