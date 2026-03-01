@@ -114,6 +114,7 @@ class LexhoyDespachosCPT {
         
         // SEO: Forzar taxonomías en el sitemap de RankMath
         add_filter('rank_math/sitemap/taxonomies', array($this, 'add_taxonomies_to_rankmath_sitemap'));
+        add_filter('rank_math/sitemap/index', array($this, 'force_sitemaps_in_index'));
     }
 
     /**
@@ -1615,15 +1616,17 @@ class LexhoyDespachosCPT {
         );
 
         $args_prov = array(
-            'hierarchical' => true,
-            'labels' => $labels_prov,
-            'public' => true,
-            'show_ui' => true,
+            'hierarchical'      => true,
+            'labels'            => $labels_prov,
+            'public'            => true,
+            'publicly_queryable' => true,
+            'show_ui'           => true,
             'show_admin_column' => true,
             'show_in_nav_menus' => true,
-            'query_var' => true,
-            'rewrite' => array('slug' => 'provincia', 'with_front' => false),
-            'show_in_rest' => true
+            'query_var'         => true,
+            'rewrite'           => array('slug' => 'provincia', 'with_front' => false),
+            'show_in_rest'      => true,
+            'show_in_sitemap'   => true, // RankMath SEO compatibility
         );
 
         register_taxonomy('provincia', array('despacho'), $args_prov);
@@ -1644,15 +1647,17 @@ class LexhoyDespachosCPT {
         );
 
         $args_area = array(
-            'hierarchical' => true,
-            'labels' => $labels_area,
-            'public' => true,
-            'show_ui' => true,
+            'hierarchical'      => true,
+            'labels'            => $labels_area,
+            'public'            => true,
+            'publicly_queryable' => true,
+            'show_ui'           => true,
             'show_admin_column' => true,
             'show_in_nav_menus' => true,
-            'query_var' => true,
-            'rewrite' => array('slug' => 'especialidad', 'with_front' => false), // SLUG SEO: especialidad
-            'show_in_rest' => true
+            'query_var'         => true,
+            'rewrite'           => array('slug' => 'especialidad', 'with_front' => false), // SLUG SEO: especialidad
+            'show_in_rest'      => true,
+            'show_in_sitemap'   => true, // RankMath SEO compatibility
         );
 
         register_taxonomy('area_practica', array('despacho'), $args_area);
@@ -6336,6 +6341,20 @@ class LexhoyDespachosCPT {
         $taxonomies['provincia'] = 'provincia';
         $taxonomies['area_practica'] = 'area_practica';
         return $taxonomies;
+    }
+
+    /**
+     * Asegurar que se incluyan en el índice incluso si están "vacías" para RankMath
+     */
+    public function force_sitemaps_in_index( $xml ) {
+        // Si no aparecen, los inyectamos manualmente en el índice
+        if ( strpos( $xml, 'provincia-sitemap.xml' ) === false ) {
+            $xml .= '<sitemap><loc>https://lexhoy.com/provincia-sitemap.xml</loc><lastmod>' . date( 'c' ) . '</lastmod></sitemap>';
+        }
+        if ( strpos( $xml, 'area_practica-sitemap.xml' ) === false ) {
+            $xml .= '<sitemap><loc>https://lexhoy.com/area_practica-sitemap.xml</loc><lastmod>' . date( 'c' ) . '</lastmod></sitemap>';
+        }
+        return $xml;
     }
 }
 
