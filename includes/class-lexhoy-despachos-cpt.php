@@ -85,11 +85,16 @@ class LexhoyDespachosCPT {
         // Evitar bucle infinito entre /despacho/slug y /slug
         add_filter('redirect_canonical', array($this, 'prevent_canonical_redirect_for_despachos'), 10, 2);
 
-        // Registrar submenú para importación masiva desde Algolia
+        // Registrar submenús
         add_action('admin_menu', array($this, 'register_import_submenu'));
+        add_action('admin_menu', array($this, 'register_additional_submenus'));
         
-        // Cargar plantilla personalizada para despachos individuales
+        // Cargar plantillas personalizadas
         add_filter('single_template', array($this, 'load_single_despacho_template'));
+        add_filter('taxonomy_template', array($this, 'load_taxonomy_template'));
+        
+        // SEO: Manejar 404s y redirecciones
+        add_action('template_redirect', array($this, 'handle_404_redirects'), 1);
         
         // Modificar títulos de páginas de despachos individuales - PRIORIDAD ALTA para sobrescribir RankMath
         add_filter('document_title_parts', array($this, 'modify_despacho_page_title'), 999, 1);
@@ -97,13 +102,15 @@ class LexhoyDespachosCPT {
         add_filter('rank_math/frontend/title', array($this, 'override_rankmath_title'), 999);
         add_action('wp_head', array($this, 'add_despacho_page_meta'));
         
-        // Asegurar que el sitemap incluya despachos
+        // Asegurar que el sitemap incluya despachos y sus taxonomías
         add_filter('wp_sitemaps_post_types', array($this, 'add_despachos_to_sitemap'));
+        add_filter('wp_sitemaps_taxonomies', array($this, 'add_taxonomies_to_sitemap'));
         
         // Regenerar reglas de rewrite al activar
         register_activation_hook(LEXHOY_DESPACHOS_PLUGIN_FILE, array($this, 'flush_rewrite_rules_on_activation'));
 
-
+        // SEO: Sobrescribir robots de RankMath
+        add_filter('rank_math/frontend/robots', array($this, 'override_rankmath_robots'), 999);
     }
 
     /**
@@ -253,6 +260,20 @@ class LexhoyDespachosCPT {
      */
     public function add_meta_boxes() {
         // No añadimos meta box - solo se usa el sistema de gestión de sedes
+    }
+
+    /**
+     * Registrar submenús adicionales
+     */
+    public function register_additional_submenus() {
+        add_submenu_page(
+            'edit.php?post_type=despacho',
+            'Migración de Datos SEO',
+            'Migración SEO',
+            'manage_options',
+            'lexhoy-seo-migration',
+            array($this, 'render_seo_migration_page')
+        );
     }
 
     /**
@@ -1575,32 +1596,144 @@ class LexhoyDespachosCPT {
      * Registrar taxonomías
      */
     public function register_taxonomies() {
-        // Taxonomía para áreas de práctica
-        $labels = array(
-            'name' => 'Áreas de Práctica',
-            'singular_name' => 'Área de Práctica',
-            'search_items' => 'Buscar Áreas',
-            'all_items' => 'Todas las Áreas',
-            'parent_item' => 'Área Padre',
-            'parent_item_colon' => 'Área Padre:',
-            'edit_item' => 'Editar Área',
-            'update_item' => 'Actualizar Área',
-            'add_new_item' => 'Añadir Nueva Área',
-            'new_item_name' => 'Nueva Área',
-            'menu_name' => 'Áreas de Práctica'
+        // 1. Taxonomía para PROVINCIAS (NUEVO FASE 3)
+        $labels_prov = array(
+            'name' => 'Provincias',
+            'singular_name' => 'Provincia',
+            'search_items' => 'Buscar Provincias',
+            'all_items' => 'Todas las Provincias',
+            'parent_item' => 'Provincia Padre',
+            'parent_item_colon' => 'Provincia Padre:',
+            'edit_item' => 'Editar Provincia',
+            'update_item' => 'Actualizar Provincia',
+            'add_new_item' => 'Añadir Nueva Provincia',
+            'new_item_name' => 'Nombre de la Provincia',
+            'menu_name' => 'Provincias'
         );
 
-        $args = array(
+        $args_prov = array(
             'hierarchical' => true,
-            'labels' => $labels,
+            'labels' => $labels_prov,
             'show_ui' => true,
             'show_admin_column' => true,
             'query_var' => true,
-            'rewrite' => array('slug' => 'area-practica'),
+            'rewrite' => array('slug' => 'provincia', 'with_front' => false),
             'show_in_rest' => true
         );
 
-        register_taxonomy('area_practica', array('despacho'), $args);
+        register_taxonomy('provincia', array('despacho'), $args_prov);
+
+        // 2. Taxonomía para ÁREAS DE PRÁCTICA (MODIFICADO FASE 3)
+        $labels_area = array(
+            'name' => 'Especialidades',
+            'singular_name' => 'Especialidad',
+            'search_items' => 'Buscar Especialidades',
+            'all_items' => 'Todas las Especialidades',
+            'parent_item' => 'Especialidad Padre',
+            'parent_item_colon' => 'Especialidad Padre:',
+            'edit_item' => 'Editar Especialidad',
+            'update_item' => 'Actualizar Especialidad',
+            'add_new_item' => 'Añadir Nueva Especialidad',
+            'new_item_name' => 'Nueva Especialidad',
+            'menu_name' => 'Especialidades'
+        );
+
+        $args_area = array(
+            'hierarchical' => true,
+            'labels' => $labels_area,
+            'show_ui' => true,
+            'show_admin_column' => true,
+            'query_var' => true,
+            'rewrite' => array('slug' => 'especialidad', 'with_front' => false), // SLUG SEO: especialidad
+            'show_in_rest' => true
+        );
+
+        register_taxonomy('area_practica', array('despacho'), $args_area);
+    }
+
+    /**
+     * Renderizar página de migración SEO
+     */
+    public function render_seo_migration_page() {
+        if (!current_user_can('manage_options')) return;
+
+        $action = $_GET['action'] ?? '';
+        $message = '';
+
+        if ($action === 'migrate_provincias') {
+            check_admin_referer('lexhoy_migrate_provincias');
+            $count = $this->migrate_meta_provincias_to_taxonomy();
+            $message = "<div class='updated'><p>Se han migrado {$count} provincias correctamente.</p></div>";
+        }
+
+        if ($action === 'flush_rules') {
+            check_admin_referer('lexhoy_flush_rules');
+            flush_rewrite_rules();
+            $message = "<div class='updated'><p>Reglas de reescritura regeneradas correctamente. Las nuevas URLs ya deberían funcionar.</p></div>";
+        }
+
+        ?>
+        <div class="wrap">
+            <h1>Migración de Datos para SEO - Fase 3</h1>
+            <?php echo $message; ?>
+            <div class="card">
+                <h2>1. Migración de Provincias</h2>
+                <p>Esta utilidad copiará el valor del campo "Provincia" (meta) a la nueva taxonomía "Provincias". Esto es necesario para que las URLs de silos (ej: lexhoy.com/provincia/madrid) funcionen correctamente.</p>
+                <a href="<?php echo wp_nonce_url(admin_url('edit.php?post_type=despacho&page=lexhoy-seo-migration&action=migrate_provincias'), 'lexhoy_migrate_provincias'); ?>" class="button button-primary">Iniciar Migración de Provincias</a>
+            </div>
+            
+            <div class="card" style="margin-top: 20px;">
+                <h2>2. Regenerar Enlaces Permanentes</h2>
+                <p>Si las nuevas URLs de provincia o especialidad dan error 404, necesitas regenerar las reglas de reescritura.</p>
+                <a href="<?php echo wp_nonce_url(admin_url('edit.php?post_type=despacho&page=lexhoy-seo-migration&action=flush_rules'), 'lexhoy_flush_rules'); ?>" class="button button-primary">Regenerar URLs Ahora</a>
+                <a href="<?php echo admin_url('options-permalink.php'); ?>" class="button">Ir a Ajustes Globales de WordPress</a>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Migrar metadatos de provincia a taxonomía
+     */
+    public function migrate_meta_provincias_to_taxonomy() {
+        $args = array(
+            'post_type' => 'despacho',
+            'posts_per_page' => -1,
+            'post_status' => 'any',
+            'fields' => 'ids'
+        );
+        $posts = get_posts($args);
+        $count = 0;
+
+        foreach ($posts as $post_id) {
+            // Intentar obtener de sedes primero
+            $sedes = get_post_meta($post_id, '_despacho_sedes', true);
+            $provincia_name = '';
+            
+            if (!empty($sedes) && is_array($sedes)) {
+                foreach ($sedes as $sede) {
+                    if (isset($sede['es_principal']) && $sede['es_principal'] && !empty($sede['provincia'])) {
+                        $provincia_name = $sede['provincia'];
+                        break;
+                    }
+                }
+                if (!$provincia_name && !empty($sedes[0]['provincia'])) {
+                    $provincia_name = $sedes[0]['provincia'];
+                }
+            }
+
+            // Fallback a meta legacy
+            if (!$provincia_name) {
+                $provincia_name = get_post_meta($post_id, '_despacho_provincia', true);
+            }
+
+            if (!empty($provincia_name)) {
+                wp_set_object_terms($post_id, $provincia_name, 'provincia');
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**
@@ -1749,6 +1882,60 @@ class LexhoyDespachosCPT {
     }
 
     /**
+     * Obtener la URL de la página del buscador de despachos
+     */
+    public function get_search_page_url() {
+        $cache_key = 'lexhoy_search_page_url_central';
+        $search_url = wp_cache_get($cache_key);
+        
+        if (false !== $search_url) {
+            return $search_url;
+        }
+        
+        // Buscar páginas que contengan el shortcode del buscador
+        $pages = get_posts(array(
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'fields' => 'ids'
+        ));
+        
+        foreach ($pages as $page_id) {
+            $page = get_post($page_id);
+            if ($page && strpos($page->post_content, '[lexhoy_despachos_search]') !== false) {
+                $search_url = get_permalink($page_id);
+                wp_cache_set($cache_key, $search_url, '', 3600);
+                return $search_url;
+            }
+        }
+        
+        // Fallback a la home si no se encuentra
+        $search_url = home_url('/');
+        wp_cache_set($cache_key, $search_url, '', 3600);
+        return $search_url;
+    }
+
+    /**
+     * Manejar redirecciones 404 para URLs que parecen despachos
+     */
+    public function handle_404_redirects() {
+        if (!is_404() || is_admin()) {
+            return;
+        }
+
+        $current_url = $_SERVER['REQUEST_URI'];
+        $path = trim(parse_url($current_url, PHP_URL_PATH), '/');
+
+        // Patrón 1: URL de nivel raíz que no se encuentra (podría ser un despacho eliminado/movido)
+        // Patrón 2: URLs que contienen /abogados/ o /perfil/
+        if (!empty($path) && (strpos($path, '/') === false || strpos($path, 'abogados/') !== false || strpos($path, 'perfil/') !== false)) {
+            $redirect_url = $this->get_search_page_url();
+            wp_redirect($redirect_url, 301);
+            exit;
+        }
+    }
+
+    /**
      * Evitar redirecciones canónicas incorrectas para despachos
      */
     public function prevent_canonical_redirect_for_despachos($redirect_url, $requested_url) {
@@ -1756,6 +1943,50 @@ class LexhoyDespachosCPT {
             return false; // Desactivar redirección canónica para despachos individuales
         }
         return $redirect_url;
+    }
+
+    /**
+     * Generar una descripción dinámica única para el despacho ("Spinning")
+     */
+    public function get_dynamic_description($post_id) {
+        // 1. Verificar si ya tiene descripción manual
+        $sedes = get_post_meta($post_id, '_despacho_sedes', true);
+        $sede_principal = (!empty($sedes) && is_array($sedes)) ? $sedes[0] : null;
+        
+        $desc_manual = $sede_principal['descripcion'] ?? get_post_meta($post_id, '_despacho_descripcion', true);
+        if (!empty(trim($desc_manual))) {
+            return $desc_manual;
+        }
+
+        // 2. Recopilar datos para el spin
+        $post = get_post($post_id);
+        $nombre = $post->post_title;
+        $localidad = $sede_principal['localidad'] ?? get_post_meta($post_id, '_despacho_localidad', true);
+        $provincia = $sede_principal['provincia'] ?? get_post_meta($post_id, '_despacho_provincia', true);
+        
+        $areas_practica_raw = (!empty($sede_principal['areas_practica']) && is_array($sede_principal['areas_practica']))
+            ? $sede_principal['areas_practica']
+            : wp_get_post_terms($post_id, 'area_practica', array('fields' => 'names'));
+            
+        $areas = !empty($areas_practica_raw) ? implode(', ', array_slice($areas_practica_raw, 0, 3)) : 'servicios jurídicos';
+        $experiencia = $sede_principal['experiencia'] ?? get_post_meta($post_id, '_despacho_experiencia', true);
+        $ano = $sede_principal['ano_fundacion'] ?? get_post_meta($post_id, '_despacho_año_fundacion', true);
+
+        // 3. Selección de plantillas (Randomizadas para evitar duplicidad exacta)
+        $templates = array();
+        
+        // Plantilla A: Enfoque Profesional
+        $templates[] = "{$nombre} es un despacho de abogados referente en {$localidad} ({$provincia}), destacando por su especialización en {$areas}. Con una sólida trayectoria en el sector legal, este despacho ofrece asesoramiento jurídico integral adaptado a las necesidades de sus clientes. Si buscas un abogado de confianza en la provincia de {$provincia}, {$nombre} cuenta con la experiencia necesaria para gestionar tu caso con profesionalidad y rigor.";
+
+        // Plantilla B: Enfoque por Ubicación y Especialidad
+        $templates[] = "¿Buscas asesoramiento legal en {$localidad}? El despacho {$nombre} pone a tu disposición un equipo experto en {$areas} y otras ramas del derecho. Ubicados en {$provincia}, se caracterizan por un trato cercano y una defensa eficaz de los intereses de sus representados. " . (!empty($experiencia) ? "Su experiencia en {$experiencia} avala su capacidad resolutiva." : "Consulte sus servicios para obtener una solución jurídica a su medida.");
+
+        // Plantilla C: Enfoque Corporativo
+        $templates[] = "Con sede en {$localidad}, {$nombre} se consolida como una opción de confianza para quienes requieren servicios legales en {$areas}. " . (!empty($ano) ? "Desde su fundación en {$ano}, han " : "Han ") . "mantenido un firme compromiso con la excelencia en la provincia de {$provincia}. El despacho destaca por su capacidad de análisis y su enfoque orientado a resultados en cada uno de los asuntos jurídicos que gestiona.";
+
+        // Seleccionar una basado en el ID del post para que sea consistente pero variada entre despachos
+        $index = $post_id % count($templates);
+        return $templates[$index];
     }
 
     /**
@@ -4788,12 +5019,31 @@ class LexhoyDespachosCPT {
                 
                 $localidad = $sede_principal['localidad'] ?? get_post_meta($post->ID, '_despacho_localidad', true);
                 $provincia = $sede_principal['provincia'] ?? get_post_meta($post->ID, '_despacho_provincia', true);
-                $descripcion = $sede_principal['descripcion'] ?? $post->post_content ?? get_post_meta($post->ID, '_despacho_descripcion', true);
+                
+                // --- CAMBIO FASE 2: USAR DESCRIPCIÓN DINÁMICA PARA EL TAG DESCRIPTION ---
+                $descripcion_dinamica = $this->get_dynamic_description($post->ID);
+                
+                // --- CAMBIO "MODO SEGURIDAD" (FASE 1/2 REVISADA) ---
+                // Para decidir si INDEXAR, miramos SOLO el contenido MANUAL REAL
+                $desc_manual = $sede_principal['descripcion'] ?? get_post_meta($post->ID, '_despacho_descripcion', true);
+                $experiencia = $sede_principal['experiencia'] ?? get_post_meta($post->ID, '_despacho_experiencia', true);
+                $especialidades = $sede_principal['especialidades'] ?? get_post_meta($post->ID, '_despacho_especialidades', true);
+                
                 $location_parts = array_filter(array($localidad, $provincia));
                 
-                // Meta description
-                if (!empty($descripcion)) {
-                    $meta_description = wp_trim_words($descripcion, 25, '...');
+                // LÓGICA DE THIN CONTENT MANUAL (Riesgo Cero para la Web Principal)
+                $manual_content = (string)$desc_manual . (string)$experiencia . (string)$especialidades;
+                $manual_length = mb_strlen(strip_tags($manual_content));
+                
+                // SI NO HAY CONTENIDO MANUAL SUFICIENTE (<300), NOINDEX. 
+                // No nos importa si el spin genera texto largo, queremos calidad real.
+                if ($manual_length < 300 || empty(trim($desc_manual))) {
+                    echo '<meta name="robots" content="noindex, follow">' . "\n";
+                }
+                
+                // Meta description (aquí sí usamos el spin para que Google muestre algo útil si decide entrar)
+                if (!empty($descripcion_dinamica)) {
+                    $meta_description = wp_trim_words($descripcion_dinamica, 25, '...');
                 } else {
                     $meta_description = "Información de contacto y servicios del despacho de abogados " . $despacho_name;
                     if (!empty($location_parts)) {
@@ -4820,6 +5070,34 @@ class LexhoyDespachosCPT {
                 echo '<meta property="og:url" content="' . esc_url(get_permalink($post->ID)) . '">' . "\n";
             }
         }
+    }
+
+    /**
+     * Sobrescribir robots de RankMath para thin content
+     */
+    public function override_rankmath_robots($robots) {
+        if (is_singular('despacho')) {
+            global $post;
+            if ($post) {
+                $sedes = get_post_meta($post->ID, '_despacho_sedes', true);
+                $sede_principal = (!empty($sedes) && is_array($sedes)) ? $sedes[0] : null;
+                
+                // --- MODO SEGURIDAD EN RANK MATH ---
+                $desc_manual = $sede_principal['descripcion'] ?? get_post_meta($post->ID, '_despacho_descripcion', true);
+                $experiencia = $sede_principal['experiencia'] ?? get_post_meta($post->ID, '_despacho_experiencia', true);
+                $especialidades = $sede_principal['especialidades'] ?? get_post_meta($post->ID, '_despacho_especialidades', true);
+                
+                $manual_content = (string)$desc_manual . (string)$experiencia . (string)$especialidades;
+                $manual_length = mb_strlen(strip_tags($manual_content));
+                
+                // Si no hay contenido manual sustancial, forzar NOINDEX en Rank Math
+                if ($manual_length < 300 || empty(trim($desc_manual))) {
+                    $robots['index'] = 'noindex';
+                    $robots['follow'] = 'follow';
+                }
+            }
+        }
+        return $robots;
     }
 
     /**
@@ -4954,6 +5232,16 @@ class LexhoyDespachosCPT {
         }
         return $template;
     }
+
+    /**
+     * Cargar plantilla personalizada para taxonomías (provincia y especialidad)
+     */
+    public function load_taxonomy_template($template) {
+        if (is_tax('provincia') || is_tax('area_practica')) {
+            return LEXHOY_DESPACHOS_PLUGIN_DIR . 'templates/taxonomy-despacho.php';
+        }
+        return $template;
+    }
     
     /**
      * Asegurar que los despachos aparezcan en el sitemap
@@ -4968,6 +5256,19 @@ class LexhoyDespachosCPT {
             );
         }
         return $post_types;
+    }
+
+    /**
+     * Asegurar que las taxonomías de despachos (silos) aparezcan en el sitemap
+     */
+    public function add_taxonomies_to_sitemap($taxonomies) {
+        $despacho_taxonomies = array('provincia', 'area_practica');
+        foreach ($despacho_taxonomies as $tax_name) {
+            if (!isset($taxonomies[$tax_name])) {
+                $taxonomies[$tax_name] = get_taxonomy($tax_name);
+            }
+        }
+        return $taxonomies;
     }
     
     /**

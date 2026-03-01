@@ -9,56 +9,14 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Función helper para obtener la URL de la página del buscador
- */
-function get_search_page_url() {
-    // Usar caché para evitar consultas repetidas
-    $cache_key = 'lexhoy_search_page_url';
-    $search_url = wp_cache_get($cache_key);
-    
-    if (false !== $search_url) {
-        return $search_url;
-    }
-    
-    // Buscar páginas que contengan el shortcode del buscador
-    $pages = get_posts(array(
-        'post_type' => 'page',
-        'post_status' => 'publish',
-        'posts_per_page' => -1,
-        'fields' => 'ids' // Solo obtener IDs para optimizar
-    ));
-    
-    foreach ($pages as $page_id) {
-        $page = get_post($page_id);
-        if ($page && strpos($page->post_content, '[lexhoy_despachos_search]') !== false) {
-            $search_url = get_permalink($page_id);
-            wp_cache_set($cache_key, $search_url, '', 3600); // Cache por 1 hora
-            return $search_url;
-        }
-    }
-    
-    // Si no se encuentra, buscar en posts también
-    $posts = get_posts(array(
-        'post_type' => 'post',
-        'post_status' => 'publish',
-        'posts_per_page' => -1,
-        'fields' => 'ids' // Solo obtener IDs para optimizar
-    ));
-    
-    foreach ($posts as $post_id) {
-        $post = get_post($post_id);
-        if ($post && strpos($post->post_content, '[lexhoy_despachos_search]') !== false) {
-            $search_url = get_permalink($post_id);
-            wp_cache_set($cache_key, $search_url, '', 3600); // Cache por 1 hora
-            return $search_url;
-        }
-    }
-    
-    // Si no se encuentra ninguna página con el shortcode, devolver la home
+// La URL de búsqueda se obtiene ahora de forma centralizada desde LexhoyDespachosCPT
+$search_url = '';
+if (class_exists('LexhoyDespachosCPT')) {
+    $cpt_manager = new LexhoyDespachosCPT();
+    $search_url = $cpt_manager->get_search_page_url();
+}
+if (empty($search_url)) {
     $search_url = home_url('/');
-    wp_cache_set($cache_key, $search_url, '', 3600); // Cache por 1 hora
-    return $search_url;
 }
 
 // Cargar estilos personalizados
@@ -129,7 +87,15 @@ get_header(); ?>
         $telefono = $sede_principal['telefono'] ?? get_post_meta($post_id, '_despacho_telefono', true);
         $email = $sede_principal['email_contacto'] ?? get_post_meta($post_id, '_despacho_email', true);
         $web = $sede_principal['web'] ?? get_post_meta($post_id, '_despacho_web', true);
-        $descripcion = $sede_principal['descripcion'] ?? get_post_meta($post_id, '_despacho_descripcion', true);
+        
+        // --- CAMBIO FASE 2: DESCRIPCIÓN DINÁMICA ---
+        $descripcion = '';
+        if (class_exists('LexhoyDespachosCPT')) {
+            $cpt_manager = new LexhoyDespachosCPT();
+            $descripcion = $cpt_manager->get_dynamic_description($post_id);
+        } else {
+            $descripcion = $sede_principal['descripcion'] ?? get_post_meta($post_id, '_despacho_descripcion', true);
+        }
         $estado_verificacion = $sede_principal['estado_verificacion'] ?? get_post_meta($post_id, '_despacho_estado_verificacion', true);
         $is_verified = $sede_principal['is_verified'] ?? get_post_meta($post_id, '_despacho_is_verified', true);
         
@@ -223,10 +189,43 @@ get_header(); ?>
             <!-- Fila de botones superiores -->
             <div class="despacho-buttons-row">
                 <!-- Botón de regreso -->
-                <a href="<?php echo esc_url(get_search_page_url()); ?>" class="despacho-back-button">
+                <a href="<?php echo esc_url($search_url); ?>" class="despacho-back-button">
                     <i class="fas fa-arrow-left"></i>
                     Volver al buscador
                 </a>
+                
+                <?php
+                // --- CAMBIO FASE 4: BREADCRUMBS SCHEMA ---
+                $prov_terms = wp_get_post_terms($post_id, 'provincia');
+                if (!empty($prov_terms) && !is_wp_error($prov_terms)) {
+                    $prov_term = $prov_terms[0];
+                    $breadcrumb_schema = array(
+                        "@context" => "https://schema.org",
+                        "@type" => "BreadcrumbList",
+                        "itemListElement" => array(
+                            array(
+                                "@type" => "ListItem",
+                                "position" => 1,
+                                "name" => "Inicio",
+                                "item" => home_url('/')
+                            ),
+                            array(
+                                "@type" => "ListItem",
+                                "position" => 2,
+                                "name" => "Abogados en " . $prov_term->name,
+                                "item" => get_term_link($prov_term)
+                            ),
+                            array(
+                                "@type" => "ListItem",
+                                "position" => 3,
+                                "name" => $nombre,
+                                "item" => get_permalink($post_id)
+                            )
+                        )
+                    );
+                    echo '<script type="application/ld+json">' . json_encode($breadcrumb_schema) . '</script>';
+                }
+                ?>
                 
                 <!-- Badge de verificación (o espacio vacío para mantener alineación) -->
                 <div class="verification-badge-container">

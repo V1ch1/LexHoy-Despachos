@@ -3,7 +3,7 @@
  * Plugin Name: LexHoy Despachos
  * Plugin URI: https://lexhoy.com
  * Description: Plugin para gestionar despachos de LexHoy
- * Version: 1.1.4
+ * Version: 1.2.0
  * Author: LexHoy
  * Author URI: https://lexhoy.com
  * Text Domain: lexhoy-despachos
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('LEXHOY_DESPACHOS_VERSION', '1.1.4');
+define('LEXHOY_DESPACHOS_VERSION', '1.2.0');
 define('LEXHOY_DESPACHOS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('LEXHOY_DESPACHOS_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('LEXHOY_DESPACHOS_PLUGIN_FILE', __FILE__);
@@ -29,6 +29,7 @@ require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-cpt.
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-despachos-shortcode.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-areas-cpt.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-sedes-manager.php';
+require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'includes/class-lexhoy-interlinking.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/algolia-page.php';
 require_once LEXHOY_DESPACHOS_PLUGIN_DIR . 'admin/shortcode-page.php';
 
@@ -47,6 +48,10 @@ function lexhoy_despachos_init() {
 
     if (class_exists('LexhoyAreasCPT')) {
         new LexhoyAreasCPT();
+    }
+
+    if (class_exists('LexhoyInterlinking')) {
+        new LexhoyInterlinking();
     }
     
     // Inicializar el gestor de sedes solo en admin
